@@ -8,6 +8,9 @@ el código y los resultados agregados viven en GitHub; los datos, nunca.
 - Reto Stuff+ de Diablos Rojos (Hackathon ISAC 2026). Datos Trackman de la LMB, 3 temporadas, bajo NDA.
 - Diccionario de columnas: `docs/diccionario.csv`. Las columnas `target_only` nunca son features.
   Los `*_anon_id` solo sirven para agrupar, validar y agregar.
+- `docs/diccionario.csv` es del organizador y **no se edita**. Las categorías reales y sus
+  mapas viven en `config/categorias.yaml` (ADR-002 a 007, ROADMAP §1.1). Un valor sin regla
+  nunca se asigna en silencio: hace fallar la fase.
 - Idioma de código, comentarios, reportes y commits: español.
 
 ## No tienes los datos
