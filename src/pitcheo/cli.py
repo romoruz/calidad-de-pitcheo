@@ -1,0 +1,222 @@
+"""CLI de pitcheo. Un subcomando por fase del ROADMAP; ningún módulo importa cli.
+
+    pitcheo f00_0   inspección de los tres formatos crudos + perfil vs diccionario
+    pitcheo f00     ingesta y QA por identidades I1-I8         (pendiente, F0)
+    pitcheo f01 ... f11                                        (pendientes)
+
+Mismo patrón que `dtcoach` en Historia-de-un-entrenador.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from datetime import UTC, datetime
+from pathlib import Path
+
+import polars as pl
+
+from .config import Config
+
+# Fases todavía no implementadas: subcomando -> (etiqueta ROADMAP, pista).
+_PENDIENTES = {
+    "f00": "F0 — Ingesta y QA por identidades I1-I8",
+    "f01": "F1 — Pre-registro de hipótesis",
+    "f02": "F2 — Densidad del aire por juego desde la trayectoria",
+    "f03": "F3 — Invariantes, eficiencia de giro y operador T",
+    "f04": "F4 — Variable objetivo: pesos lineales, cadena de conteos, carry",
+    "f05": "F5 — Arsenal, agrupamiento por forma y auditoría de fugas",
+    "f06": "F6 — Modelos: Stuff+, Pitching+ y Location+",
+    "f07": "F7 — Validación fuera de muestra",
+    "f08": "F8 — Efecto altitud y veredictos H1-H6",
+    "f09": "F9 — Agregación, perfil ideal y recomendaciones",
+    "f10": "F10 — Dashboard simulador",
+    "f11": "F11 — Reporte final",
+}
+
+
+def _json(obj, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(obj, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
+
+
+# ----------------------------------------------------------------------
+def cmd_f00_0(a, cfg):
+    """Inspección de los tres formatos crudos y perfil del parquet canónico."""
+    from . import io
+
+    base = Path(a.base) if a.base else None
+    if a.sintetico:
+        from .sintetico import escribir_tres_formatos, generar
+        sc = cfg["sintetico"]
+        destino = base or (cfg.ruta("interim") / "sintetico" / "stuff_model_df")
+        print(f"generando {a.sintetico} juegos sintéticos en {destino}.* ...", flush=True)
+        df = generar(a.sintetico, cfg["seed"], sc.get("cubetas"),
+                     sc["n_lanzadores"], sc["n_bateadores"], sc["n_receptores"],
+                     sc["n_lanzadores_nucleo"], tuple(sc["anios"]), sc["innings_por_juego"])
+        escribir_tres_formatos(df, destino)
+        base = destino
+
+    if base is not None:
+        parquet, pkl, rds = (base.with_suffix(e) for e in (".parquet", ".pkl", ".rds"))
+    else:
+        parquet, pkl, rds = cfg.ruta("raw_parquet"), cfg.ruta("raw_pkl"), cfg.ruta("raw_rds")
+
+    if not Path(parquet).exists():
+        sys.exit(f"No existe el parquet canónico {parquet}. En local debe estar en data/raw/ "
+                 "(fuera de git); aquí usa `pitcheo f00_0 --sintetico N`.")
+
+    t0 = time.time()
+    dicc = io.leer_diccionario(cfg.ruta("diccionario"))
+    tol = float(cfg["f00_0"]["tol_numerica"])
+    max_u = int(cfg["f00_0"]["max_unicos"])
+
+    tam = {
+        "parquet": Path(parquet).stat().st_size,
+        "pkl": Path(pkl).stat().st_size if Path(pkl).exists() else None,
+        "rds": Path(rds).stat().st_size if Path(rds).exists() else None,
+    }
+    comparacion = io.comparar_formatos(parquet, pkl, rds, tol)
+    perfil = io.perfilar_parquet(parquet, dicc, max_u)
+    conteos = _conteos(parquet)
+
+    gates = _evaluar_gates(comparacion, perfil)
+    segundos = round(time.time() - t0, 1)
+
+    rep_dir = cfg.ruta("reportes")
+    rep_dir.mkdir(parents=True, exist_ok=True)
+    _json({"tamanos": tam, "comparacion": comparacion, "perfil": perfil,
+           "conteos": conteos, "gates": gates, "segundos": segundos},
+          rep_dir / "fase_00_0.json")
+    md = _reporte_md(tam, comparacion, perfil, conteos, gates)
+    (rep_dir / "FASE_00_0.md").write_text(md, encoding="utf-8")
+
+    log_dir = cfg.ruta("logs")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+    (log_dir / f"f00_0_{stamp}.log").write_text(
+        json.dumps({"conteos": conteos, "gates": gates, "tamanos": tam, "segundos": segundos},
+                   indent=2, ensure_ascii=False), encoding="utf-8")
+
+    print(md)
+    print(f"\nreporte -> {rep_dir / 'FASE_00_0.md'}  ({segundos}s)")
+    if not all(g["ok"] for g in gates.values()):
+        print("\n[COMPUERTA FALLIDA] ver el Bloque para el orquestador en el reporte.")
+        sys.exit(2)
+
+
+def _conteos(parquet) -> dict:
+    from .io import leer_parquet_perezoso
+    lf = leer_parquet_perezoso(parquet)
+    cols = set(lf.collect_schema().names())
+    ag = [pl.len().alias("filas")]
+    for c, alias in (("PitchUID", "pitchuid_unicos"), ("game_anon_id", "juegos"),
+                     ("pitcher_anon_id", "lanzadores"), ("batter_anon_id", "bateadores")):
+        if c in cols:
+            ag.append(pl.col(c).n_unique().alias(alias))
+    r = lf.select(ag).collect().to_dicts()[0]
+    extra = {}
+    if "year" in cols:
+        extra["year"] = sorted(lf.select("year").unique().collect().to_series().to_list())
+    if "altitude_category" in cols:
+        extra["altitude_category"] = (lf.group_by("altitude_category").agg(pl.len().alias("n"))
+                                      .sort("n", descending=True).collect().to_dicts())
+    return {**r, **extra}
+
+
+def _evaluar_gates(comparacion: dict, perfil: dict) -> dict:
+    """G00.1 PitchUID único y mismos IDs; G00.2 equivalencia 2-4; G00.3 columnas."""
+    comps = comparacion.get("comparaciones", {})
+    presentes = [c for c in comps.values() if c.get("estado") == "comparado"]
+    g1 = all(c.get("pitchuid", {}).get("comparables", False) for c in presentes) if presentes else False
+    g2 = all(c.get("equivalentes", False) for c in presentes) if presentes else False
+    faltantes = perfil.get("faltantes", [])
+    g3 = not faltantes
+    return {
+        "G00.1": {"ok": bool(g1), "detalle": "PitchUID único y mismos IDs en los formatos comparables"},
+        "G00.2": {"ok": bool(g2), "detalle": "equivalencia (criterio 2-4) en todas las columnas comparadas"},
+        "G00.3": {"ok": bool(g3), "detalle": f"columnas del diccionario ausentes: {faltantes or 'ninguna'}"},
+    }
+
+
+def _reporte_md(tam, comparacion, perfil, conteos, gates) -> str:
+    def sz(x):
+        return "—" if x is None else f"{x / 1e6:.2f} MB"
+    L = ["# FASE 00.0 — Inspección de los tres formatos crudos", "",
+         "## Tamaños en disco", "",
+         f"- parquet: {sz(tam['parquet'])}", f"- pkl: {sz(tam['pkl'])}", f"- rds: {sz(tam['rds'])}", "",
+         "## Equivalencia de formatos (criterio 1-4, ROADMAP §4-F0.0)", ""]
+    for nombre, c in comparacion.get("comparaciones", {}).items():
+        est = c.get("estado")
+        if est != "comparado":
+            L.append(f"- **{nombre}**: {est}" + (f" ({c.get('error', '')})" if est == "error_carga" else ""))
+            continue
+        puid = c.get("pitchuid", {})
+        difs = {k: v for k, v in c.get("por_columna", {}).items() if v.get("estado") != "igual"}
+        L.append(f"- **{nombre}**: equivalentes={c.get('equivalentes')} · "
+                 f"PitchUID comparable={puid.get('comparables')} · "
+                 f"columnas distintas={len(difs)}"
+                 + (f" ({', '.join(f'{k}:{v.get('n_dif')}' for k, v in list(difs.items())[:8])})" if difs else ""))
+    L += ["", "## Perfil del parquet contra el diccionario", "",
+          f"- filas: {perfil.get('n_filas'):,}",
+          f"- columnas no documentadas: {perfil.get('no_documentadas') or 'ninguna'}",
+          f"- columnas del diccionario ausentes: {perfil.get('faltantes') or 'ninguna'}", ""]
+    incumple = []
+    for nombre, info in perfil.get("columnas", {}).items():
+        if info.get("cumple_rango") is False:
+            incumple.append(f"{nombre} (rango: {info.get('fuera_de_rango')} fuera)")
+        if info.get("cumple_valores") is False:
+            incumple.append(f"{nombre} (valores: {info.get('valores_fuera')})")
+    L.append(f"- incumplimientos de unit_or_values: {incumple or 'ninguno'}")
+    L += ["", "## Alcance del dataset", "",
+          f"- filas: {conteos.get('filas'):,} · PitchUID únicos: {conteos.get('pitchuid_unicos'):,}",
+          (f"- juegos: {conteos.get('juegos')} · lanzadores: {conteos.get('lanzadores')} · "
+           f"bateadores: {conteos.get('bateadores')}"),
+          f"- year: {conteos.get('year')}",
+          f"- altitude_category: {conteos.get('altitude_category')}", ""]
+    L += ["## Bloque para el orquestador — F00.0", "",
+          "- Modelo(s) usado(s): Sonnet (andamiaje) / Opus (revisión)",
+          "- Compuertas: " + " | ".join(
+              f"{k} {'✅' if v['ok'] else '❌'}" for k, v in gates.items()),
+          (f"- Cifras clave: {conteos.get('filas'):,} lanzamientos, {conteos.get('juegos')} juegos, "
+           f"{conteos.get('lanzadores')} lanzadores"),
+          "- Desviaciones respecto al ROADMAP: ninguna",
+          "- Mejora posible detectada: ninguna",
+          "- Riesgo de empeorar: ninguno",
+          "- Rama / PR / commit de resultados locales: fase00_0 / (pendiente) / (pendiente)",
+          "- Log: reports/logs/f00_0_<fecha>.log", "",
+          ("> Si G00.1 o G00.2 fallan, el **orquestador** elige la fuente canónica "
+           "(el código NUNCA elige por su cuenta)."), ""]
+    return "\n".join(L)
+
+
+def cmd_pendiente(a, cfg):
+    etq = _PENDIENTES[a.cmd]
+    print(f"[pendiente] `{a.cmd}` corresponde a {etq}.")
+    print("Esta fase todavía no está implementada (F0.0 es la entrega actual).")
+
+
+# ----------------------------------------------------------------------
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="pitcheo", description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--config", default=None)
+    sp = ap.add_subparsers(dest="cmd", required=True)
+
+    s = sp.add_parser("f00_0", help="inspección de los tres formatos crudos")
+    s.add_argument("--base", default=None, help="base sin extensión de los 3 archivos (default: config.rutas.raw_*)")
+    s.add_argument("--sintetico", type=int, default=0, metavar="N",
+                   help="genera N juegos sintéticos y los escribe en 3 formatos antes de inspeccionar")
+    s.set_defaults(f=cmd_f00_0)
+
+    for nombre, etq in _PENDIENTES.items():
+        sp.add_parser(nombre, help=etq).set_defaults(f=cmd_pendiente)
+
+    a = ap.parse_args(argv)
+    cfg = Config.load(a.config)
+    a.f(a, cfg)
+
+
+if __name__ == "__main__":
+    main()

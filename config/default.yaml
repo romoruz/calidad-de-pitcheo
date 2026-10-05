@@ -1,0 +1,56 @@
+# Configuración única del proyecto. Todo parámetro vive aquí (CLAUDE.md "Lo que el
+# script de cada fase garantiza"). Semillas fijas para reproducibilidad.
+
+seed: 2026
+
+rutas:
+  # Fuente canónica y los otros dos formatos crudos (solo lectura, fuera de git).
+  raw_parquet: data/raw/stuff_model_df.parquet
+  raw_pkl:     data/raw/stuff_model_df.pkl
+  raw_rds:     data/raw/stuff_model_df.rds
+  # Datos tipados que produce F0 (fuera de git).
+  interim:     data/interim
+  pitches:     data/interim/pitches.parquet
+  # Diccionario de columnas (en git).
+  diccionario: docs/diccionario.csv
+  # Reportes, logs y figuras (en git, salvo reports/privado/).
+  reportes:    reports
+  logs:        reports/logs
+  privado:     reports/privado
+  figuras:     docs/figuras
+
+# Criterios de la fase F0.0 (comparación de los tres formatos y perfilado).
+f00_0:
+  # Criterio 3 de equivalencia numérica (ROADMAP §4-F0.0): |a-b| <= rtol*max(1,|a|).
+  tol_numerica: 1.0e-9
+  # Perfilado: cuántos valores únicos listar antes de resumir como rango.
+  max_unicos: 50
+
+# Generador sintético (src/pitcheo/sintetico.py). NO son los datos reales: solo
+# respetan el esquema del diccionario y cumplen las identidades I1-I8 de F0.
+sintetico:
+  n_juegos: 40
+  # Cubetas de altitud: metros sobre el nivel del mar por cubeta. La densidad
+  # barométrica se calcula con la fórmula de ROADMAP §2. La cubeta "alta" ~ Harp Helú
+  # concentra la mitad de los juegos (prueba de "solo Diablos", F0).
+  cubetas:
+    baja:  {altitud_m: 3,    peso_juegos: 0.20}
+    media: {altitud_m: 532,  peso_juegos: 0.30}
+    alta:  {altitud_m: 2232, peso_juegos: 0.50}
+  # Pool de identidades anónimas.
+  n_lanzadores: 60
+  n_bateadores: 120
+  n_receptores: 24
+  # Núcleo de lanzadores "Diablos" que aparece en casi todos los juegos (prueba F0).
+  n_lanzadores_nucleo: 12
+  anios: [2023, 2024, 2025]
+  innings_por_juego: 9
+
+# Constantes físicas (ROADMAP §2). Se usan ya en el sintético para que los datos
+# cumplan I1 (SpeedDrop), I3 (polinomio) e I4 (caída por gravedad).
+fisica:
+  g_fts2: 32.174           # ft/s^2
+  y_frente_plato_ft: 1.4167  # 17/12 ft: frente del plato
+  # Fórmula barométrica ROADMAP §2: rho/rho0 = (1 - a*h)^b
+  baro_a: 2.25577e-5
+  baro_b: 5.25588
