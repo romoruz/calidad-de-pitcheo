@@ -1,0 +1,1759 @@
+{
+  "tamanos": {
+    "parquet": 211239244,
+    "pkl": 446774545,
+    "rds": 136825051
+  },
+  "comparacion": {
+    "base": "parquet",
+    "filas_base": 635002,
+    "columnas_base": 84,
+    "comparaciones": {
+      "pkl": {
+        "estado": "comparado",
+        "filas": {
+          "a": 635002,
+          "b": 635002,
+          "igual": true
+        },
+        "columnas_solo_en_a": [],
+        "columnas_solo_en_b": [],
+        "por_columna": {
+          "year": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PitchUID": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "game_anon_id": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "pitcher_anon_id": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "batter_anon_id": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "catcher_anon_id": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PitcherThrows": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "BatterSide": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "altitude_category": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "AutoPitchType": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "RelSpeed": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "EffectiveVelo": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "ZoneSpeed": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "SpinRate": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "SpinAxis": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "Tilt": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "RelHeight": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "RelSide": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "Extension": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "VertBreak": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "InducedVertBreak": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "HorzBreak": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "VertRelAngle": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "HorzRelAngle": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "VertApprAngle": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "HorzApprAngle": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "SpeedDrop": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "ZoneTime": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "x0": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "y0": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "z0": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "vx0": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "vy0": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "vz0": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "ax0": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "ay0": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "az0": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "pfxx": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "pfxz": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PitchTrajectoryXc0": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PitchTrajectoryXc1": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PitchTrajectoryXc2": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PitchTrajectoryYc0": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PitchTrajectoryYc1": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PitchTrajectoryYc2": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PitchTrajectoryZc0": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PitchTrajectoryZc1": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PitchTrajectoryZc2": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PitchCall": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "KorBB": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "play_result": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "hit_type": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "ExitSpeed": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "Angle": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "Direction": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "Distance": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "is_swing": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "is_whiff": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "is_contact": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "is_called_strike": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "is_swinging_strike": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "is_ball_in_play": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "is_batted": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "is_hit": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "single": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "double": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "triple": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "home_run": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "base_on_balls": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "strikeout": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "is_hit_by_pitch": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "RunsScored": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "OutsOnPlay": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "Inning": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "Top/Bottom": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "Outs": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "Balls": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "Strikes": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "count": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PlateLocHeight": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PlateLocSide": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "in_strike_zone": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "outside_strike_zone": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "swung_outside_strike_zone": {
+            "estado": "igual",
+            "n_dif": 0
+          }
+        },
+        "pitchuid": {
+          "comparables": true,
+          "unico_a": true,
+          "unico_b": true,
+          "mismos_ids": true
+        },
+        "equivalentes": true
+      },
+      "rds": {
+        "estado": "comparado",
+        "filas": {
+          "a": 635002,
+          "b": 635002,
+          "igual": true
+        },
+        "columnas_solo_en_a": [],
+        "columnas_solo_en_b": [],
+        "por_columna": {
+          "year": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PitchUID": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "game_anon_id": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "pitcher_anon_id": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "batter_anon_id": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "catcher_anon_id": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PitcherThrows": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "BatterSide": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "altitude_category": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "AutoPitchType": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "RelSpeed": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "EffectiveVelo": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "ZoneSpeed": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "SpinRate": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "SpinAxis": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "Tilt": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "RelHeight": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "RelSide": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "Extension": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "VertBreak": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "InducedVertBreak": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "HorzBreak": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "VertRelAngle": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "HorzRelAngle": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "VertApprAngle": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "HorzApprAngle": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "SpeedDrop": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "ZoneTime": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "x0": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "y0": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "z0": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "vx0": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "vy0": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "vz0": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "ax0": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "ay0": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "az0": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "pfxx": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "pfxz": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PitchTrajectoryXc0": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PitchTrajectoryXc1": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PitchTrajectoryXc2": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PitchTrajectoryYc0": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PitchTrajectoryYc1": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PitchTrajectoryYc2": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PitchTrajectoryZc0": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PitchTrajectoryZc1": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PitchTrajectoryZc2": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PitchCall": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "KorBB": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "play_result": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "hit_type": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "ExitSpeed": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "Angle": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "Direction": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "Distance": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "is_swing": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "is_whiff": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "is_contact": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "is_called_strike": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "is_swinging_strike": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "is_ball_in_play": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "is_batted": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "is_hit": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "single": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "double": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "triple": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "home_run": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "base_on_balls": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "strikeout": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "is_hit_by_pitch": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "RunsScored": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "OutsOnPlay": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "Inning": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "Top/Bottom": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "Outs": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "Balls": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "Strikes": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "count": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PlateLocHeight": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "PlateLocSide": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "in_strike_zone": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "outside_strike_zone": {
+            "estado": "igual",
+            "n_dif": 0
+          },
+          "swung_outside_strike_zone": {
+            "estado": "igual",
+            "n_dif": 0
+          }
+        },
+        "pitchuid": {
+          "comparables": true,
+          "unico_a": true,
+          "unico_b": true,
+          "mismos_ids": true
+        },
+        "equivalentes": true
+      }
+    }
+  },
+  "perfil": {
+    "n_filas": 635002,
+    "columnas": {
+      "year": {
+        "presente": true,
+        "tipo_observado": "Int32",
+        "tipo_diccionario": "integer",
+        "pct_nulos": 0.0,
+        "rango": [
+          2024.0,
+          2026.0
+        ]
+      },
+      "PitchUID": {
+        "presente": true,
+        "tipo_observado": "String",
+        "tipo_diccionario": "string",
+        "pct_nulos": 0.0,
+        "n_unicos": 635002
+      },
+      "game_anon_id": {
+        "presente": true,
+        "tipo_observado": "String",
+        "tipo_diccionario": "string",
+        "pct_nulos": 0.0,
+        "n_unicos": 2127
+      },
+      "pitcher_anon_id": {
+        "presente": true,
+        "tipo_observado": "String",
+        "tipo_diccionario": "string",
+        "pct_nulos": 0.515,
+        "n_unicos": 1134
+      },
+      "batter_anon_id": {
+        "presente": true,
+        "tipo_observado": "String",
+        "tipo_diccionario": "string",
+        "pct_nulos": 0.318,
+        "n_unicos": 864
+      },
+      "catcher_anon_id": {
+        "presente": true,
+        "tipo_observado": "String",
+        "tipo_diccionario": "string",
+        "pct_nulos": 0.366,
+        "n_unicos": 196
+      },
+      "PitcherThrows": {
+        "presente": true,
+        "tipo_observado": "String",
+        "tipo_diccionario": "categorical",
+        "pct_nulos": 0.183,
+        "n_unicos": 3,
+        "unicos": [
+          "Left",
+          "Right",
+          "Undefined"
+        ],
+        "cumple_valores": false,
+        "valores_fuera": [
+          "Undefined"
+        ]
+      },
+      "BatterSide": {
+        "presente": true,
+        "tipo_observado": "String",
+        "tipo_diccionario": "categorical",
+        "pct_nulos": 0.155,
+        "n_unicos": 4,
+        "unicos": [
+          "Left",
+          "Right",
+          "Switch",
+          "Undefined"
+        ],
+        "cumple_valores": false,
+        "valores_fuera": [
+          "Switch",
+          "Undefined"
+        ]
+      },
+      "altitude_category": {
+        "presente": true,
+        "tipo_observado": "String",
+        "tipo_diccionario": "categorical",
+        "pct_nulos": 0.476,
+        "n_unicos": 3,
+        "unicos": [
+          "Extreme Altitude",
+          "Medium Altitude",
+          "No Altitude"
+        ]
+      },
+      "AutoPitchType": {
+        "presente": true,
+        "tipo_observado": "Categorical",
+        "tipo_diccionario": "categorical",
+        "pct_nulos": 0.0,
+        "n_unicos": 12,
+        "unicos": [
+          "Changeup",
+          "Curveball",
+          "Cutter",
+          "Four-Seam",
+          "Knuckleball",
+          "OneSeamFastBall",
+          "Other",
+          "Sinker",
+          "Slider",
+          "Splitter",
+          "Sweeper",
+          "TwoSeamFastBall"
+        ],
+        "cumple_valores": false,
+        "valores_fuera": [
+          "Knuckleball",
+          "OneSeamFastBall",
+          "Sweeper",
+          "TwoSeamFastBall"
+        ]
+      },
+      "RelSpeed": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          44.65569,
+          102.50375
+        ]
+      },
+      "EffectiveVelo": {
+        "presente": true,
+        "tipo_observado": "String",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          100.00093,
+          99.99525
+        ]
+      },
+      "ZoneSpeed": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          40.66537,
+          95.32956
+        ]
+      },
+      "SpinRate": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.013,
+        "rango": [
+          608.348962,
+          3594.306577
+        ]
+      },
+      "SpinAxis": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.111,
+        "rango": [
+          0.002972,
+          359.997473
+        ]
+      },
+      "Tilt": {
+        "presente": true,
+        "tipo_observado": "String",
+        "tipo_diccionario": "categorical/string",
+        "pct_nulos": 0.111,
+        "n_unicos": 48,
+        "unicos": [
+          "10:00",
+          "10:15",
+          "10:30",
+          "10:45",
+          "11:00",
+          "11:15",
+          "11:30",
+          "11:45",
+          "12:00",
+          "12:15",
+          "12:30",
+          "12:45",
+          "1:00",
+          "1:15",
+          "1:30",
+          "1:45",
+          "2:00",
+          "2:15",
+          "2:30",
+          "2:45",
+          "3:00",
+          "3:15",
+          "3:30",
+          "3:45",
+          "4:00",
+          "4:15",
+          "4:30",
+          "4:45",
+          "5:00",
+          "5:15",
+          "5:30",
+          "5:45",
+          "6:00",
+          "6:15",
+          "6:30",
+          "6:45",
+          "7:00",
+          "7:15",
+          "7:30",
+          "7:45",
+          "8:00",
+          "8:15",
+          "8:30",
+          "8:45",
+          "9:00",
+          "9:15",
+          "9:30",
+          "9:45"
+        ]
+      },
+      "RelHeight": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          0.32427,
+          9.63869
+        ]
+      },
+      "RelSide": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          -5.80364,
+          6.90038
+        ]
+      },
+      "Extension": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.122,
+        "rango": [
+          -6.13445,
+          14.42789
+        ]
+      },
+      "VertBreak": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.111,
+        "rango": [
+          -173.79954,
+          24.50356
+        ]
+      },
+      "InducedVertBreak": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.111,
+        "rango": [
+          -54.04554,
+          58.23235
+        ]
+      },
+      "HorzBreak": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.111,
+        "rango": [
+          -39.15242,
+          55.07129
+        ]
+      },
+      "VertRelAngle": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          -11.037656,
+          15.170126
+        ]
+      },
+      "HorzRelAngle": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          -10.064105,
+          9.868779
+        ]
+      },
+      "VertApprAngle": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          -20.855124,
+          6.550693
+        ]
+      },
+      "HorzApprAngle": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          -9.859741,
+          9.135037
+        ]
+      },
+      "SpeedDrop": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          1.91193,
+          13.11401
+        ]
+      },
+      "ZoneTime": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          0.345038,
+          0.98613
+        ]
+      },
+      "x0": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          -5.99881,
+          5.27061
+        ]
+      },
+      "y0": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          50.0,
+          50.00032
+        ]
+      },
+      "z0": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          0.59745,
+          9.40621
+        ]
+      },
+      "vx0": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          -20.38372,
+          20.3987
+        ]
+      },
+      "vy0": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          -148.75835,
+          -62.90355
+        ]
+      },
+      "vz0": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          -22.33849,
+          23.71318
+        ]
+      },
+      "ax0": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          -42.65784,
+          37.37385
+        ]
+      },
+      "ay0": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          5.6211,
+          44.54081
+        ]
+      },
+      "az0": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          -64.1481,
+          26.3303
+        ]
+      },
+      "pfxx": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          -30.40891,
+          23.38241
+        ]
+      },
+      "pfxz": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          -27.68005,
+          31.00372
+        ]
+      },
+      "PitchTrajectoryXc0": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          46.07341,
+          66.63099
+        ]
+      },
+      "PitchTrajectoryXc1": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          -149.97729,
+          -63.41276
+        ]
+      },
+      "PitchTrajectoryXc2": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          2.81055,
+          22.27041
+        ]
+      },
+      "PitchTrajectoryYc0": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          0.32889,
+          9.63637
+        ]
+      },
+      "PitchTrajectoryYc1": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          -22.16049,
+          24.73159
+        ]
+      },
+      "PitchTrajectoryYc2": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          -32.07405,
+          13.16515
+        ]
+      },
+      "PitchTrajectoryZc0": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          -6.89296,
+          5.80349
+        ]
+      },
+      "PitchTrajectoryZc1": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          -21.3144,
+          21.24473
+        ]
+      },
+      "PitchTrajectoryZc2": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          -21.32892,
+          18.68693
+        ]
+      },
+      "PitchCall": {
+        "presente": true,
+        "tipo_observado": "Categorical",
+        "tipo_diccionario": "categorical",
+        "pct_nulos": 0.0,
+        "n_unicos": 10,
+        "unicos": [
+          "BallCalled",
+          "BallinDirt",
+          "FoulBall",
+          "FoulBallFieldable",
+          "FoulBallNotFieldable",
+          "HitByPitch",
+          "InPlay",
+          "StrikeCalled",
+          "StrikeSwinging",
+          "Undefined"
+        ],
+        "cumple_valores": false,
+        "valores_fuera": [
+          "FoulBallFieldable",
+          "FoulBallNotFieldable",
+          "Undefined"
+        ]
+      },
+      "KorBB": {
+        "presente": true,
+        "tipo_observado": "String",
+        "tipo_diccionario": "categorical",
+        "pct_nulos": 0.0,
+        "n_unicos": 3,
+        "unicos": [
+          "Strikeout",
+          "Undefined",
+          "Walk"
+        ],
+        "cumple_valores": true
+      },
+      "play_result": {
+        "presente": true,
+        "tipo_observado": "Categorical",
+        "tipo_diccionario": "categorical",
+        "pct_nulos": 0.0,
+        "n_unicos": 16,
+        "unicos": [
+          "BallCalled",
+          "BallinDirt",
+          "Double",
+          "Error",
+          "FieldersChoice",
+          "FoulBallFieldable",
+          "HitByPitch",
+          "HomeRun",
+          "NeutralPlay",
+          "Out",
+          "Sacrifice",
+          "Single",
+          "StrikeSwinging",
+          "Strikeout",
+          "Triple",
+          "Walk"
+        ]
+      },
+      "hit_type": {
+        "presente": true,
+        "tipo_observado": "String",
+        "tipo_diccionario": "categorical",
+        "pct_nulos": 71.018,
+        "n_unicos": 5,
+        "unicos": [
+          "Bunt",
+          "FlyBall",
+          "GroundBall",
+          "LineDrive",
+          "Popup"
+        ]
+      },
+      "ExitSpeed": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 71.209,
+        "rango": [
+          1.14025,
+          129.91777
+        ]
+      },
+      "Angle": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 71.21,
+        "rango": [
+          -89.573338,
+          89.542233
+        ]
+      },
+      "Direction": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 71.209,
+        "rango": [
+          -179.989098,
+          179.999931
+        ]
+      },
+      "Distance": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 77.675,
+        "rango": [
+          0.00656,
+          747.49668
+        ]
+      },
+      "is_swing": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "boolean/integer",
+        "pct_nulos": 0.0,
+        "n_unicos": 2,
+        "unicos": [
+          "0.0",
+          "1.0"
+        ]
+      },
+      "is_whiff": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "boolean/integer",
+        "pct_nulos": 0.0,
+        "n_unicos": 2,
+        "unicos": [
+          "0.0",
+          "1.0"
+        ]
+      },
+      "is_contact": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "boolean/integer",
+        "pct_nulos": 0.0,
+        "n_unicos": 2,
+        "unicos": [
+          "0.0",
+          "1.0"
+        ]
+      },
+      "is_called_strike": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "boolean/integer",
+        "pct_nulos": 0.0,
+        "n_unicos": 2,
+        "unicos": [
+          "0.0",
+          "1.0"
+        ]
+      },
+      "is_swinging_strike": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "boolean/integer",
+        "pct_nulos": 0.0,
+        "n_unicos": 2,
+        "unicos": [
+          "0.0",
+          "1.0"
+        ]
+      },
+      "is_ball_in_play": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "boolean/integer",
+        "pct_nulos": 0.0,
+        "n_unicos": 2,
+        "unicos": [
+          "0.0",
+          "1.0"
+        ]
+      },
+      "is_batted": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "boolean/integer",
+        "pct_nulos": 0.0,
+        "n_unicos": 2,
+        "unicos": [
+          "0.0",
+          "1.0"
+        ]
+      },
+      "is_hit": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "boolean/integer",
+        "pct_nulos": 0.0,
+        "n_unicos": 2,
+        "unicos": [
+          "0.0",
+          "1.0"
+        ]
+      },
+      "single": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "boolean/integer",
+        "pct_nulos": 0.0,
+        "n_unicos": 2,
+        "unicos": [
+          "0.0",
+          "1.0"
+        ]
+      },
+      "double": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "boolean/integer",
+        "pct_nulos": 0.0,
+        "n_unicos": 2,
+        "unicos": [
+          "0.0",
+          "1.0"
+        ]
+      },
+      "triple": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "boolean/integer",
+        "pct_nulos": 0.0,
+        "n_unicos": 2,
+        "unicos": [
+          "0.0",
+          "1.0"
+        ]
+      },
+      "home_run": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "boolean/integer",
+        "pct_nulos": 0.0,
+        "n_unicos": 2,
+        "unicos": [
+          "0.0",
+          "1.0"
+        ]
+      },
+      "base_on_balls": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "boolean/integer",
+        "pct_nulos": 0.0,
+        "n_unicos": 2,
+        "unicos": [
+          "0.0",
+          "1.0"
+        ]
+      },
+      "strikeout": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "boolean/integer",
+        "pct_nulos": 0.0,
+        "n_unicos": 2,
+        "unicos": [
+          "0.0",
+          "1.0"
+        ]
+      },
+      "is_hit_by_pitch": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "boolean/integer",
+        "pct_nulos": 0.0,
+        "n_unicos": 1,
+        "unicos": [
+          "0.0"
+        ]
+      },
+      "RunsScored": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "integer",
+        "pct_nulos": 0.0,
+        "rango": [
+          0.0,
+          4.0
+        ],
+        "cumple_rango": true,
+        "fuera_de_rango": 0
+      },
+      "OutsOnPlay": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "integer",
+        "pct_nulos": 0.0,
+        "rango": [
+          0.0,
+          3.0
+        ],
+        "cumple_rango": true,
+        "fuera_de_rango": 0
+      },
+      "Inning": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "integer",
+        "pct_nulos": 0.0,
+        "rango": [
+          1.0,
+          14.0
+        ]
+      },
+      "Top/Bottom": {
+        "presente": true,
+        "tipo_observado": "Categorical",
+        "tipo_diccionario": "categorical",
+        "pct_nulos": 0.0,
+        "n_unicos": 2,
+        "unicos": [
+          "Bottom",
+          "Top"
+        ],
+        "cumple_valores": true
+      },
+      "Outs": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "integer",
+        "pct_nulos": 0.0,
+        "rango": [
+          0.0,
+          3.0
+        ],
+        "cumple_rango": false,
+        "fuera_de_rango": 8
+      },
+      "Balls": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "integer",
+        "pct_nulos": 0.0,
+        "rango": [
+          0.0,
+          3.0
+        ],
+        "cumple_rango": true,
+        "fuera_de_rango": 0
+      },
+      "Strikes": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "integer",
+        "pct_nulos": 0.0,
+        "rango": [
+          0.0,
+          2.0
+        ],
+        "cumple_rango": true,
+        "fuera_de_rango": 0
+      },
+      "count": {
+        "presente": true,
+        "tipo_observado": "String",
+        "tipo_diccionario": "string/categorical",
+        "pct_nulos": 0.0,
+        "n_unicos": 12,
+        "unicos": [
+          "0-0",
+          "0-1",
+          "0-2",
+          "1-0",
+          "1-1",
+          "1-2",
+          "2-0",
+          "2-1",
+          "2-2",
+          "3-0",
+          "3-1",
+          "3-2"
+        ]
+      },
+      "PlateLocHeight": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          0.0,
+          13.97901
+        ]
+      },
+      "PlateLocSide": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "numeric",
+        "pct_nulos": 0.0,
+        "rango": [
+          -3.49627,
+          3.49871
+        ]
+      },
+      "in_strike_zone": {
+        "presente": true,
+        "tipo_observado": "Int32",
+        "tipo_diccionario": "boolean/integer",
+        "pct_nulos": 0.0,
+        "n_unicos": 2,
+        "unicos": [
+          "0",
+          "1"
+        ]
+      },
+      "outside_strike_zone": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "boolean/integer",
+        "pct_nulos": 0.0,
+        "n_unicos": 2,
+        "unicos": [
+          "0.0",
+          "1.0"
+        ]
+      },
+      "swung_outside_strike_zone": {
+        "presente": true,
+        "tipo_observado": "Float64",
+        "tipo_diccionario": "boolean/integer",
+        "pct_nulos": 0.0,
+        "n_unicos": 2,
+        "unicos": [
+          "0.0",
+          "1.0"
+        ]
+      }
+    },
+    "no_documentadas": [],
+    "faltantes": []
+  },
+  "conteos": {
+    "filas": 635002,
+    "pitchuid_unicos": 635002,
+    "juegos": 2127,
+    "lanzadores": 1135,
+    "bateadores": 865,
+    "year": [
+      2024,
+      2025,
+      2026
+    ],
+    "altitude_category": [
+      {
+        "altitude_category": "No Altitude",
+        "n": 293875
+      },
+      {
+        "altitude_category": "Extreme Altitude",
+        "n": 183267
+      },
+      {
+        "altitude_category": "Medium Altitude",
+        "n": 154840
+      },
+      {
+        "altitude_category": null,
+        "n": 3020
+      }
+    ]
+  },
+  "gates": {
+    "G00.1": {
+      "ok": true,
+      "detalle": "PitchUID único y mismos IDs en los formatos comparables"
+    },
+    "G00.2": {
+      "ok": true,
+      "detalle": "equivalencia (criterio 2-4) en todas las columnas comparadas"
+    },
+    "G00.3": {
+      "ok": true,
+      "detalle": "columnas del diccionario ausentes: ninguna"
+    }
+  },
+  "segundos": 34.1
+}

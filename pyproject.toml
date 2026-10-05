@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pitcheo"
+version = "0.1.0"
+description = "Stuff+ LMB calibrado por densidad del aire (Hackathon ISAC 2026, reto Diablos Rojos)"
+requires-python = ">=3.12"
+dependencies = [
+  "polars>=1.20",
+  "pyarrow>=16",
+  "pandas>=2.2",
+  "pyreadr>=0.5",
+  "numpy>=2.0",
+  "scipy>=1.13",
+  "scikit-learn>=1.5",
+  "lightgbm>=4.5",
+  "statsmodels>=0.14",
+  "matplotlib>=3.9",
+  "streamlit>=1.38",
+  "pyyaml>=6",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+pitcheo = "pitcheo.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pitcheo"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
