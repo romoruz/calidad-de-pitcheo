@@ -1,0 +1,725 @@
+{
+  "gates": {
+    "G0.1": {
+      "ok": false,
+      "detalle": "I1 100.0000 % · I2 100.0000 % · I6′ 99.7491 % (mín. 99.9%)"
+    },
+    "G0.2": {
+      "ok": false,
+      "detalle": "I3 0.0000 % (mín. 99%); razón 2·c2/a0 por eje: X=-1.8680, Y=-0.9992, Z=0.1749 — si falla: documentar la convención, no forzarla"
+    },
+    "G0.3": {
+      "ok": false,
+      "detalle": "I7 86.1167 % de 37,023 medias entradas (mín. 90%)"
+    },
+    "G0.4": {
+      "ok": true,
+      "detalle": "I9 100.0000 % de 2,117 juegos con cubeta"
+    },
+    "G0.5": {
+      "ok": true,
+      "detalle": "valores sin regla: 0"
+    },
+    "G0.6": {
+      "ok": true,
+      "detalle": "exclusiones 0.327 % de los lanzamientos (máx. 3%)"
+    }
+  },
+  "segundos": 3.0,
+  "salida": {
+    "ruta": "data/interim/pitches.parquet",
+    "filas_por_year": {
+      "2024": 243254,
+      "2025": 256144,
+      "2026": 135604
+    }
+  },
+  "filas_entrada": 635002,
+  "conversiones": {
+    "year": {
+      "de": "Int32",
+      "a": "Int64"
+    },
+    "EffectiveVelo": {
+      "de": "String",
+      "a": "Float64"
+    },
+    "is_swing": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "is_whiff": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "is_contact": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "is_called_strike": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "is_swinging_strike": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "is_ball_in_play": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "is_batted": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "is_hit": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "single": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "double": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "triple": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "home_run": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "base_on_balls": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "strikeout": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "is_hit_by_pitch": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "RunsScored": {
+      "de": "Float64",
+      "a": "Int64"
+    },
+    "OutsOnPlay": {
+      "de": "Float64",
+      "a": "Int64"
+    },
+    "Inning": {
+      "de": "Float64",
+      "a": "Int64"
+    },
+    "Outs": {
+      "de": "Float64",
+      "a": "Int64"
+    },
+    "Balls": {
+      "de": "Float64",
+      "a": "Int64"
+    },
+    "Strikes": {
+      "de": "Float64",
+      "a": "Int64"
+    },
+    "in_strike_zone": {
+      "de": "Int32",
+      "a": "Boolean"
+    },
+    "outside_strike_zone": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "swung_outside_strike_zone": {
+      "de": "Float64",
+      "a": "Boolean"
+    }
+  },
+  "sin_regla": [],
+  "ADR-002": {
+    "familias": {
+      "FF": 217618,
+      "SL": 139717,
+      "SI": 110899,
+      "CH": 86214,
+      "CU": 54024,
+      "FC": 26468,
+      "EXC": 62
+    },
+    "exc": 62,
+    "sweepers": 588
+  },
+  "ADR-004": {
+    "foul_unificados": 108797,
+    "undefined_excluidos": 841,
+    "pct_undefined": 0.1324
+  },
+  "ADR-003": {
+    "lanzador": {
+      "filas_mano_indefinida": 1421,
+      "pct_mano_indefinida": 0.2238,
+      "imputadas_por_moda": 0,
+      "imputadas_por_relside": 1421,
+      "descartadas": 0,
+      "pct_descartadas": 0.0,
+      "relside": {
+        "derecha_es_signo_positivo": true,
+        "concordancia": 0.991548,
+        "filas_base": 633581,
+        "umbral": 0.99,
+        "regla_activa": true
+      }
+    },
+    "bateador": {
+      "switch": 54,
+      "switch_resueltos_opuesta": 54,
+      "filas_indefinidas": 1216,
+      "pct_indefinidas": 0.1915,
+      "indefinidas_imputadas": 53,
+      "descartadas": 1163,
+      "pct_descartadas": 0.1831
+    }
+  },
+  "ADR-005": {
+    "filas_nulas_crudas": 3020,
+    "pct_nulas_crudas": 0.4756,
+    "imputadas_por_juego": 0,
+    "filas_sin_cubeta": 3020,
+    "pct_sin_cubeta": 0.4756,
+    "juegos_total": 2127,
+    "juegos_con_cubeta": 2117,
+    "juegos_sin_cubeta": 10,
+    "juegos_con_mas_de_una_cubeta": 0
+  },
+  "ADR-007": {
+    "eventos": {
+      "NO_TERMINAL": 470328,
+      "OUT_BIP": 70560,
+      "K": 30648,
+      "1B": 28579,
+      "BB": 15829,
+      "2B": 7800,
+      "HR": 4616,
+      "HBP": 2258,
+      "SAC": 1932,
+      "ROE": 1747,
+      "3B": 705
+    }
+  },
+  "ADR-006": {
+    "outs_invalidos": 8,
+    "pct": 0.0013,
+    "outs_nulos": 0
+  },
+  "exclusiones": {
+    "por_motivo": {
+      "ADR-002:EXC": {
+        "n": 62,
+        "pct": 0.0098
+      },
+      "ADR-003:lanzador": {
+        "n": 0,
+        "pct": 0.0
+      },
+      "ADR-003:bateador": {
+        "n": 1163,
+        "pct": 0.1831
+      },
+      "ADR-004:Undefined": {
+        "n": 841,
+        "pct": 0.1324
+      },
+      "ADR-006:Outs": {
+        "n": 8,
+        "pct": 0.0013
+      }
+    },
+    "total": 2074,
+    "pct_total": 0.3266
+  },
+  "tabla_evento": [
+    {
+      "play_result": "BallCalled",
+      "pitch_call_h": "BallCalled",
+      "KorBB": "Undefined",
+      "evento_terminal": null,
+      "n": 210743
+    },
+    {
+      "play_result": "NeutralPlay",
+      "pitch_call_h": "Foul",
+      "KorBB": "Undefined",
+      "evento_terminal": null,
+      "n": 106877
+    },
+    {
+      "play_result": "NeutralPlay",
+      "pitch_call_h": "StrikeCalled",
+      "KorBB": "Undefined",
+      "evento_terminal": null,
+      "n": 91484
+    },
+    {
+      "play_result": "Out",
+      "pitch_call_h": "InPlay",
+      "KorBB": "Undefined",
+      "evento_terminal": "OUT_BIP",
+      "n": 66920
+    },
+    {
+      "play_result": "StrikeSwinging",
+      "pitch_call_h": "StrikeSwinging",
+      "KorBB": "Undefined",
+      "evento_terminal": null,
+      "n": 47593
+    },
+    {
+      "play_result": "Single",
+      "pitch_call_h": "InPlay",
+      "KorBB": "Undefined",
+      "evento_terminal": "1B",
+      "n": 28579
+    },
+    {
+      "play_result": "Strikeout",
+      "pitch_call_h": "StrikeSwinging",
+      "KorBB": "Strikeout",
+      "evento_terminal": "K",
+      "n": 24320
+    },
+    {
+      "play_result": "Walk",
+      "pitch_call_h": "BallCalled",
+      "KorBB": "Walk",
+      "evento_terminal": "BB",
+      "n": 15317
+    },
+    {
+      "play_result": "BallinDirt",
+      "pitch_call_h": "BallinDirt",
+      "KorBB": "Undefined",
+      "evento_terminal": null,
+      "n": 10864
+    },
+    {
+      "play_result": "Double",
+      "pitch_call_h": "InPlay",
+      "KorBB": "Undefined",
+      "evento_terminal": "2B",
+      "n": 7800
+    },
+    {
+      "play_result": "Strikeout",
+      "pitch_call_h": "StrikeCalled",
+      "KorBB": "Strikeout",
+      "evento_terminal": "K",
+      "n": 6325
+    },
+    {
+      "play_result": "HomeRun",
+      "pitch_call_h": "InPlay",
+      "KorBB": "Undefined",
+      "evento_terminal": "HR",
+      "n": 4616
+    },
+    {
+      "play_result": "FieldersChoice",
+      "pitch_call_h": "InPlay",
+      "KorBB": "Undefined",
+      "evento_terminal": "OUT_BIP",
+      "n": 3640
+    },
+    {
+      "play_result": "HitByPitch",
+      "pitch_call_h": "HitByPitch",
+      "KorBB": "Undefined",
+      "evento_terminal": "HBP",
+      "n": 2258
+    },
+    {
+      "play_result": "Sacrifice",
+      "pitch_call_h": "InPlay",
+      "KorBB": "Undefined",
+      "evento_terminal": "SAC",
+      "n": 1932
+    },
+    {
+      "play_result": "FoulBallFieldable",
+      "pitch_call_h": "Foul",
+      "KorBB": "Undefined",
+      "evento_terminal": null,
+      "n": 1917
+    },
+    {
+      "play_result": "Error",
+      "pitch_call_h": "InPlay",
+      "KorBB": "Undefined",
+      "evento_terminal": "ROE",
+      "n": 1747
+    },
+    {
+      "play_result": "NeutralPlay",
+      "pitch_call_h": "Undefined",
+      "KorBB": "Undefined",
+      "evento_terminal": null,
+      "n": 841
+    },
+    {
+      "play_result": "Triple",
+      "pitch_call_h": "InPlay",
+      "KorBB": "Undefined",
+      "evento_terminal": "3B",
+      "n": 705
+    },
+    {
+      "play_result": "Walk",
+      "pitch_call_h": "BallinDirt",
+      "KorBB": "Walk",
+      "evento_terminal": "BB",
+      "n": 489
+    },
+    {
+      "play_result": "Walk",
+      "pitch_call_h": "HitByPitch",
+      "KorBB": "Walk",
+      "evento_terminal": "BB",
+      "n": 22
+    },
+    {
+      "play_result": "NeutralPlay",
+      "pitch_call_h": "InPlay",
+      "KorBB": "Undefined",
+      "evento_terminal": null,
+      "n": 7
+    },
+    {
+      "play_result": "Strikeout",
+      "pitch_call_h": "Foul",
+      "KorBB": "Strikeout",
+      "evento_terminal": "K",
+      "n": 3
+    },
+    {
+      "play_result": "Out",
+      "pitch_call_h": "BallCalled",
+      "KorBB": "Undefined",
+      "evento_terminal": null,
+      "n": 1
+    },
+    {
+      "play_result": "Out",
+      "pitch_call_h": "StrikeSwinging",
+      "KorBB": "Undefined",
+      "evento_terminal": null,
+      "n": 1
+    },
+    {
+      "play_result": "Walk",
+      "pitch_call_h": "StrikeCalled",
+      "KorBB": "Walk",
+      "evento_terminal": "BB",
+      "n": 1
+    }
+  ],
+  "incoherencias": [
+    {
+      "regla": "resultado de bola en juego sin pitch_call_h=InPlay",
+      "n": 2,
+      "pct": 0.0003
+    },
+    {
+      "regla": "pitch_call_h=InPlay con play_result sin regla de bola en juego (-> no terminal)",
+      "n": 7,
+      "pct": 0.0011
+    },
+    {
+      "regla": "play_result=Strikeout con KorBB distinto de Strikeout",
+      "n": 0,
+      "pct": 0.0
+    },
+    {
+      "regla": "play_result=Walk con KorBB distinto de Walk",
+      "n": 0,
+      "pct": 0.0
+    },
+    {
+      "regla": "play_result=HitByPitch con pitch_call_h distinto de HitByPitch",
+      "n": 0,
+      "pct": 0.0
+    },
+    {
+      "regla": "KorBB terminal con pitch_call_h=Undefined",
+      "n": 0,
+      "pct": 0.0
+    }
+  ],
+  "ids_nulos": {
+    "pitcher_anon_id": 3272,
+    "batter_anon_id": 2020,
+    "catcher_anon_id": 2325,
+    "game_anon_id": 0
+  },
+  "filas_salida": 635002,
+  "identidades": {
+    "I1": {
+      "cumplimiento": 1.0,
+      "n": 635002,
+      "tolerancia_mph": 0.05
+    },
+    "I2": {
+      "cumplimiento": 1.0,
+      "n": 635002
+    },
+    "I3": {
+      "cumplimiento": 0.0,
+      "n": 635002,
+      "por_eje": {
+        "X": {
+          "cumplimiento": 0.0,
+          "n": 635002,
+          "razon_mediana_2c2_sobre_a0": -1.8680406327426706
+        },
+        "Y": {
+          "cumplimiento": 0.0,
+          "n": 635002,
+          "razon_mediana_2c2_sobre_a0": -0.9992210020100252
+        },
+        "Z": {
+          "cumplimiento": 0.0033511705474943386,
+          "n": 635002,
+          "razon_mediana_2c2_sobre_a0": 0.17488019083085288
+        }
+      },
+      "tolerancia_relativa": 0.01,
+      "piso": 1.0
+    },
+    "I4": {
+      "cumplimiento": 1.0,
+      "n": 634300,
+      "pendiente_origen": 1.000002053488462,
+      "pendiente": 1.000002037455311,
+      "intercepto_in": 6.036817478482098e-07,
+      "correlacion": 0.9999999999554539,
+      "rango": [
+        0.95,
+        1.05
+      ]
+    },
+    "I5": {
+      "cumplimiento": 1.0,
+      "n": 634300,
+      "R": 0.9992873633347968,
+      "espejo": false,
+      "desfase_grados": 180.0010999155166,
+      "minimo": 0.99,
+      "tilt_no_parseables": 0
+    },
+    "I6p": {
+      "cumplimiento": 0.9974911733771077,
+      "n": 634161,
+      "suma": 0.999290401018038,
+      "contacto_equivale_a_foul_o_inplay": 0.9974911733771077,
+      "whiff_implica_strike_swinging": 1.0
+    },
+    "I7": {
+      "cumplimiento": 0.861167382437944,
+      "n": 37023,
+      "sin_ultima_media_entrada": 0.8658872077028886,
+      "n_sin_ultima": 34896,
+      "distribucion_outs": {
+        "0": 75,
+        "1": 201,
+        "2": 4763,
+        "3": 31883,
+        "4": 84,
+        "5": 8,
+        "6": 7,
+        "8": 1,
+        "9": 1
+      }
+    },
+    "I8": {
+      "cumplimiento": 0.875,
+      "n": 8,
+      "tipos": {
+        "Changeup": {
+          "evaluado": true,
+          "media_derecho": 11.5838864450345,
+          "media_zurdo": -11.761881602802529,
+          "signo_opuesto": true
+        },
+        "Curveball": {
+          "evaluado": true,
+          "media_derecho": -7.92919013729187,
+          "media_zurdo": 7.960424908595155,
+          "signo_opuesto": true
+        },
+        "Cutter": {
+          "evaluado": true,
+          "media_derecho": -0.3860143037816173,
+          "media_zurdo": -1.1254073653901524,
+          "signo_opuesto": false
+        },
+        "Four-Seam": {
+          "evaluado": true,
+          "media_derecho": 8.329586578556277,
+          "media_zurdo": -8.047659213093702,
+          "signo_opuesto": true
+        },
+        "Knuckleball": {
+          "evaluado": false
+        },
+        "OneSeamFastBall": {
+          "evaluado": false
+        },
+        "Other": {
+          "evaluado": false
+        },
+        "Sinker": {
+          "evaluado": true,
+          "media_derecho": 14.019297297792594,
+          "media_zurdo": -12.945971838197268,
+          "signo_opuesto": true
+        },
+        "Slider": {
+          "evaluado": true,
+          "media_derecho": -3.9220815387958465,
+          "media_zurdo": 4.857442486855424,
+          "signo_opuesto": true
+        },
+        "Splitter": {
+          "evaluado": true,
+          "media_derecho": 5.891630668376802,
+          "media_zurdo": -8.835250373443984,
+          "signo_opuesto": true
+        },
+        "Sweeper": {
+          "evaluado": true,
+          "media_derecho": -10.142330116822432,
+          "media_zurdo": 10.816884967741935,
+          "signo_opuesto": true
+        },
+        "TwoSeamFastBall": {
+          "evaluado": false
+        }
+      }
+    },
+    "I9": {
+      "cumplimiento": 1.0,
+      "n": 2117,
+      "juegos_incoherentes": 0
+    },
+    "I10": {
+      "cumplimiento": 0.9999874016144831,
+      "n": 635002,
+      "violaciones": 8,
+      "valores_invalidos": {
+        "3.0": 8
+      }
+    }
+  },
+  "alcance": {
+    "totales": {
+      "filas": 635002,
+      "juegos": 2127,
+      "lanzadores": 1134,
+      "bateadores": 864,
+      "years": [
+        2024,
+        2025,
+        2026
+      ]
+    },
+    "year_x_cubeta": [
+      {
+        "year": 2024,
+        "cubeta": "Extreme Altitude",
+        "juegos": 223,
+        "lanzadores": 464,
+        "lanzamientos": 66619
+      },
+      {
+        "year": 2024,
+        "cubeta": "Medium Altitude",
+        "juegos": 204,
+        "lanzadores": 434,
+        "lanzamientos": 60934
+      },
+      {
+        "year": 2024,
+        "cubeta": "No Altitude",
+        "juegos": 406,
+        "lanzadores": 483,
+        "lanzamientos": 115701
+      },
+      {
+        "year": 2025,
+        "cubeta": "(sin cubeta)",
+        "juegos": 3,
+        "lanzadores": 53,
+        "lanzamientos": 947
+      },
+      {
+        "year": 2025,
+        "cubeta": "Extreme Altitude",
+        "juegos": 237,
+        "lanzadores": 495,
+        "lanzamientos": 72720
+      },
+      {
+        "year": 2025,
+        "cubeta": "Medium Altitude",
+        "juegos": 213,
+        "lanzadores": 451,
+        "lanzamientos": 65981
+      },
+      {
+        "year": 2025,
+        "cubeta": "No Altitude",
+        "juegos": 386,
+        "lanzadores": 507,
+        "lanzamientos": 116496
+      },
+      {
+        "year": 2026,
+        "cubeta": "(sin cubeta)",
+        "juegos": 7,
+        "lanzadores": 53,
+        "lanzamientos": 2073
+      },
+      {
+        "year": 2026,
+        "cubeta": "Extreme Altitude",
+        "juegos": 144,
+        "lanzadores": 400,
+        "lanzamientos": 43928
+      },
+      {
+        "year": 2026,
+        "cubeta": "Medium Altitude",
+        "juegos": 92,
+        "lanzadores": 283,
+        "lanzamientos": 27925
+      },
+      {
+        "year": 2026,
+        "cubeta": "No Altitude",
+        "juegos": 212,
+        "lanzadores": 421,
+        "lanzamientos": 61678
+      }
+    ],
+    "lanzadores_por_n_cubetas": {
+      "1": 185,
+      "2": 200,
+      "3": 665
+    },
+    "lanzadores_con_30_lanzamientos_en_2_o_mas_cubetas": 765
+  }
+}
