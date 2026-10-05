@@ -1,7 +1,7 @@
 """CLI de pitcheo. Un subcomando por fase del ROADMAP; ningún módulo importa cli.
 
     pitcheo f00_0   inspección de los tres formatos crudos + perfil vs diccionario
-    pitcheo f00     ingesta y QA por identidades I1-I8         (pendiente, F0)
+    pitcheo f00     ingesta, limpieza (ADR-002 a 007) y QA por identidades I1-I10
     pitcheo f01 ... f11                                        (pendientes)
 
 Mismo patrón que `dtcoach` en Historia-de-un-entrenador.
@@ -21,7 +21,6 @@ from .config import Config
 
 # Fases todavía no implementadas: subcomando -> (etiqueta ROADMAP, pista).
 _PENDIENTES = {
-    "f00": "F0 — Ingesta y QA por identidades I1-I8",
     "f01": "F1 — Pre-registro de hipótesis",
     "f02": "F2 — Densidad del aire por juego desde la trayectoria",
     "f03": "F3 — Invariantes, eficiencia de giro y operador T",
@@ -84,7 +83,8 @@ def cmd_f00_0(a, cfg):
     gates = _evaluar_gates(comparacion, perfil)
     segundos = round(time.time() - t0, 1)
 
-    rep_dir = cfg.ruta("reportes")
+    # Con datos sintéticos NUNCA se escribe en reports/: ahí viven los reportes reales de la corrida local.
+    rep_dir = (Path(parquet).parent / "reports") if a.sintetico else cfg.ruta("reportes")
     rep_dir.mkdir(parents=True, exist_ok=True)
     _json({"tamanos": tam, "comparacion": comparacion, "perfil": perfil,
            "conteos": conteos, "gates": gates, "segundos": segundos},
@@ -92,7 +92,7 @@ def cmd_f00_0(a, cfg):
     md = _reporte_md(tam, comparacion, perfil, conteos, gates)
     (rep_dir / "FASE_00_0.md").write_text(md, encoding="utf-8")
 
-    log_dir = cfg.ruta("logs")
+    log_dir = (rep_dir / "logs") if a.sintetico else cfg.ruta("logs")
     log_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     (log_dir / f"f00_0_{stamp}.log").write_text(
@@ -191,6 +191,36 @@ def _reporte_md(tam, comparacion, perfil, conteos, gates) -> str:
     return "\n".join(L)
 
 
+def cmd_f00(a, cfg):
+    """F0: lee el parquet canónico, limpia (ADR-002 a 007), corre I1-I10 y evalúa G0.1-G0.6."""
+    from . import fase00
+
+    out = Path(a.out) if a.out else None
+    parquet = cfg.ruta("raw_parquet")
+    if a.sintetico:
+        from .sintetico import escribir_tres_formatos, generar
+        sc = cfg["sintetico"]
+        out = out or (cfg.ruta("interim") / "sintetico")
+        print(f"generando {a.sintetico} juegos sintéticos en {out}/raw ...", flush=True)
+        df = generar(a.sintetico, cfg["seed"], sc.get("cubetas"), sc["n_lanzadores"], sc["n_bateadores"],
+                     sc["n_receptores"], sc["n_lanzadores_nucleo"], tuple(sc["anios"]), sc["innings_por_juego"])
+        escribir_tres_formatos(df, out / "raw" / "stuff_model_df")
+        parquet = out / "raw" / "stuff_model_df.parquet"
+    if not parquet.exists():
+        sys.exit(f"No existe el parquet canónico {parquet}. En local debe estar en data/raw/ "
+                 "(fuera de git); aquí usa `pitcheo f00 --sintetico N`.")
+    res = fase00.correr(
+        cfg, parquet,
+        salida_pitches=(out / "pitches.parquet") if out else cfg.ruta("pitches"),
+        rep_dir=(out / "reports") if out else cfg.ruta("reportes"),
+        log_dir=(out / "reports" / "logs") if out else cfg.ruta("logs"),
+        fig_dir=(out / "figuras" / "f00") if out else cfg.ruta("figuras") / "f00")
+    print(f"\nreporte -> {res['reporte']}")
+    if not res["ok"]:
+        print("\n[COMPUERTA FALLIDA] ver el Bloque para el orquestador en el reporte.")
+        sys.exit(2)
+
+
 def cmd_pendiente(a, cfg):
     etq = _PENDIENTES[a.cmd]
     print(f"[pendiente] `{a.cmd}` corresponde a {etq}.")
@@ -209,6 +239,14 @@ def main(argv=None):
     s.add_argument("--sintetico", type=int, default=0, metavar="N",
                    help="genera N juegos sintéticos y los escribe en 3 formatos antes de inspeccionar")
     s.set_defaults(f=cmd_f00_0)
+
+    s = sp.add_parser("f00", help="ingesta, limpieza (ADR-002 a 007) y QA por identidades")
+    s.add_argument("--sintetico", type=int, default=0, metavar="N",
+                   help="genera N juegos sintéticos (3 formatos) y corre F0 sobre ellos")
+    s.add_argument("--out", default=None,
+                   help="redirige pitches, reportes, logs y figuras a este directorio (con --sintetico: "
+                        "data/interim/sintetico)")
+    s.set_defaults(f=cmd_f00)
 
     for nombre, etq in _PENDIENTES.items():
         sp.add_parser(nombre, help=etq).set_defaults(f=cmd_pendiente)

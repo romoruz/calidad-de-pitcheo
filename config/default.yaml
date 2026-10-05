@@ -8,11 +8,12 @@ rutas:
   raw_parquet: data/raw/stuff_model_df.parquet
   raw_pkl:     data/raw/stuff_model_df.pkl
   raw_rds:     data/raw/stuff_model_df.rds
-  # Datos tipados que produce F0 (fuera de git).
+  # Datos tipados y limpios que produce F0 (directorio particionado por year, fuera de git).
   interim:     data/interim
   pitches:     data/interim/pitches.parquet
-  # Diccionario de columnas (en git).
+  # Diccionario del organizador (NO se edita) y categorías reales (ROADMAP §1.1).
   diccionario: docs/diccionario.csv
+  categorias:  config/categorias.yaml
   # Reportes, logs y figuras (en git, salvo reports/privado/).
   reportes:    reports
   logs:        reports/logs
@@ -26,24 +27,46 @@ f00_0:
   # Perfilado: cuántos valores únicos listar antes de resumir como rango.
   max_unicos: 50
 
-# Generador sintético (src/pitcheo/sintetico.py). NO son los datos reales: solo
-# respetan el esquema del diccionario y cumplen las identidades I1-I8 de F0.
+# F0 — limpieza (ADR-002 a 007) y compuertas.
+f00:
+  # ADR-003: umbrales de imputación de mano.
+  umbral_moda: 0.95            # participación mínima de la moda del lanzador / bateador
+  umbral_relside: 0.99         # concordancia mínima signo(RelSide) <-> mano, aprendida de los datos
+  umbral_lado_ambos: 0.05      # bateador que muestra ambos lados >= 5 % cada uno -> opuesta al lanzador
+  # Compuertas (ROADMAP §4-F0).
+  gates:
+    g01_identidades_min: 0.999   # I1, I2, I6'
+    g02_i3_min: 0.99
+    g03_i7_min: 0.90
+    g04_i9: 1.0
+    g06_exclusiones_max: 0.03    # ADR-002 EXC + ADR-003 + ADR-004 + ADR-006
+
+# QA por identidades (ROADMAP §4-F0). Las tolerancias del ROADMAP no se tocan.
+qa:
+  i1_tol_mph: 0.05
+  i3_rtol: 0.01
+  i3_piso: 1.0                   # ft/s^2: piso del denominador relativo cuando |a0| ~ 0
+  i4_pendiente: [0.95, 1.05]
+  i5_min: 0.99
+  i8_min_filas: 50               # filas mínimas por mano y tipo para evaluar I8
+  i7_outs_por_media_entrada: 3
+
+# Generador sintético (src/pitcheo/sintetico.py). NO son los datos reales: reproduce
+# el ESQUEMA y los casos sucios de reports/FASE_00_0.md y cumple las identidades I1-I10.
 sintetico:
   n_juegos: 40
-  # Cubetas de altitud: metros sobre el nivel del mar por cubeta. La densidad
-  # barométrica se calcula con la fórmula de ROADMAP §2. La cubeta "alta" ~ Harp Helú
-  # concentra la mitad de los juegos (prueba de "solo Diablos", F0).
+  # Cubetas REALES. Las altitudes por cubeta son ilustrativas: Extreme mezcla varios parques
+  # (ROADMAP §1.1 ADR-005). La densidad barométrica sigue la fórmula de ROADMAP §2.
   cubetas:
-    baja:  {altitud_m: 3,    peso_juegos: 0.20}
-    media: {altitud_m: 532,  peso_juegos: 0.30}
-    alta:  {altitud_m: 2232, peso_juegos: 0.50}
-  # Pool de identidades anónimas.
+    No Altitude:      {altitudes_m: [3, 10, 40],         peso_juegos: 0.46}
+    Medium Altitude:  {altitudes_m: [532, 600],          peso_juegos: 0.25}
+    Extreme Altitude: {altitudes_m: [1921, 2192, 2232],  peso_juegos: 0.29}
   n_lanzadores: 60
   n_bateadores: 120
   n_receptores: 24
-  # Núcleo de lanzadores "Diablos" que aparece en casi todos los juegos (prueba F0).
+  # Núcleo de lanzadores que aparece en muchos juegos (identificación intra-lanzador).
   n_lanzadores_nucleo: 12
-  anios: [2023, 2024, 2025]
+  anios: [2024, 2025, 2026]
   innings_por_juego: 9
 
 # Constantes físicas (ROADMAP §2). Se usan ya en el sintético para que los datos

@@ -78,3 +78,13 @@ def test_perfil_sin_faltantes_ni_extra(tres):
     assert perfil["faltantes"] == []
     assert perfil["no_documentadas"] == []
     assert perfil["n_filas"] > 0
+
+
+def test_f00_0_sintetico_no_escribe_en_reports_del_repo(tmp_path):
+    """Regresión: un humo con --sintetico sobrescribió los reportes REALES de F0.0 (reports/)."""
+    from pitcheo import cli
+    antes = {p: p.stat().st_mtime_ns for p in CFG.ruta("reportes").glob("*") if p.is_file()}
+    cli.main(["f00_0", "--sintetico", "4", "--base", str(tmp_path / "raw" / "stuff_model_df")])
+    despues = {p: p.stat().st_mtime_ns for p in CFG.ruta("reportes").glob("*") if p.is_file()}
+    assert antes == despues
+    assert (tmp_path / "raw" / "reports" / "FASE_00_0.md").exists()

@@ -42,8 +42,30 @@ datos sintéticos:
 uv run pitcheo f00_0 --sintetico 40
 ```
 
+### Fase F0 — ingesta, limpieza y QA por identidades
+
+En local, con `data/raw/stuff_model_df.parquet` (fuente canónica):
+
+```bash
+bash scripts/fases/f00.sh
+# escribe data/interim/pitches.parquet (particionado por year, fuera de git),
+# reports/FASE_00.md (Bloque para el orquestador), reports/fase_00.json,
+# docs/figuras/f00/ y reports/logs/f00_<fecha>.log; sale con código != 0 si falla
+# una compuerta (G0.1-G0.6), después de escribir el reporte.
+```
+
+Implementa los ADR-002 a 007 (ROADMAP §1.1; texto completo en `docs/DECISIONES.md`) con las
+categorías reales de `config/categorias.yaml` (`docs/diccionario.csv` es del organizador y no se
+edita). Un valor sin regla nunca se asigna en silencio: va a la tabla "sin regla" del reporte, no se
+escribe `pitches.parquet` y la fase falla (G0.5). Revisa en el reporte la tabla
+`play_result × pitch_call_h × KorBB` con el evento terminal asignado.
+
+Sin datos reales: `uv run pitcheo f00 --sintetico 40 --out /tmp/f0` (todo, incluidos los reportes,
+va a `--out`; con `--sintetico` los comandos **nunca** escriben en `reports/`, donde viven los
+reportes reales).
+
 La CLI tiene un subcomando por fase (`pitcheo f00_0`, `f00`, `f01` … `f11`); las
-fases posteriores a F0.0 están pendientes.
+fases posteriores a F0 están pendientes.
 
 ## Confidencialidad
 
