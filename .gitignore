@@ -1,0 +1,25 @@
+# Datos bajo NDA: NUNCA se versionan (ROADMAP §6, CLAUDE.md "Confidencialidad")
+data/
+artefactos/
+reports/privado/
+*.parquet
+*.pkl
+*.rds
+explora.py
+salidas/
+credenciales.env
+
+# Entornos (el entorno vive fuera de la carpeta: UV_PROJECT_ENVIRONMENT=$HOME/.venvs/calidad-de-pitcheo)
+.venv*/
+.venvs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+
+# Figuras generadas localmente que no deban subirse quedan fuera de docs/figuras/
