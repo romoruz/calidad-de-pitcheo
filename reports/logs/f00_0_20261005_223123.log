@@ -1,0 +1,52 @@
+{
+  "conteos": {
+    "filas": 635002,
+    "pitchuid_unicos": 635002,
+    "juegos": 2127,
+    "lanzadores": 1135,
+    "bateadores": 865,
+    "year": [
+      2024,
+      2025,
+      2026
+    ],
+    "altitude_category": [
+      {
+        "altitude_category": "No Altitude",
+        "n": 293875
+      },
+      {
+        "altitude_category": "Extreme Altitude",
+        "n": 183267
+      },
+      {
+        "altitude_category": "Medium Altitude",
+        "n": 154840
+      },
+      {
+        "altitude_category": null,
+        "n": 3020
+      }
+    ]
+  },
+  "gates": {
+    "G00.1": {
+      "ok": true,
+      "detalle": "PitchUID único y mismos IDs en los formatos comparables"
+    },
+    "G00.2": {
+      "ok": true,
+      "detalle": "equivalencia (criterio 2-4) en todas las columnas comparadas"
+    },
+    "G00.3": {
+      "ok": true,
+      "detalle": "columnas del diccionario ausentes: ninguna"
+    }
+  },
+  "tamanos": {
+    "parquet": 211239244,
+    "pkl": 446774545,
+    "rds": 136825051
+  },
+  "segundos": 34.1
+}
