@@ -406,10 +406,10 @@
       "n": 3
     },
     {
-      "play_result": "Out",
-      "pitch_call_h": "BallCalled",
-      "KorBB": "Undefined",
-      "evento_terminal": null,
+      "play_result": "Walk",
+      "pitch_call_h": "StrikeCalled",
+      "KorBB": "Walk",
+      "evento_terminal": "BB",
       "n": 1
     },
     {
@@ -420,10 +420,10 @@
       "n": 1
     },
     {
-      "play_result": "Walk",
-      "pitch_call_h": "StrikeCalled",
-      "KorBB": "Walk",
-      "evento_terminal": "BB",
+      "play_result": "Out",
+      "pitch_call_h": "BallCalled",
+      "KorBB": "Undefined",
+      "evento_terminal": null,
       "n": 1
     }
   ],

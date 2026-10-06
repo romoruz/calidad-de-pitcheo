@@ -82,9 +82,9 @@ Revisa que ninguna combinación inesperada tenga un evento que no debería.
 | Walk | HitByPitch | Walk | BB | 22 |
 | NeutralPlay | InPlay | Undefined | — | 7 |
 | Strikeout | Foul | Strikeout | K | 3 |
-| Out | BallCalled | Undefined | — | 1 |
-| Out | StrikeSwinging | Undefined | — | 1 |
 | Walk | StrikeCalled | Walk | BB | 1 |
+| Out | StrikeSwinging | Undefined | — | 1 |
+| Out | BallCalled | Undefined | — | 1 |
 
 ### Incoherencias (se reportan, no fallan)
 
