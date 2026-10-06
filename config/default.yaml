@@ -69,7 +69,7 @@ qa:
   dobles_matanzas_por_juego_ref: 1.63   # MLB 2023 (132 por equipo en 162 juegos): solo referencia en la corroboración (d)
   # Los escribe `pitcheo f00 --aplicar` con lo que midió F0 (ADR-016); los leen F4, F6 y F8. Valores de partida
   # CONSERVADORES hasta la corrida real: mezcla (ω por cubeta con π ∈ {0,1}) y pérdida no ignorable (Imbens-Manski).
-  mecanismo_outs: mezcla          # U | L | mezcla  (G0.9)
+  mecanismo_outs: U          # U | L | mezcla  (G0.9)
   perdida_ignorable: false        # G0.8′: true si W(Γ=2) <= SE_ref
 
 # Generador sintético (src/pitcheo/sintetico.py). NO son los datos reales: reproduce
