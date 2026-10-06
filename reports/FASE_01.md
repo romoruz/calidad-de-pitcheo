@@ -52,6 +52,6 @@ No se escribió `docs/discrepancias/D01_F1.md`.
   no entra al procedimiento de descubrimientos; no se cambió ningún estadístico ni regla 🟢 de §4-F1
 - Mejora posible detectada: ninguna
 - Riesgo de empeorar: ninguno
-- Rama / PR / commit de resultados locales: fase01 / #PR_PENDIENTE / commit de pre-registro
-  COMMIT_PREREG · commit de merge (sello): COMMIT_MERGE
+- Rama / PR / commit de resultados locales: fase01 / #3 / commit de pre-registro
+  5ef4a87 · commit de merge (sello): b6a008c
 - Log: no aplica (sin corrida local)
