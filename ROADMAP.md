@@ -1,7 +1,7 @@
 # ROADMAP MAESTRO — Stuff+ LMB calibrado por densidad del aire
 
 **Proyecto:** Hackathon ISAC 2026 · Reto Diablos Rojos · `romoruz/calidad-de-pitcheo`
-**Versión:** 2.7 (2.6 + cierre de F0: mecanismo U confirmado, desfase lateral del cutter, F1 ajustada)
+**Versión:** 2.8 (2.7 + enmienda de H5 a prueba de equivalencia, antes de cualquier análisis de outcomes)
 **Ruta local (clon del repo + datos):** `/home/rodrigo/calidad-de-pitcheo`
 **Regla:** solo el orquestador cambia este archivo. Claude Code lo lee, no lo edita.
 
@@ -705,7 +705,7 @@ Las reglas y umbrales ya están fijados: impleméntalos tal cual, sin ajustarlos
 | H2 | El cambio gana Stuff+ **relativo** en altura | $\Delta^{rel}_{CH}-\Delta^{rel}_{SL\cup CU}$, familias de ADR-002 (CH incluye Splitter; SL incluye Sweeper) | unilateral $>0$, bootstrap por lanzador |
 | H3 | El rodado vale más en altura | DiD: $[\bar w_{FB,alta}-\bar w_{FB,baja}]-[\bar w_{GB,alta}-\bar w_{GB,baja}]$ condicionado en EV×LA | $>0$ con $p_{BH}<0.10$ |
 | H4 | El spin rate solo es insuficiente | $\Delta\text{LogLoss}$ (modelo con $\varepsilon,\omega_T$, movimiento) − (modelo con spin rate) | Diebold–Mariano por juego, $p_{BH}<0.10$ |
-| H5 | Invariancia de la respuesta del bateador | LRT del término de cubeta en nodos N1–N4 dados los rasgos realizados | **no** rechazo y pendiente de calibración ∈ [0.95, 1.05] |
+| H5 | Invariancia de la respuesta del bateador | En leave-high-bucket-out: pendiente $b$ de recalibración logística de N1–N4 en la cubeta alta; $\Delta$LogLoss por agregar el término de cubeta (LRT solo informativo) | **Equivalencia (TOST, enmienda v2.8):** IC90 de $b$ por bootstrap de juegos ⊂ [0.95, 1.05] **y** $\Delta$LogLoss ≤ 0.1 % de la log-loss base, en cada nodo. Fuera del BH |
 | H6 | Stuff+ es más fiable que el valor observado | split-half de Stuff+ vs. de rv observado, mismo lanzador×tipo | Stuff+ mayor, IC bootstrap sin 0 |
 
 H5 es la hipótesis que **justifica el operador contrafactual** (Prop. 7, F3). Si H5 falla, el contrafactual de F8 cambia de diseño: se escala al orquestador.
@@ -1119,7 +1119,7 @@ No adelantes veredictos de H1–H4: eso es F8.
 **Compuertas:**
 - **G7.1** Stuff+ y Pitching+ superan a B0 con DM $p<0.05$ en pitcher holdout **y** en season holdout.
 - **G7.2** Validez predictiva: Stuff+$_t$ correlaciona con rv$_{t+1}$ más que rv$_t$.
-- **G7.3** H5: no rechazo, pendiente de calibración ∈ [0.95, 1.05]. **Si falla:** el contrafactual de F8 cambia de diseño. Escalar al orquestador.
+- **G7.3** H5 por equivalencia (v2.8): IC90 de la pendiente ⊂ [0.95, 1.05] y $\Delta$LogLoss del término de cubeta ≤ 0.1 % en N1–N4. **Si falla:** el contrafactual de F8 cambia de diseño. Escalar al orquestador.
 - **G7.4** Pruebas de fuga limpias.
 
 ---

@@ -256,3 +256,19 @@ Estas cantidades describen el **mecanismo de los outs faltantes** (ADR-016, meca
 alcance del dataset. El valor de un batazo (H3), el Stuff+ (H2, H6), el movimiento Magnus (H1), el
 LogLoss (H4) y la respuesta del bateador (H5) **no** se han calculado ni mirado: F2–F6 aún no han
 corrido.
+
+
+---
+
+## Enmienda 1 (orquestador, ROADMAP v2.8) — H5 por equivalencia
+
+**Fecha:** 2026-10-06. Se hizo después del sello `b6a008c` y **antes de cualquier análisis de outcomes**: F2 solo usa física.
+
+**Motivo.** La regla original de H5 era no rechazar la prueba de razón de verosimilitudes (LRT) del término de cubeta. Con $n\approx6\times10^5$ lanzamientos esa prueba rechaza efectos irrelevantes, así que H5 fallaría por potencia y no por la física. Además, no rechazar no es evidencia de invariancia.
+
+**Regla nueva.** Prueba de equivalencia con dos pruebas unilaterales (TOST, Schuirmann 1987). Con modelos entrenados sin la cubeta alta y evaluados en ella, para cada nodo N1–N4:
+
+- **(i)** El IC90 de la pendiente de recalibración logística $b$, por bootstrap de juegos (1000 réplicas), está contenido en $[0.95, 1.05]$.
+- **(ii)** Agregar el término de cubeta mejora la log-loss fuera de muestra en $\le 0.1\,\%$ de la log-loss base. Es el mismo umbral de relevancia de la ablación de F6.3.
+
+🟢 si (i) y (ii) se cumplen en los cuatro nodos. La LRT se reporta solo como información. H5 sigue **fuera** del Benjamini–Hochberg (m = 5: H1, H2, H3, H4, H6).
