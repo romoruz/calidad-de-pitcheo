@@ -1,7 +1,7 @@
 # ROADMAP MAESTRO — Stuff+ LMB calibrado por densidad del aire
 
 **Proyecto:** Hackathon ISAC 2026 · Reto Diablos Rojos · `romoruz/calidad-de-pitcheo`
-**Versión:** 2.6 (2.5 + tercera corrida de F0: los outs faltantes son, sobre todo, outs que `OutsOnPlay` no cuenta; ADR-016, Props. 16–17)
+**Versión:** 2.7 (2.6 + cierre de F0: mecanismo U confirmado, desfase lateral del cutter, F1 ajustada)
 **Ruta local (clon del repo + datos):** `/home/rodrigo/calidad-de-pitcheo`
 **Regla:** solo el orquestador cambia este archivo. Claude Code lo lee, no lo edita.
 
@@ -319,6 +319,43 @@ Ignora el agrupamiento por juego, así que el SE sale **menor** y la regla es m�
 | ADR | Decisión |
 |---|---|
 | **016** | **Outs no contabilizados.** `OutsOnPlay` no es un registro fiel de outs: es constante en K y casi nunca vale 2. La media entrada con 2 outs registrados y sin turno incompleto se llama "out faltante" (no "turno final perdido"), y se descompone en U y L con la Prop. 16. G0.8 se sustituye por G0.8′ (Prop. 17). Se acepta D01: $\hat\pi_K$ por déficits no está identificado y se retira. *Transparencia de pre-registro:* los diagnósticos usan tráfico de corredores por cubeta, que no es estadístico de ninguna H1–H6. H3 condiciona en EV×LA y usa valor de batazo. |
+
+---
+
+### 1.5 Cierre de F0 (tag `fase00`) y decisiones para F1–F5
+
+**Veredicto.** G0.1–G0.9 ✅ con datos reales. La predicción de §1.4 se confirmó: $\hat\theta=0.074$ [0.059, 0.090] → **U dominante**. Corroboraciones:
+
+- Rodados entre los OUT_BIP con < 2 outs: 72.8 % en P contra 45.0 % en $T\setminus P$.
+- Hueco en la columna `Outs`: 36.0 % en P contra 0.4 %.
+- $|P|$ por juego: Poisson con $\varphi=1.00$.
+- Jugadas con `OutsOnPlay` ≥ 2: el 8 % de las dobles matanzas esperadas.
+- $\hat r_b$: 0.99 / 0.73 / 0.92 % (Extreme / Medium / No), sin gradiente.
+
+**Configuración vigente:** `qa.mecanismo_outs = U` y `qa.perdida_ignorable = false`, porque $W(\Gamma{=}2)/\mathrm{SE}_{ref}=3.55$. Quedan activas las consecuencias de §1.4 para U:
+
+- se retiran los pesos ω;
+- F4.1 usa el modelo C como principal;
+- F4.2 va sin pesos;
+- G6.5 queda retirada;
+- F8 reporta los contrastes de outcomes con Imbens–Manski.
+
+**🔎 Gradiente residual de P.** El OR de Extreme vs. No pasa de 1.51 a 1.43 al controlar por $N_h$. $N_h$ cuenta corredores, no oportunidades de doble matanza (corredor en 1B con < 2 outs), ni la tasa de rodados, ni la práctica de registro de cada operador. No afecta ningún outcome por lanzamiento, porque U no quita lanzamientos. *Consecuencia:* en F4.1 el peso de $u_h$ lleva desviación por cubeta, $w_u+\gamma_u^{(b)}$ con ridge, porque mezcla el valor real de la doble matanza con la práctica de registro.
+
+**🔎 I8, Cutter.** `HorzBreak` medio −0.39 in (D) y −1.13 in (Z): mismo signo. Hipótesis: un desfase lateral común $\delta_x$ (calibración o eje) que solo domina cuando el movimiento horizontal verdadero es ≈ 0. Se prueba en F5.1:
+
+- $\hat\delta_x=\operatorname{mediana}_k\tfrac12(\overline{HB}_{k,D}+\overline{HB}_{k,Z})$ sobre los tipos $k$, con IC95 por bootstrap de lanzadores.
+- Si el IC excluye 0 y $|\hat\delta_x|\ge0.5$ in, el espejo de zurdos es la reflexión $x\mapsto2\hat\delta_x-x$ (sobre $\delta_x$, no sobre 0) en las componentes horizontales afectadas.
+- Si no, el cutter es asimétrico por mano y se reporta como 🔎.
+
+**Transparencia del pre-registro.** Antes de F1 ya se vieron, por cubeta:
+
+- el alcance;
+- $f_b$ = % de medias entradas sin corredores (24.9 / 26.4 / 31.8 %);
+- la tasa de P;
+- los OR del logit.
+
+Ninguna es estadístico de H1–H6, y se declaran en `docs/HIPOTESIS.md`.
 
 ---
 
@@ -676,15 +713,33 @@ H5 es la hipótesis que **justifica el operador contrafactual** (Prop. 7, F3). S
 **Prompt (Opus):**
 
 ```text
-Lee ROADMAP.md §4-F1. Escribe docs/HIPOTESIS.md con H1–H6 tal cual están definidas,
-agregando para cada una: variables exactas del diccionario, unidad de análisis,
-agrupamiento de errores (por juego o por lanzador), tamaño de efecto mínimo relevante
-y qué resultado la refutaría. Escribe docs/DECISIONES.md con la plantilla de ADR
-(contexto, decisión, alternativas, consecuencias) y el ADR-001: "ρ por juego desde
-la trayectoria porque el dataset no trae estadio ni clima".
-No ejecutes ningún análisis de outcomes. Rama fase01, PR a main. Esta fase no tiene
-corrida local: tras escribir los archivos, revisa tú mismo su coherencia con ROADMAP,
-haz merge a main, crea el tag fase01 y reporta en reports/FASE_01.md el hash.
+Lee CLAUDE.md, ROADMAP.md (v2.7) §1.1–§1.5 y §4-F1, y reports/FASE_00.md.
+Rama fase01 desde main.
+1. docs/HIPOTESIS.md con H1–H6 tal cual están en §4-F1 (no cambies estadísticos
+   ni reglas 🟢). Para cada una: variables exactas (diccionario y columnas de F0:
+   familia, pitch_call_h, evento_terminal, es_*), unidad de análisis, filtros
+   (excluir_modelo / excluir_cadena), agrupamiento de errores (juego o lanzador)
+   y por qué, tamaño de efecto mínimo relevante con su justificación, qué
+   resultado la refuta, y la lista exacta de pruebas que entran al único
+   Benjamini–Hochberg (q = 0.10).
+2. Sección "Datos faltantes (ADR-016)": mecanismo U, perdida_ignorable = false.
+   Toda prueba que compare outcomes observados entre cubetas (H3 y la
+   corroboración de F8) se reporta también con intervalo de Imbens–Manski con
+   las cotas de la Prop. 17. Regla pre-registrada: 🟢 exige BH y además que el
+   intervalo IM excluya el nulo; si pasa BH pero el IM no lo excluye, 🟡.
+3. Sección "Lo visto antes del pre-registro": cifras por cubeta de
+   reports/FASE_00.md (alcance, f_b, tasa de P, OR del logit) y la declaración
+   de que ninguna es estadístico de H1–H6.
+4. docs/DECISIONES.md YA EXISTE con ADR-002 a 016: no lo reescribas. Agrega al
+   inicio la plantilla de ADR (contexto, decisión, alternativas, consecuencias)
+   y el ADR-001: "ρ por juego desde la trayectoria porque el dataset no trae
+   estadio ni clima".
+5. No ejecutes ningún análisis ni leas datos. Esta fase no tiene corrida local.
+6. Revisa la coherencia con ROADMAP y FASE_00.md. Si hay una contradicción,
+   escribe docs/discrepancias/D01_F1.md y DETENTE sin hacer merge.
+7. PR a main y merge. Escribe reports/FASE_01.md con el hash del commit de merge
+   (evidencia del pre-registro) y el Bloque para el orquestador. Crea el tag
+   fase01; si no puedes empujarlo, dame el comando exacto para Rodrigo.
 ```
 
 ---
@@ -902,6 +957,8 @@ Guarda data/interim/objetivo.parquet. reports/FASE_04.md con el Bloque.
 **Modelo:** Sonnet → Opus (auditoría) · **Duración:** 3–4 h · **En paralelo con F4.**
 
 **5.1 Espejo de zurdos.** Para `PitcherThrows=Left`: $x\to-x$ en `HorzBreak`, `RelSide`, `x0`, `vx0`, `ax0`, `HorzRelAngle`, `HorzApprAngle`, $c_\cdot^{(x)}$; `SpinAxis` → $360°-$`SpinAxis`. Duplica efectivamente la muestra para formas.
+
+**5.1b Desfase lateral (§1.5).** Antes del espejo: $\hat\delta_x$ con IC95 por bootstrap de lanzadores. Si el IC excluye 0 y $|\hat\delta_x|\ge0.5$ in, se refleja sobre $\delta_x$; si no, sobre 0. Reporta el resultado del Cutter.
 
 **5.2 Formas.** Mezcla gaussiana sobre $\psi$ estandarizado (velocidad, IVB, HB, seno y coseno del eje, $\varepsilon$, altura de liberación, extensión) por mano; número de componentes por BIC. Concordancia con `AutoPitchType` por índice de Rand ajustado. Se usa la **probabilidad posterior** de pertenencia, no la etiqueta dura.
 
