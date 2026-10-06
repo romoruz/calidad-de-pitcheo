@@ -187,3 +187,69 @@ post hoc. Las compuertas v2.4 están en ROADMAP §4-F0. (Los ADR-008 y 009 queda
 - **Alternativas.** Una sola bandera (saca del conteo filas válidas); imputar el ID.
 - **Consecuencias.** G0.6 exige `excluir_modelo` ≤ 3 % y `excluir_cadena` ≤ 0.5 %. Con la corrida real:
   exclusiones de modelo ≈ 0.85 % y de cadena ≈ 0.14 %.
+
+---
+
+# Decisiones sobre la segunda corrida de F0 (ROADMAP v2.5 §1.3)
+
+La segunda corrida confirmó que los polinomios sí son los 9P (la regla de v2.4 estaba mal), expuso un error de reloj en la
+verificación de la trayectoria y mostró que los outs que faltan son turnos finales perdidos, no robos. Siguen siendo reglas
+de **control de calidad de datos**, no hipótesis; F1 aún no ocurre.
+
+## ADR-010 (enmienda) — Los polinomios son los 9P en ejes permutados, con el origen de tiempo en la liberación
+
+- **Contexto.** La regresión conjunta de `c2` dio R² = 1.000000 con coeficientes exactamente 0.5: `c2^X = ½ay0`,
+  `c2^Y = ½az0`, `c2^Z = ½ax0`, una **permutación exacta** (X→y, Y→z, Z→x, signos +). v2.4 la rechazó porque comparó `c1`
+  con `v0` sin tiempo; si el polinomio empieza en `t_s`, entonces `c1 = v0 + a·t_s` y
+  `c0 = r0 + v0·t_s + ½·a·t_s²`, y `c1` ya no encaja con `v0` solo. El eje con más curvatura (el vertical) pierde más R²
+  (0.989), justo lo observado. ROADMAP §1.3.
+- **Decisión.** La permutación se elige con `c2`, que **no depende del origen de tiempo**. `t_s` por lanzamiento =
+  `(s·c1_X − v0)/a0` con el eje de los 9P al que corresponde el eje X del polinomio (con la permutación real,
+  `(c1_X − vy0)/ay0`), con su distribución (mediana, IQR, p1, p99). Se regresa `c1` de cada eje sobre `(v0 + a0·t_s)` del eje
+  permutado (R² y pendiente); el eje de referencia sale 1 por construcción y los otros dos son la prueba independiente. Los
+  polinomios se reclasifican de `no_canonicos` a **`equivalentes`** si `c2` (por pares y conjunta) tiene R² ≥ 0.9999 y `c1`
+  con `t_s` R² ≥ 0.999 en los tres ejes (G0.2). La trayectoria canónica sigue siendo la de los 9P.
+- **Alternativas.** Mantener los polinomios como no canónicos (descarta una verificación cruzada gratis y deja sin explicar
+  `t_s`); elegir la permutación con `c1` también (lo que falló en v2.4).
+- **Consecuencias.** El polinomio da `t_s` por lanzamiento, que es el desfase entre los dos relojes (ADR-014). Con el
+  intercepto del eje X, `t_s ≈ −0.026 s`: el polinomio arranca en la liberación (~54 ft).
+
+## ADR-014 — Marco temporal único de los 9P
+
+- **Contexto.** La verificación de v2.4 evaluó los 9P en `t = ZoneTime`, pero el reloj de los 9P arranca en `y0 = 50 ft` y
+  `ZoneTime` se mide desde la liberación. Con `t_s ≈ −0.026 s` el error esperado en `y` es `|vy|·|t_s| ≈ 3.5 ft`; se
+  observaron 4.27 ft de mediana. El error de 1.29 ft en `PlateLocSide` es demasiado grande para venir solo del tiempo
+  (`|vx|·|t_s| ≈ 0.15 ft`): apunta a un **signo invertido** entre `x` y `PlateLocSide`. ROADMAP §1.3.
+- **Decisión.** El tiempo al plato `t_p` **no** es `ZoneTime`: es la raíz positiva menor de `y(t_p) = y_p` con la
+  trayectoria 9P (`fisica.tiempo_al_plato`). El plano `y_p ∈ {17/12, 0}` ft y el signo `s ∈ {+1, −1}` en
+  `PlateLocSide = s·x(t_p)` se **eligen por mínimo error mediano** contra `PlateLoc*` (`fisica.calibrar_plano_y_signo`; el
+  reporte trae la tabla de las 4 combinaciones). Verificación cruzada: `ZoneTime ≈ t_p − t_s`. La Prop. 1 de F2 usa
+  `t_m = ½(t_s + t_p)`, el punto medio entre la liberación y el plato. Los valores vigentes viven en
+  `config/default.yaml` (`fisica.y_plato_ft`, `fisica.signo_plateloc_x`); `pitcheo f00 --aplicar` los reescribe con los
+  elegidos por los datos.
+- **Alternativas.** Suponer el plano y el signo (es justo lo que no se sabe); usar `ZoneTime` como reloj de los 9P (el error
+  de v2.4).
+- **Consecuencias.** G0.7: con el `y_p` y el signo elegidos, mediana de |error| ≤ 0.05 ft en `PlateLocSide` y
+  `PlateLocHeight`, p99 ≤ 0.3 ft, y mediana de |`ZoneTime` − (`t_p` − `t_s`)| ≤ 0.005 s. La Prop. 1 de F2 calculaba el punto
+  medio del vuelo con `ZoneTime` y lo habría puesto mal; ya está corregida.
+
+## ADR-015 — Los outs que faltan son turnos finales perdidos, y no al azar
+
+- **Contexto.** De las 4 763 medias entradas con 2 outs, solo el 9.5 % deja un turno incompleto (lo que dejaría un robo o un
+  pickoff con 2 outs). El 90 % restante pierde **el último turno completo**: todos sus lanzamientos faltan. Comparadas con
+  las de 3 outs tienen 0.525 ponches menos por media entrada y solo 0.388 outs en juego menos; si los turnos perdidos fueran
+  un final al azar, la mayoría serían outs en juego. Es falta **no aleatoria** (MNAR). ROADMAP §1.3.
+- **Decisión.** F0 clasifica cada media entrada **no final** de 2 outs en "turno incompleto" (hay un bateador con
+  lanzamientos pero sin evento terminal) o "turno final perdido" (todos sus turnos terminan), y reporta la **tasa de turno
+  final perdido por cubeta × año y por cubeta** (todos los años) con IC de Wilson, sobre las medias entradas no finales.
+  **G0.8:** máx − mín entre cubetas ≤ 3 pp; si falla, es una **discrepancia y no se sigue a F1**: la pérdida de datos se
+  confundiría con la altitud en cualquier comparación de resultados (F8). También reporta los déficits de eventos (K, OUT_BIP,
+  SAC; 3 outs menos 2 outs) y `π̂_K = d_K/(d_K + d_OUT_BIP + d_SAC)` con IC por bootstrap de medias entradas (semilla fija,
+  orden determinista). **No se implementan todavía los pesos de Horvitz–Thompson `ω`** (eso es F4), ni la Prop. 15.
+- **Alternativas.** Tratar las de 2 outs como robos (contradice el 90 %); descartarlas (sesga a la baja los ponches con 2
+  strikes y, con ellos, el valor de cada conteo).
+- **Consecuencias.** Se aceptan las cotas con `π ∈ {0, π̂_K, 1}` de la Prop. 15, que no necesitan ningún supuesto sobre `π`.
+  **Advertencia de identificación** (`docs/discrepancias/D01.md`): con datos sintéticos sembrados con `π_K` = 0.40, 0.71 y 0.93,
+  el estimador de déficits devuelve ≈ 0.34, 0.30 y 0.30. Mide los ponches entre los terceros outs **registrados** y es
+  insensible a la pérdida selectiva, así que `π̂_K` solo debe leerse como una estimación gruesa; el reporte añade los
+  **ponches por out registrado** (2 vs 3 outs) y la dispersión por juego para contrastar la hipótesis.

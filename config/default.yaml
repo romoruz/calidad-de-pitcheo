@@ -33,15 +33,19 @@ f00:
   umbral_moda: 0.95            # participación mínima de la moda del lanzador / bateador
   umbral_relside: 0.99         # concordancia mínima signo(RelSide) <-> mano, aprendida de los datos
   umbral_lado_ambos: 0.05      # bateador que muestra ambos lados >= 5 % cada uno -> opuesta al lanzador
-  # Compuertas v2.4 (ROADMAP §4-F0, ADR-010 a 013).
+  # Compuertas (ROADMAP §4-F0): v2.4 (ADR-010 a 013) enmendadas en v2.5 (ADR-010 enmienda, 014, 015).
   gates:
     g01_identidades_min: 0.999   # I1, I2
     g01_i6p_min: 0.995           # I6' (ADR-011: el árbol ya no depende de las banderas) + tabla de discrepancias
-    g02_r2_min: 0.99             # ADR-010: R^2 de la permutación con signo en los tres ejes
-    g03_b_min: 0.95              # ADR-012: criterio B sobre las medias entradas NO finales
+    g02_r2_c2_min: 0.9999        # ADR-010 enmienda: permutación confirmada con la regresión de c2 (conjunta y por pares)
+    g02_r2_c1_min: 0.999         # ... y c1 ajustado con t_s por lanzamiento, en los tres ejes
     g04_i9: 1.0
     g06_modelo_max: 0.03         # excluir_modelo
     g06_cadena_max: 0.005        # excluir_cadena
+    g07_mediana_ft: 0.05         # ADR-014: |error| mediano en PlateLocSide y PlateLocHeight
+    g07_p99_ft: 0.3              # ... y p99
+    g07_zonetime_s: 0.005        # ... y mediana de |ZoneTime - (t_p - t_s)|
+    g08_rango_pp: 3.0            # ADR-015: máx - mín de la tasa de turno final perdido entre cubetas (puntos %)
 
 # QA por identidades (ROADMAP §4-F0). Las tolerancias del ROADMAP no se tocan.
 qa:
@@ -53,6 +57,7 @@ qa:
   i8_min_filas: 50               # filas mínimas por mano y tipo para evaluar I8
   i7_outs_por_media_entrada: 3
   poli_piso: 1.0                 # ft/s^2 (ft/s en c1): piso del denominador al estimar t_s
+  bootstrap_n: 1000              # remuestreos de medias entradas para el IC de pi_K (ADR-015)
 
 # Generador sintético (src/pitcheo/sintetico.py). NO son los datos reales: reproduce
 # el ESQUEMA y los casos sucios de reports/FASE_00_0.md y cumple las identidades I1-I10.
@@ -77,6 +82,13 @@ sintetico:
 fisica:
   g_fts2: 32.174           # ft/s^2
   y_frente_plato_ft: 1.4167  # 17/12 ft: frente del plato
+  # ADR-014: plano y_p y signo s de PlateLocSide = s * x(t_p). F0 los ELIGE por mínimo error contra
+  # PlateLoc* entre las combinaciones candidatas; estos son los valores vigentes (los que usará F2 en
+  # adelante). `pitcheo f00 --aplicar` los reescribe con los elegidos por los datos.
+  y_plato_ft: 1.4166667
+  signo_plateloc_x: -1
+  planos_candidatos_ft: [1.4166667, 0.0]
+  signos_candidatos: [1, -1]
   # Fórmula barométrica ROADMAP §2: rho/rho0 = (1 - a*h)^b
   baro_a: 2.25577e-5
   baro_b: 5.25588

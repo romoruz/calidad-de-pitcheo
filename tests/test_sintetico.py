@@ -108,8 +108,7 @@ def test_caso_outs_3(df):
     assert (df["Outs"] == 3).sum() >= 3
 
 
-def test_caso_16_play_result():
-    grande = generar(n_juegos=30, semilla=2026)      # el triple es raro: hace falta una muestra mayor
+def test_caso_16_play_result(grande):
     assert _vals(grande, "play_result") == set(CAT["columnas"]["play_result"]["valores"])
     assert len(_vals(grande, "play_result")) == 16
 
@@ -146,13 +145,17 @@ def test_la_cubeta_extreme_mezcla_varios_parques():
 # --------------------------------------------------------------------------
 # Casos de la corrida real de F0 (ROADMAP §1.2, ADR-010 a 013)
 # --------------------------------------------------------------------------
-def test_caso_medias_entradas_de_2_outs_y_de_mas_de_3(df):
+@pytest.fixture(scope="module")
+def grande() -> pl.DataFrame:
+    return generar(n_juegos=30, semilla=2026)      # muestra mayor para lo raro (triples, 0-1 outs)
+
+
+def test_caso_medias_entradas_de_2_outs_y_de_mas_de_3(grande):
     from pitcheo.limpieza import tabla_medias_entradas
-    t = tabla_medias_entradas(df)
+    t = tabla_medias_entradas(grande)
     dos = (t["outs"] == 2).mean()
     assert 0.04 < dos < 0.25                                   # real: 12.9 %
     assert (t["outs"] >= 4).sum() >= 1 and (t["outs"] <= 1).sum() >= 1
-    assert t.filter(pl.col("outs") == 2)["tiene_estado_2"].all()   # el tercer out sin lanzamiento deja estado 2
 
 
 def test_caso_media_entrada_de_2_outs_termina_en_turno_incompleto(df):
@@ -179,16 +182,68 @@ def test_caso_banderas_is_no_son_particion_de_pitchcall(df):
     assert not ((df["is_whiff"] == 1) & (df["PitchCall"].cast(pl.Utf8) != "StrikeSwinging")).any()   # whiff => SS
 
 
+def test_convencion_de_polinomio_real_por_defecto():
+    """ADR-010 enmendado: los polinomios son los 9P con ejes permutados X→y, Y→z, Z→x y origen en la liberación."""
+    d, v = generar(3, 1, sucio=False, con_verdad=True)
+    assert d["PitchTrajectoryXc2"].to_list() == pytest.approx((d["ay0"] / 2).to_list())
+    assert d["PitchTrajectoryYc2"].to_list() == pytest.approx((d["az0"] / 2).to_list())
+    assert d["PitchTrajectoryZc2"].to_list() == pytest.approx((d["ax0"] / 2).to_list())
+    ts = v["t_s"]
+    for p, (v0, a0) in {"X": ("vy0", "ay0"), "Y": ("vz0", "az0"), "Z": ("vx0", "ax0")}.items():     # c1 = v0 + a·t_s
+        assert d[f"PitchTrajectory{p}c1"].to_list() == pytest.approx((d[v0] + d[a0] * ts).to_list())
+    for p, (r0, v0, a0) in {"X": ("y0", "vy0", "ay0"), "Y": ("z0", "vz0", "az0"), "Z": ("x0", "vx0", "ax0")}.items():
+        assert d[f"PitchTrajectory{p}c0"].to_list() == pytest.approx(
+            (d[r0] + d[v0] * ts + 0.5 * d[a0] * ts**2).to_list())
+    assert (ts < 0).all() and 0.01 < float(-ts.mean()) < 0.06           # real: ≈ -0.026 s (liberación ~54 ft)
+
+
 def test_convencion_de_polinomio_configurable():
     conv = {"X": ("z", -1), "Y": ("y", -1), "Z": ("x", 1)}
     d = generar(3, 1, sucio=False, convencion_polinomio=conv)
     assert d["PitchTrajectoryXc2"].to_list() == pytest.approx((-d["az0"] / 2).to_list())
     assert d["PitchTrajectoryYc1"].to_list() == pytest.approx((-d["vy0"]).to_list())
     assert d["PitchTrajectoryZc0"].to_list() == pytest.approx(d["x0"].to_list())
-    ident = generar(3, 1, sucio=False)                           # por defecto: los polinomios SON los 9P
-    assert ident["PitchTrajectoryXc2"].to_list() == pytest.approx((ident["ax0"] / 2).to_list())
     ruido = generar(3, 1, sucio=False, convencion_polinomio="ruido")
-    assert ruido["PitchTrajectoryXc2"].to_list() != pytest.approx((ruido["ax0"] / 2).to_list())
+    assert ruido["PitchTrajectoryXc2"].to_list() != pytest.approx((ruido["ay0"] / 2).to_list())
+
+
+def test_caso_9p_arrancan_en_50_pies_y_zonetime_en_la_liberacion():
+    d, v = generar(3, 1, sucio=False, con_verdad=True)
+    assert d["y0"].to_list() == pytest.approx([50.0] * d.height)
+    assert d["ZoneTime"].min() > 0.3 and (v["t_s"] < 0).all()
+    # El tiempo de vuelo desde la liberación es mayor que el tiempo desde y = 50 ft (el reloj de los 9P).
+    from pitcheo.fisica import nueve_p, tiempo_al_plato
+    assert (d["ZoneTime"].to_numpy() - tiempo_al_plato(*nueve_p(d))).min() > 0.01
+
+
+def test_caso_plateloc_side_con_signo_sembrado_y_plano_configurable():
+    d, v = generar(3, 2, sucio=False, con_verdad=True)
+    assert v["signo_x"] == -1 and v["y_plano_ft"] == pytest.approx(17 / 12)
+    d1, _v1 = generar(3, 2, sucio=False, con_verdad=True, signo_plateloc_x=1)
+    assert (d1["PlateLocSide"] + d["PlateLocSide"]).abs().max() < 1e-9          # mismo vuelo, signo opuesto
+    d0, v0 = generar(3, 2, sucio=False, con_verdad=True, y_plano_ft=0.0)       # otro plano: otro vuelo y otras filas
+    assert d0["ZoneTime"].mean() > d["ZoneTime"].mean() and v0["y_plano_ft"] == 0.0
+
+
+def test_caso_turnos_finales_perdidos_sobre_todo_ponches():
+    """ADR-015: la mayoría de las medias entradas de 2 outs perdió su último turno COMPLETO, y más a menudo si era K."""
+    from pitcheo.io import leer_diccionario
+    from pitcheo.limpieza import limpiar
+    from pitcheo.qa import diagnostico_dos_outs
+    d0, v = generar(20, 5, con_verdad=True)
+    d, _ = limpiar(d0, leer_diccionario(CFG.ruta("diccionario")), CAT, CFG["f00"])
+    cla = diagnostico_dos_outs(d)["clasificacion_no_finales"]
+    assert cla["pct_turno_final_perdido"] > 70 and cla["pct_turno_incompleto"] > 3
+    assert v["perdidos"]["K"] > 0 and v["perdidos"]["OUT_BIP"] > 0
+    assert v["pi_k"] > 0.5                                       # sembrado MNAR: los ponches se pierden más
+
+
+def test_caso_turnos_finales_perdidos_estratificados_y_por_cubeta():
+    _d0, v = generar(12, 4, con_verdad=True, p_perdida_tipo={"K": 0.0, "OUT_BIP": 0.0})
+    assert v["perdidos"] == {"K": 0, "OUT_BIP": 0}              # sin pérdida sembrada no se pierde nada
+    _d1, v1 = generar(12, 4, con_verdad=True, p_perdida_cubeta={"No Altitude": 0.0, "Medium Altitude": 0.0,
+                                                               "Extreme Altitude": 0.0})
+    assert v1["perdidos"] == {"K": 0, "OUT_BIP": 0}
 
 
 def test_cada_defecto_sembrado_cabe_en_las_compuertas(df):

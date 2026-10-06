@@ -51,15 +51,22 @@ bash scripts/fases/f00.sh
 # escribe data/interim/pitches.parquet (particionado por year, fuera de git),
 # reports/FASE_00.md (Bloque para el orquestador), reports/fase_00.json,
 # docs/figuras/f00/ y reports/logs/f00_<fecha>.log; sale con código != 0 si falla
-# una compuerta (G0.1-G0.6), después de escribir el reporte.
+# una compuerta (G0.1-G0.8), después de escribir el reporte.
 ```
 
-Implementa los ADR-002 a 007 (ROADMAP §1.1) y, desde v2.4, los ADR-010 a 013 (§1.2: ejes de los polinomios,
-banderas desde `pitch_call_h`, medias entradas A/B y `excluir_cadena`); texto completo en `docs/DECISIONES.md`. Usa las
+Implementa los ADR-002 a 007 (ROADMAP §1.1), los ADR-010 a 013 (§1.2: banderas desde `pitch_call_h`, medias
+entradas A/B, `excluir_cadena`) y, desde v2.5 (§1.3), la enmienda de ADR-010 (los polinomios son los 9P permutados,
+con `t_s` por lanzamiento), ADR-014 (marco temporal único: `t_p`, plano y signo de `PlateLocSide`) y ADR-015 (turnos
+finales perdidos por cubeta, G0.8); texto completo en `docs/DECISIONES.md`. Usa las
 categorías reales de `config/categorias.yaml` (`docs/diccionario.csv` es del organizador y no se
 edita). Un valor sin regla nunca se asigna en silencio: va a la tabla "sin regla" del reporte, no se
 escribe `pitches.parquet` y la fase falla (G0.5). Revisa en el reporte la tabla
 `play_result × pitch_call_h × KorBB` con el evento terminal asignado.
+
+El reporte dice qué `y_p` y signo de `PlateLocSide` eligieron los datos (ADR-014) y si la config vigente
+(`fisica.y_plato_ft`, `fisica.signo_plateloc_x`) coincide; `uv run pitcheo f00 --aplicar` los reescribe en
+`config/default.yaml`. **G0.8 decide si se puede pasar a F1**: si la pérdida de turnos finales difiere entre cubetas de
+altitud, la fase falla.
 
 Sin datos reales: `uv run pitcheo f00 --sintetico 40 --out /tmp/f0` (todo, incluidos los reportes,
 va a `--out`; con `--sintetico` los comandos **nunca** escriben en `reports/`, donde viven los

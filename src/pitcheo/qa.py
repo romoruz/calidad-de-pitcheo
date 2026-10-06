@@ -17,7 +17,7 @@ import math
 import numpy as np
 import polars as pl
 
-from .fisica import verificar_9p
+from .fisica import Y_FRENTE_PLATO_FT, calibrar_plano_y_signo
 from .limpieza import tabla_medias_entradas
 
 G_FTS2 = 32.174
@@ -241,15 +241,50 @@ def _regresion_conjunta(y: np.ndarray, x: np.ndarray) -> dict:
     return out
 
 
-def matriz_polinomios(df: pl.DataFrame, r2_min: float = 0.99, piso: float = 1.0) -> dict:
-    """ADR-010: ¿los polinomios PitchTrajectory{X,Y,Z}c{0,1,2} son los 9P con otros ejes?
+def _regresion_simple(x: np.ndarray, y: np.ndarray) -> dict:
+    xc, yc = x - x.mean(), y - y.mean()
+    sxx, syy, sxy = float(xc @ xc), float(yc @ yc), float(xc @ yc)
+    if sxx <= 0 or syy <= 0:
+        return {"r2": None, "pendiente": None, "intercepto": None}
+    b = sxy / sxx
+    return {"r2": sxy**2 / (sxx * syy), "pendiente": b, "intercepto": float(y.mean() - b * x.mean())}
 
-    Matriz 3×3 de regresiones (pendiente, intercepto, R²) de c2 sobre ax0/ay0/az0 y de c1 sobre
-    vx0/vy0/vz0 (y, informativo, c0 sobre x0/y0/z0). Busca la permutación con signo de mayor
-    R² mínimo (sobre c2 y c1). Si existe con R² ≥ `r2_min` en los tres ejes se documenta y los
-    polinomios sirven de verificación cruzada; si no, se declaran no canónicos. Si c1 encaja con un
-    desfase, estima t_s = (s·c1 − v0)/a0. Ninguna fase depende de los polinomios: la trayectoria
-    canónica es la de los 9P.
+
+def _estad_ts(ts: np.ndarray) -> dict:
+    ts = ts[np.isfinite(ts)]
+    if ts.size == 0:
+        return {"n": 0}
+    q = np.quantile(ts, [0.01, 0.25, 0.5, 0.75, 0.99])
+    return {"n": int(ts.size), "mediana_s": float(q[2]), "rango_intercuartil_s": float(q[3] - q[1]),
+            "p1_s": float(q[0]), "p99_s": float(q[4])}
+
+
+def t_s_por_lanzamiento(df: pl.DataFrame, pol: dict, piso: float = 1.0) -> np.ndarray:
+    """t_s por lanzamiento = (s·c1_X − v0)/a0 con el eje 9P al que corresponde el eje X del polinomio.
+
+    Alineado con las filas de `df` (NaN si hay nulos o |a0| <= piso). Solo tiene sentido si ADR-010 los
+    reconoce como equivalentes (`pol["existe"]`).
+    """
+    q = pol["permutacion"]["X"]
+    v, a = {"x": "vx0", "y": "vy0", "z": "vz0"}[q], {"x": "ax0", "y": "ay0", "z": "az0"}[q]
+    c1, v0, a0 = (df[c].cast(pl.Float64).to_numpy() for c in ("PitchTrajectoryXc1", v, a))
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.where(np.abs(a0) > piso, (pol["signos"]["X"] * c1 - v0) / a0, np.nan)
+
+
+def matriz_polinomios(df: pl.DataFrame, r2_c2_min: float = 0.9999, r2_c1_min: float = 0.999,
+                      piso: float = 1.0) -> dict:
+    """ADR-010 (enmienda v2.5): ¿los polinomios PitchTrajectory{X,Y,Z}c{0,1,2} son los 9P en otros ejes?
+
+    1. Matriz 3×3 de regresiones (pendiente, intercepto, R²) de c2 sobre a0, c1 sobre v0 y c0 sobre r0,
+       más la regresión conjunta (cada eje del polinomio sobre los tres de los 9P).
+    2. La permutación con signo se elige con **c2**, que NO depende del origen de tiempo (v2.4 la elegía
+       con c1 también y, al ignorar el desfase, la rechazó).
+    3. Si el polinomio arranca en t_s (la liberación), c1 = v0 + a·t_s y c0 = r0 + v0·t_s + ½·a·t_s²:
+       t_s por lanzamiento = (s·c1_X − v0)/a0 y se regresa c1 de cada eje sobre (v0 + a0·t_s).
+       El eje de referencia (X) sale 1 por construcción; Y y Z son la prueba independiente.
+    Decisión: `equivalentes` si c2 (por pares y conjunta) ≥ `r2_c2_min` y c1 con t_s ≥ `r2_c1_min` en los
+    tres ejes; si no, `no_canonicos`. La trayectoria canónica sigue siendo la de los 9P.
     """
     cols = [f"PitchTrajectory{p}c{k}" for k in (0, 1, 2) for p in _POLI] + \
            [c for fam in _NUEVE.values() for c in fam]
@@ -259,6 +294,7 @@ def matriz_polinomios(df: pl.DataFrame, r2_min: float = 0.99, piso: float = 1.0)
     arr = {fam: (d.select([f"PitchTrajectory{p}{fam}" for p in _POLI]).to_numpy().astype(float),
                  d.select(list(_NUEVE[fam])).to_numpy().astype(float)) for fam in _NUEVE}
     matriz = {fam: _corr_cruzada(*arr[fam]) for fam in _NUEVE}
+    rotacion = {fam: _regresion_conjunta(*arr[fam]) for fam in _NUEVE}
 
     def r2(fam: str, p: str, q: str) -> float:
         v = matriz[fam][p][q]["r2"]
@@ -266,35 +302,43 @@ def matriz_polinomios(df: pl.DataFrame, r2_min: float = 0.99, piso: float = 1.0)
 
     mejor, mejor_score = None, -2.0
     for perm in itertools.permutations(range(3)):
-        score = min(min(r2("c2", p, _EJES[perm[i]]), r2("c1", p, _EJES[perm[i]])) for i, p in enumerate(_POLI))
+        score = min(r2("c2", p, _EJES[perm[i]]) for i, p in enumerate(_POLI))
         if score > mejor_score:
             mejor, mejor_score = perm, score
     asignacion = {p: _EJES[mejor[i]] for i, p in enumerate(_POLI)}
     signos = {p: (1 if (matriz["c2"][p][asignacion[p]]["pendiente"] or 0) >= 0 else -1) for p in _POLI}
     escala = {p: (None if matriz["c2"][p][asignacion[p]]["pendiente"] is None
                   else abs(2 * matriz["c2"][p][asignacion[p]]["pendiente"])) for p in _POLI}
-    existe = mejor_score >= r2_min
 
-    t_s = None
-    if existe:
-        t_s = {}
-        for p in _POLI:
-            q = asignacion[p]
-            j = _EJES.index(q)
-            c1, v0, a0 = arr["c1"][0][:, _POLI.index(p)], arr["c1"][1][:, j], arr["c2"][1][:, j]
-            ok = np.abs(a0) > piso
-            if ok.any():
-                ts = (signos[p] * c1[ok] - v0[ok]) / a0[ok]
-                t_s[p] = {"mediana_s": float(np.median(ts)),
-                          "rango_intercuartil_s": float(np.subtract(*np.quantile(ts, [0.75, 0.25]))),
-                          "intercepto_c1_sobre_v0": matriz["c1"][p][q]["intercepto"]}
+    # t_s por lanzamiento desde el eje de referencia X, y c1 ajustado con t_s en cada eje.
+    q0 = _EJES.index(asignacion["X"])
+    v0_ref, a0_ref = arr["c1"][1][:, q0], arr["c2"][1][:, q0]
+    ok = np.abs(a0_ref) > piso
+    ts = np.full(d.height, np.nan)
+    ts[ok] = (signos["X"] * arr["c1"][0][ok, 0] - v0_ref[ok]) / a0_ref[ok]
+    c1_con_ts, c1_sin_ts, ts_por_eje = {}, {}, {}
+    for i, p in enumerate(_POLI):
+        j = _EJES.index(asignacion[p])
+        v0, a0 = arr["c1"][1][:, j], arr["c2"][1][:, j]
+        c1_p = arr["c1"][0][:, i]
+        reg = _regresion_simple((v0 + a0 * np.nan_to_num(ts))[ok], c1_p[ok])
+        c1_con_ts[p] = {**reg, "referencia": p == "X"}
+        c1_sin_ts[p] = matriz["c1"][p][asignacion[p]]
+        oki = np.abs(a0) > piso
+        ts_por_eje[p] = float(np.median((signos[p] * c1_p[oki] - v0[oki]) / a0[oki])) if oki.any() else None
+
+    r2_pares = float(mejor_score)
+    r2_conj = min((rotacion["c2"][p]["r2"] or -1.0) for p in _POLI)
+    r2_c1 = min((c1_con_ts[p]["r2"] or -1.0) for p in _POLI)
+    existe = r2_pares >= r2_c2_min and r2_conj >= r2_c2_min and r2_c1 >= r2_c1_min
     return {
-        "n": int(d.height), "matriz": matriz, "r2_min_exigido": r2_min,
+        "n": int(d.height), "matriz": matriz, "rotacion": rotacion,
+        "r2_exigidos": {"c2": r2_c2_min, "c1_con_ts": r2_c1_min},
         "permutacion": asignacion, "signos": signos, "escala_2c2_sobre_a0": escala,
-        "r2_min_permutacion": mejor_score, "existe": bool(existe),
-        "decision": "mapeo_con_signo" if existe else "no_canonicos",
-        "t_s": t_s,
-        "rotacion": {fam: _regresion_conjunta(*arr[fam]) for fam in _NUEVE},
+        "r2_c2_pares_min": r2_pares, "r2_c2_conjunta_min": float(r2_conj), "r2_c1_con_ts_min": float(r2_c1),
+        "c1_con_ts": c1_con_ts, "c1_sin_ts": c1_sin_ts,
+        "t_s": _estad_ts(ts), "t_s_mediana_por_eje": ts_por_eje,
+        "existe": bool(existe), "decision": "equivalentes" if existe else "no_canonicos",
     }
 
 
@@ -333,63 +377,199 @@ def _cuantiles(s: pl.Series) -> dict:
             "p10": float(s.quantile(0.1)), "p90": float(s.quantile(0.9))} if s.len() else {}
 
 
-def diagnostico_dos_outs(df: pl.DataFrame, inconsistente: int = 4) -> dict:
-    """¿Por qué el ~13 % de las medias entradas suma 2 outs en vez de 3? (agregado, ADR-012).
+_EV_OUT = ["K", "OUT_BIP", "SAC"]
 
-    Contrasta tres candidatos: (1) tercer out en un evento sin lanzamiento propio (robo, pickoff):
-    la media entrada deja un turno **incompleto** (lanzamientos de un bateador sin evento terminal);
-    (2) lanzamientos faltantes de Trackman; (3) `OutsOnPlay` que no cuenta los outs de los ponches
-    u otros eventos. No hay orden de lanzamientos: el "último turno reconstruible" es el del
-    bateador de la media entrada cuyos lanzamientos no traen evento terminal.
+
+def _medias_con_eventos(df: pl.DataFrame, inconsistente: int = 4) -> pl.DataFrame:
+    """Una fila por media entrada con outs, eventos terminales, turnos incompletos, año y cubeta.
+
+    No hay orden de lanzamientos: un turno es **incompleto** si hay lanzamientos de un bateador (con id) de
+    la media entrada y ninguno trae evento terminal. La cubeta es la imputada por juego (ADR-005).
     """
     t = tabla_medias_entradas(df, inconsistente)
     claves = ["game_anon_id", "Inning", "mitad"]
     d = df.filter(pl.col("game_anon_id").is_not_null() & pl.col("Inning").is_not_null()).with_columns(
         pl.col("Top/Bottom").cast(pl.Utf8).alias("mitad"),
         pl.col("evento_terminal").cast(pl.Utf8).alias("_ev"))
-    ev_out = ["K", "OUT_BIP", "SAC"]
     por_media = d.group_by(*claves).agg(
         pl.col("_ev").is_not_null().sum().alias("n_terminales"),
-        pl.col("_ev").is_in(ev_out).sum().alias("outs_por_eventos"),
-        *[(pl.col("_ev") == e).sum().alias(f"ev_{e}") for e in ev_out + ["BB", "HBP", "ROE"]])
-    # turnos incompletos: bateadores (con id) de la media entrada sin ningún evento terminal.
+        pl.col("_ev").is_in(_EV_OUT).sum().alias("outs_por_eventos"),
+        *[(pl.col("_ev") == e).sum().alias(f"ev_{e}") for e in _EV_OUT + ["BB", "HBP", "ROE"]])
     turnos = (d.filter(pl.col("batter_anon_id").is_not_null())
               .group_by(*claves, "batter_anon_id").agg(pl.col("_ev").is_not_null().any().alias("termina")))
     inc = turnos.group_by(*claves).agg((~pl.col("termina")).sum().alias("turnos_incompletos"))
-    t = (t.join(por_media, on=claves, how="left").join(inc, on=claves, how="left")
-         .with_columns(pl.col("turnos_incompletos").fill_null(0)))
+    cubeta = pl.col("altitude_category_h").cast(pl.Utf8) if "altitude_category_h" in df.columns else \
+        pl.col("altitude_category").cast(pl.Utf8)
+    juego = (df.filter(pl.col("game_anon_id").is_not_null())
+             .group_by("game_anon_id")
+             .agg(pl.col("year").first().alias("year"),
+                  cubeta.drop_nulls().first().fill_null("(sin cubeta)").alias("cubeta")))
+    # Orden determinista: el group_by multihilo no garantiza el orden y el bootstrap con semilla fija remuestrea por
+    # posición; sin esto el mismo `seed` daba intervalos distintos entre corridas.
+    return (t.join(por_media, on=claves, how="left").join(inc, on=claves, how="left")
+            .join(juego, on="game_anon_id", how="left")
+            .with_columns(pl.col("turnos_incompletos").fill_null(0), pl.col("cubeta").fill_null("(sin cubeta)"))
+            .sort("game_anon_id", "Inning", "mitad"))
+
+
+def diagnostico_dos_outs(df: pl.DataFrame, inconsistente: int = 4) -> dict:
+    """¿Por qué el ~13 % de las medias entradas suma 2 outs en vez de 3? (agregado, ADR-012 y 015).
+
+    Contrasta tres candidatos: (1) tercer out en un evento sin lanzamiento propio (robo, pickoff): la media
+    entrada deja un turno **incompleto**; (2) **turno final perdido**: faltan todos los lanzamientos del
+    último turno; (3) `OutsOnPlay` que no cuenta ciertos outs. ADR-015: cada media entrada **no final** de
+    2 outs se clasifica en "turno incompleto" (hay un bateador con lanzamientos pero sin evento terminal) o
+    "turno final perdido" (todos sus turnos terminan).
+    """
+    t = _medias_con_eventos(df, inconsistente)
 
     def grupo(outs: int) -> dict:
         g = t.filter(pl.col("outs") == outs)
         if g.height == 0:
             return {"n": 0}
-        dif = (g["outs_por_eventos"] - g["outs"])
+        dif = g["outs_por_eventos"] - g["outs"]
         return {
             "n": int(g.height),
             "pct_ultima_del_juego": round(100.0 * float(g["final"].mean()), 3),
             "lanzamientos_por_media_entrada": _cuantiles(g["n_lanz"].cast(pl.Float64)),
             "pct_con_turno_incompleto": round(100.0 * float((g["turnos_incompletos"] > 0).mean()), 3),
             "turnos_incompletos_media": float(g["turnos_incompletos"].mean()),
+            # Si lo único que falta es el último turno y los outs son intercambiables, los ponches por out
+            # REGISTRADO serían iguales en las de 2 y en las de 3 outs. Si no, son poblaciones distintas.
+            "ponches_por_out_registrado": float(g["ev_K"].sum() / g["outs"].sum()) if g["outs"].sum() else None,
             "eventos_terminales_por_media_entrada": {
-                e: round(float(g[f"ev_{e}"].mean()), 3) for e in ev_out + ["BB", "HBP", "ROE"]},
+                e: round(float(g[f"ev_{e}"].mean()), 3) for e in _EV_OUT + ["BB", "HBP", "ROE"]},
             "outs_implicados_por_eventos_menos_OutsOnPlay": {
                 str(int(k)): int(v) for k, v in dif.value_counts().sort(dif.name).iter_rows()},
         }
 
+    dos_nf = t.filter((pl.col("outs") == 2) & ~pl.col("final"))
+    n_inc = int((dos_nf["turnos_incompletos"] > 0).sum())
+    n_perd = int(dos_nf.height - n_inc)
     tabla = (df.group_by(pl.col("evento_terminal").cast(pl.Utf8).fill_null("NO_TERMINAL").alias("evento"),
                          pl.col("OutsOnPlay").cast(pl.Int64).alias("OutsOnPlay"))
              .agg(pl.len().alias("n")).sort("evento", "OutsOnPlay"))
     return {
         "dos_outs": grupo(2), "tres_outs": grupo(3),
+        "clasificacion_no_finales": {
+            "n": int(dos_nf.height), "turno_incompleto": n_inc, "turno_final_perdido": n_perd,
+            "pct_turno_incompleto": round(100.0 * n_inc / dos_nf.height, 3) if dos_nf.height else None,
+            "pct_turno_final_perdido": round(100.0 * n_perd / dos_nf.height, 3) if dos_nf.height else None},
         "outs_on_play_x_evento_terminal": tabla.to_dicts(),
     }
 
 
-def correr_extras(df: pl.DataFrame, cat: dict, qa: dict) -> dict:
-    """Diagnósticos de v2.4: ADR-010 (polinomios), ADR-011 (is_*), ADR-012 (2 outs) y verificación de los 9P."""
+def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """Intervalo de Wilson para una proporción k/n."""
+    if n == 0:
+        return (float("nan"), float("nan"))
+    p = k / n
+    den = 1 + z**2 / n
+    centro = (p + z**2 / (2 * n)) / den
+    mitad = z * math.sqrt(p * (1 - p) / n + z**2 / (4 * n**2)) / den
+    return (max(0.0, centro - mitad), min(1.0, centro + mitad))
+
+
+def _tasas(g: pl.DataFrame, claves: list[str]) -> list[dict]:
+    """Tasas por grupo sobre medias entradas no finales: 2 outs, turno incompleto y turno final perdido."""
+    out = []
+    for fila in (g.group_by(*claves).agg(
+            pl.len().alias("n"), (pl.col("outs") == 2).sum().alias("dos_outs"),
+            ((pl.col("outs") == 2) & (pl.col("turnos_incompletos") > 0)).sum().alias("incompleto"),
+            ((pl.col("outs") == 2) & (pl.col("turnos_incompletos") == 0)).sum().alias("perdido"))
+            .sort(*claves).iter_rows(named=True)):
+        lo, hi = wilson(fila["perdido"], fila["n"])
+        out.append({**{c: fila[c] for c in claves}, "medias_entradas": fila["n"], "dos_outs": fila["dos_outs"],
+                    "turno_incompleto": fila["incompleto"], "turno_final_perdido": fila["perdido"],
+                    "tasa_dos_outs": fila["dos_outs"] / fila["n"],
+                    "tasa_turno_final_perdido": fila["perdido"] / fila["n"],
+                    "ic95_wilson": [lo, hi]})
+    return out
+
+
+def analisis_perdida_turnos(df: pl.DataFrame, inconsistente: int = 4, n_boot: int = 1000, seed: int = 2026) -> dict:
+    """ADR-015: la pérdida de turnos finales por cubeta × año y por cubeta, y π̂_K (agregado).
+
+    - Tasa de "turno final perdido" por (cubeta, año) y por cubeta, sobre las medias entradas **no finales**,
+      con IC de Wilson. G0.8: el rango entre cubetas (puntos %) debe ser pequeño; si no, la pérdida se
+      confunde con la altitud en cualquier comparación de outcomes.
+    - Déficits de eventos K, OUT_BIP y SAC por media entrada (3 outs menos 2 outs) y
+      π̂_K = d_K / (d_K + d_OUT_BIP + d_SAC) con IC por bootstrap de medias entradas. No se implementan los
+      pesos de Horvitz–Thompson (eso es F4).
+    """
+    t = _medias_con_eventos(df, inconsistente)
+    nf = t.filter(~pl.col("final"))
+    con_cubeta = nf.filter(pl.col("cubeta") != "(sin cubeta)")
+    por_cubeta = _tasas(nf, ["cubeta"])
+    comparadas = [r for r in por_cubeta if r["cubeta"] != "(sin cubeta)"]
+    tasas = [100 * r["tasa_turno_final_perdido"] for r in comparadas]
+    rango = float(max(tasas) - min(tasas)) if len(tasas) >= 2 else None
+
+    rng = np.random.default_rng(seed)
+
+    def deficits(tres: pl.DataFrame, dos: pl.DataFrame) -> dict:
+        a3 = {e: tres[f"ev_{e}"].to_numpy().astype(float) for e in _EV_OUT}
+        a2 = {e: dos[f"ev_{e}"].to_numpy().astype(float) for e in _EV_OUT}
+        if len(a3["K"]) == 0 or len(a2["K"]) == 0:
+            return {"n_dos": int(dos.height), "n_tres": int(tres.height)}
+
+        def calc(i3, i2):
+            d = {e: a3[e][i3].mean() - a2[e][i2].mean() for e in _EV_OUT}
+            tot = sum(d.values())
+            return d, (d["K"] / tot if tot > 0 else float("nan"))
+
+        d0, pi0 = calc(slice(None), slice(None))
+        bs = []
+        for _ in range(n_boot):
+            d, pi = calc(rng.integers(0, len(a3["K"]), len(a3["K"])), rng.integers(0, len(a2["K"]), len(a2["K"])))
+            bs.append([d["K"], d["OUT_BIP"], d["SAC"], pi])
+        bs = np.array(bs)
+        ic = lambda col: [float(np.nanquantile(bs[:, col], 0.025)), float(np.nanquantile(bs[:, col], 0.975))]
+        return {"n_dos": int(dos.height), "n_tres": int(tres.height),
+                "deficit": {e: {"estimado": float(d0[e]), "ic95": ic(i)} for i, e in enumerate(_EV_OUT)},
+                "pi_k": {"estimado": float(pi0), "ic95": ic(3)}}
+
+    # ¿La pérdida se reparte al azar entre juegos o se concentra en algunos? (huecos de datos por juego).
+    # Dispersión de Pearson φ de los turnos finales perdidos por juego: ≈ 1 si es binomial, >> 1 si se agrupa.
+    pj = (nf.filter(pl.col("game_anon_id").is_not_null()).group_by("game_anon_id")
+          .agg(pl.len().alias("n"), ((pl.col("outs") == 2) & (pl.col("turnos_incompletos") == 0)).sum().alias("m")))
+    n_g, m_g = pj["n"].to_numpy().astype(float), pj["m"].to_numpy().astype(float)
+    p_bar = m_g.sum() / n_g.sum() if n_g.sum() else float("nan")
+    phi = (float(np.sum((m_g - n_g * p_bar) ** 2 / (n_g * p_bar * (1 - p_bar))) / (len(n_g) - 1))
+           if len(n_g) > 1 and 0 < p_bar < 1 else None)
+    por_juego = {"juegos": len(n_g), "tasa_media": float(p_bar),
+                 "dispersion_pearson_phi": phi,
+                 "pct_juegos_con_al_menos_una": float(100 * np.mean(m_g > 0)) if len(m_g) else None,
+                 "pct_juegos_con_mas_de_dos": float(100 * np.mean(m_g > 2)) if len(m_g) else None}
+    tres = t.filter(pl.col("outs") == 3)
+    dos_todas = t.filter(pl.col("outs") == 2)
+    dos_perdidas = dos_todas.filter(pl.col("turnos_incompletos") == 0)
     return {
-        "polinomios": matriz_polinomios(df, 0.99, qa["poli_piso"]),
+        "por_cubeta": por_cubeta, "por_cubeta_anio": _tasas(nf, ["cubeta", "year"]),
+        "cubetas_comparadas": [r["cubeta"] for r in comparadas], "rango_pp": rango,
+        "medias_entradas_no_finales": int(nf.height), "con_cubeta": int(con_cubeta.height),
+        "turnos_finales_perdidos_M": int(((nf["outs"] == 2) & (nf["turnos_incompletos"] == 0)).sum()),
+        "por_juego": por_juego,
+        "todas_las_de_2_outs": deficits(tres, dos_todas),         # misma población que ROADMAP §1.3
+        "solo_turno_final_perdido": deficits(tres, dos_perdidas),
+    }
+
+
+def correr_extras(df: pl.DataFrame, cat: dict, qa: dict, gates: dict | None = None, fis: dict | None = None,
+                  seed: int = 2026) -> dict:
+    """Diagnósticos de v2.4/v2.5: ADR-010 (polinomios), ADR-011 (is_*), ADR-012/015 (2 outs y pérdida de
+    turnos) y ADR-014 (marco temporal de los 9P)."""
+    gates, fis = gates or {}, fis or {}
+    pol = matriz_polinomios(df, gates.get("g02_r2_c2_min", 0.9999), gates.get("g02_r2_c1_min", 0.999),
+                            qa["poli_piso"])
+    ts = t_s_por_lanzamiento(df, pol, qa["poli_piso"]) if pol.get("existe") else None
+    inc = cat.get("outs_inconsistente", 4)
+    return {
+        "polinomios": pol,
+        "calibracion_9p": calibrar_plano_y_signo(
+            df, ts, tuple(fis.get("planos_candidatos_ft", (Y_FRENTE_PLATO_FT, 0.0))),
+            tuple(fis.get("signos_candidatos", (1, -1)))),
         "discrepancias_flags": discrepancias_flags(df, cat),
-        "dos_outs": diagnostico_dos_outs(df, cat.get("outs_inconsistente", 4)),
-        "verificacion_9p": verificar_9p(df),
+        "dos_outs": diagnostico_dos_outs(df, inc),
+        "perdida_turnos": analisis_perdida_turnos(df, inc, int(qa.get("bootstrap_n", 1000)), seed),
     }

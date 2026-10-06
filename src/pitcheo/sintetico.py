@@ -41,6 +41,10 @@ from .io import ColSpec, leer_diccionario
 FTPS_A_MPH = 3600.0 / 5280.0
 G_FTS2 = 32.174
 Y_FRENTE_PLATO = 17.0 / 12.0  # ft
+Y_NUEVE_P = 50.0              # el reloj de los 9P arranca en y0 = 50 ft (ADR-014); ZoneTime y los polinomios, en la liberación
+# Verdad sembrada del generador (ADR-014): PlateLocSide = SIGNO * x(t_p). Es una hipótesis del orquestador (ROADMAP §1.3:
+# "apunta a un signo invertido"); el código NO la supone: la elige por mínimo error y las pruebas verifican que la recupere.
+SIGNO_PLATELOC_X = -1
 
 # Cubetas REALES (ROADMAP §1.1, ADR-005). Extreme mezcla varios parques sobre ~1 800 m.
 CUBETAS_DEFECTO = {
@@ -73,7 +77,12 @@ _P_HIT_TYPES = [0.42, 0.24, 0.22, 0.08, 0.04]
 
 # ADR-012: el ~13 % de las medias entradas reales termina con 2 outs (y ~0.75 % con 0-1). Se reproduce con un
 # tercer out SIN lanzamiento propio (robo, pickoff): la media entrada se corta en mitad de un turno.
-_P_CORTE = {2: 0.075, 1: 0.003, 0: 0.002}
+_P_CORTE = {2: 0.015, 1: 0.004, 0: 0.004}
+
+# ADR-015: ~90 % de las medias entradas de 2 outs reales pierde el ÚLTIMO TURNO COMPLETO (todos sus lanzamientos
+# faltan), y los ponches que cierran la entrada se pierden más que los outs en juego (MNAR). Probabilidad de que se
+# pierda el turno que da el tercer out, según cómo termine.
+_P_PERDIDA = {"K": 0.21, "OUT_BIP": 0.055}
 
 # Resultados de bola en juego y su mezcla aproximada (nunca el 100 % de los datos reales).
 _P_FOUL = {"FoulBall": 0.70, "FoulBallFieldable": 0.10, "FoulBallNotFieldable": 0.20}
@@ -93,11 +102,13 @@ def _densidad_rel(altitud_m: float) -> float:
     return (1.0 - 2.25577e-5 * altitud_m) ** 5.25588
 
 
-def _fisica_lanzamiento(rng, tipo: str, mano: str, dens_scale: float) -> dict:
+def _fisica_lanzamiento(rng, tipo: str, mano: str, dens_scale: float, y_plano: float = Y_FRENTE_PLATO,
+                        signo_x: int = SIGNO_PLATELOC_X) -> dict:
     """Un lanzamiento coherente: release, aceleración constante y derivadas.
 
-    Devuelve todas las columnas de trayectoria, velocidad, movimiento y ángulos
-    que cumplen I1, I3, I4 por construcción, y I8 vía el signo de mano.
+    Devuelve todas las columnas de trayectoria, velocidad, movimiento y ángulos que cumplen I1 e I4 por
+    construcción, y I8 vía el signo de mano. I3 (2·c2 = a0 en el mismo eje) FALLA a propósito, como en el dato
+    real: los polinomios están permutados respecto de los 9P (ADR-010 enmendado).
     """
     p = _TIPOS[tipo]
     s = 1.0 if mano == "Right" else -1.0  # espejo del eje x para zurdos (I8)
@@ -127,7 +138,7 @@ def _fisica_lanzamiento(rng, tipo: str, mano: str, dens_scale: float) -> dict:
     ax0 = magnus_x
 
     # Tiempo a cruzar el frente del plato: 0.5*ay0*t^2 + vy0*t + (y0 - yf) = 0.
-    a_, b_, c_ = 0.5 * ay0, vy0, (y0 - Y_FRENTE_PLATO)
+    a_, b_, c_ = 0.5 * ay0, vy0, (y0 - y_plano)
     disc = max(b_**2 - 4 * a_ * c_, 0.0)
     t1 = (-b_ - np.sqrt(disc)) / (2 * a_)
     t2 = (-b_ + np.sqrt(disc)) / (2 * a_)
@@ -144,16 +155,23 @@ def _fisica_lanzamiento(rng, tipo: str, mano: str, dens_scale: float) -> dict:
     vert_break = az0 * f_in                 # incluye gravedad
     induced_vb = (az0 + G_FTS2) * f_in       # solo Magnus -> I4: VB - IVB = -1/2 g tf^2 *12
 
-    # Ubicación en el plato.
-    plate_side = x0 + vx0 * tf + 0.5 * ax0 * tf**2
+    # Ubicación en el plato (PlateLocSide con el signo sembrado; ADR-014).
+    plate_side = signo_x * (x0 + vx0 * tf + 0.5 * ax0 * tf**2)
     plate_height = z0 + vz0 * tf + 0.5 * az0 * tf**2
+
+    # Marco de los 9P (ADR-014): su reloj arranca en y = 50 ft, DESPUÉS de la liberación. t_s < 0 es el
+    # instante de la liberación en ese reloj; ZoneTime (tf) y los polinomios cuentan desde la liberación.
+    disc50 = max(vy0**2 - 4 * (0.5 * ay0) * (y0 - Y_NUEVE_P), 0.0)
+    t50 = min(t for t in ((-vy0 - np.sqrt(disc50)) / ay0, (-vy0 + np.sqrt(disc50)) / ay0) if t > 0)
+    r50 = (x0 + vx0 * t50 + 0.5 * ax0 * t50**2, Y_NUEVE_P, z0 + vz0 * t50 + 0.5 * az0 * t50**2)
+    v50 = (vx0 + ax0 * t50, vy0 + ay0 * t50, vz0 + az0 * t50)
 
     # Ángulos de aproximación.
     vaa = np.degrees(np.arctan2(vzf, -vyf))
     haa = np.degrees(np.arctan2(vxf, -vyf))
 
     # pfx: movimiento sobre los últimos ~40 ft (proxy a partir del Magnus).
-    esc = (40.0 / max(y0 - Y_FRENTE_PLATO, 1.0)) ** 2
+    esc = (40.0 / max(y0 - y_plano, 1.0)) ** 2
     pfxx = horz_break * esc
     pfxz = induced_vb * esc
 
@@ -171,13 +189,15 @@ def _fisica_lanzamiento(rng, tipo: str, mano: str, dens_scale: float) -> dict:
         "VertBreak": vert_break, "InducedVertBreak": induced_vb, "HorzBreak": horz_break,
         "VertRelAngle": vra, "HorzRelAngle": hra, "VertApprAngle": vaa, "HorzApprAngle": haa,
         "SpeedDrop": speed_drop, "ZoneTime": tf,
-        "x0": x0, "y0": y0, "z0": z0, "vx0": vx0, "vy0": vy0, "vz0": vz0,
+        "x0": r50[0], "y0": r50[1], "z0": r50[2], "vx0": v50[0], "vy0": v50[1], "vz0": v50[2],
         "ax0": ax0, "ay0": ay0, "az0": az0, "pfxx": pfxx, "pfxz": pfxz,
-        # Polinomio de trayectoria: c0=pos, c1=vel, c2=accel/2  -> I3: 2*c2 = a0.
-        "PitchTrajectoryXc0": x0, "PitchTrajectoryXc1": vx0, "PitchTrajectoryXc2": ax0 / 2.0,
-        "PitchTrajectoryYc0": y0, "PitchTrajectoryYc1": vy0, "PitchTrajectoryYc2": ay0 / 2.0,
-        "PitchTrajectoryZc0": z0, "PitchTrajectoryZc1": vz0, "PitchTrajectoryZc2": az0 / 2.0,
-        "PlateLocHeight": plate_height, "PlateLocSide": plate_side,
+        # Polinomio de trayectoria (convención REAL, ADR-010 enmendado): son los 9P en ejes permutados
+        # X->y, Y->z, Z->x (signos +) con el origen de tiempo en la liberación: c2 = a/2, c1 = v(liberación),
+        # c0 = r(liberación). Con el reloj de los 9P: c1 = v0 + a·t_s y c0 = r0 + v0·t_s + ½·a·t_s², t_s = -t50.
+        "PitchTrajectoryXc0": y0, "PitchTrajectoryXc1": vy0, "PitchTrajectoryXc2": ay0 / 2.0,
+        "PitchTrajectoryYc0": z0, "PitchTrajectoryYc1": vz0, "PitchTrajectoryYc2": az0 / 2.0,
+        "PitchTrajectoryZc0": x0, "PitchTrajectoryZc1": vx0, "PitchTrajectoryZc2": ax0 / 2.0,
+        "PlateLocHeight": plate_height, "PlateLocSide": plate_side, "_t_s": -float(t50),
     }
 
 
@@ -229,7 +249,7 @@ def _batazo(rng, dens_scale: float) -> dict:
     if ht == "FlyBall" and distance > 380 and exit_speed > 98:
         res = "HomeRun"
     elif ht == "LineDrive" and exit_speed > 95 and u < 0.5:
-        res = "Double" if rng.random() < 0.35 else ("Triple" if rng.random() < 0.05 else "Single")
+        res = "Double" if rng.random() < 0.35 else ("Triple" if rng.random() < 0.12 else "Single")
     elif (ht == "GroundBall" and u < 0.26) or (ht == "LineDrive" and u < 0.55):
         res = "Single"
     else:
@@ -288,14 +308,30 @@ def generar(n_juegos: int = 40, semilla: int = 2026, cubetas: dict | None = None
             n_lanzadores: int = 60, n_bateadores: int = 120, n_receptores: int = 24,
             n_lanzadores_nucleo: int = 12, anios: tuple[int, ...] = (2024, 2025, 2026),
             innings_por_juego: int = 9, sucio: bool = True,
-            convencion_polinomio: dict | str | None = None) -> pl.DataFrame:
+            convencion_polinomio: dict | str | None = None, con_verdad: bool = False,
+            p_perdida_cubeta: dict | None = None, p_perdida_tipo: dict | None = None,
+            signo_plateloc_x: int = SIGNO_PLATELOC_X,
+            y_plano_ft: float = Y_FRENTE_PLATO) -> pl.DataFrame | tuple[pl.DataFrame, dict]:
     """Genera un dataset sintético con el esquema (y, si `sucio`, los defectos) de los datos reales.
 
     Cada lanzador tiene una mano fija y cada bateador un lado fijo (algunos son `Switch`), de
     modo que la imputación por moda de ADR-003 tiene sentido. El núcleo de lanzadores aparece
     en muchos juegos (identificación intra-lanzador).
+
+    `convencion_polinomio`: `None` = la REAL (ADR-010 enmendado); un dict `{"X": ("z", -1), ...}` = permutación
+    con signo SIN desfase de tiempo; `"ruido"` = polinomios sin relación con los 9P.
+    `p_perdida_cubeta`: multiplicador por cubeta de la probabilidad de perder el turno final (sembrar una
+    diferencia por altitud y comprobar que G0.8 la detecta). `p_perdida_tipo`: probabilidad de perder el turno final
+    según cierre en ponche (`K`) o en out en juego (`OUT_BIP`); por defecto, más alta para el ponche (MNAR).
+    `signo_plateloc_x` y `y_plano_ft`: el signo y el plano con los que se escribe `PlateLocSide`/`ZoneTime`. `con_verdad=True` devuelve también la verdad
+    sembrada (`t_s` por lanzamiento, plano, signo y la fracción de turnos finales perdidos que eran ponche).
     """
     rng = np.random.default_rng(semilla)
+    perdidos = {"K": 0, "OUT_BIP": 0}
+    # La pérdida sembrada es ESTRATIFICADA: por cubeta y por tipo de cierre se acumula la probabilidad y se pierde un
+    # turno cada vez que la suma cruza 1 (con fase inicial aleatoria). La proporción realizada es exactamente la
+    # sembrada (± 1 turno), así que las pruebas de G0.8 no dependen del ruido de una moneda por turno.
+    fase_perdida: dict[tuple[str, str], float] = {}
     cubetas = cubetas or CUBETAS_DEFECTO
     nombres_cub = list(cubetas)
     pesos_cub = np.array([cubetas[c]["peso_juegos"] for c in nombres_cub], float)
@@ -332,6 +368,7 @@ def generar(n_juegos: int = 40, semilla: int = 2026, cubetas: dict | None = None
                 media_cortada = False
                 while outs < 3 and not media_cortada:
                     pa += 1
+                    fila_pa = len(filas)
                     corte = rng.random() < _P_CORTE.get(outs, 0.0)
                     n_corte, n_lanz = int(rng.integers(1, 4)), 0
                     forzar_out = pa > 20  # salvaguarda: media entrada siempre cierra
@@ -342,7 +379,7 @@ def generar(n_juegos: int = 40, semilla: int = 2026, cubetas: dict | None = None
                     while not terminada:
                         puid += 1
                         tipo = tipos[rng.choice(len(tipos), p=pesos_tipo)]
-                        fis = _fisica_lanzamiento(rng, tipo, mano, dens_scale)
+                        fis = _fisica_lanzamiento(rng, tipo, mano, dens_scale, y_plano_ft, signo_plateloc_x)
                         en_zona = (1.5 <= fis["PlateLocHeight"] <= 3.5) and (abs(fis["PlateLocSide"]) <= 0.83)
                         call = "InPlay" if forzar_out else _desenlace(rng, en_zona)["PitchCall"]
                         flags = _flags_de_call(call)
@@ -412,16 +449,31 @@ def generar(n_juegos: int = 40, semilla: int = 2026, cubetas: dict | None = None
                             "PlateLocHeight": fis["PlateLocHeight"], "PlateLocSide": fis["PlateLocSide"],
                             "in_strike_zone": int(en_zona), "outside_strike_zone": int(not en_zona),
                             "swung_outside_strike_zone": int(flags["is_swing"] and not en_zona),
+                            "_t_s": fis["_t_s"],
                         })
                         n_lanz += 1
                         if corte and not terminada and n_lanz >= n_corte:
                             media_cortada = True   # tercer out sin lanzamiento: el turno queda incompleto
                             break
                     outs += outs_jugada
+                    if outs >= 3 and not media_cortada:   # este turno dio el tercer out: ¿se pierde completo?
+                        fin = "K" if korbb == "Strikeout" else "OUT_BIP"
+                        acum = fase_perdida.setdefault((cub, fin), float(rng.random()))
+                        acum += (p_perdida_tipo or _P_PERDIDA)[fin] * (p_perdida_cubeta or {}).get(cub, 1.0)
+                        fase_perdida[(cub, fin)] = acum - 1.0 if acum >= 1.0 else acum
+                        if acum >= 1.0:
+                            del filas[fila_pa:]
+                            perdidos[fin] += 1
     df = _convencion_polinomio(pl.DataFrame(filas), convencion_polinomio, rng)
     if sucio:
         df = _ensuciar(df, rng, n_juegos)
-    return _tipar_real(df, leer_diccionario(_RAIZ / "docs" / "diccionario.csv"))
+    ts = df["_t_s"].to_numpy()
+    out = _tipar_real(df, leer_diccionario(_RAIZ / "docs" / "diccionario.csv"))
+    if not con_verdad:
+        return out
+    tot = perdidos["K"] + perdidos["OUT_BIP"]
+    return out, {"t_s": ts, "y_plano_ft": y_plano_ft, "signo_x": signo_plateloc_x, "perdidos": perdidos,
+                 "pi_k": perdidos["K"] / tot if tot else float("nan")}
 
 
 # --------------------------------------------------------------------------
@@ -430,7 +482,8 @@ def generar(n_juegos: int = 40, semilla: int = 2026, cubetas: dict | None = None
 def _convencion_polinomio(df: pl.DataFrame, conv: dict | str | None, rng) -> pl.DataFrame:
     """Reescribe PitchTrajectory{X,Y,Z}c{0,1,2} según la convención pedida.
 
-    - `None`: los polinomios SON los 9P (c0=r0, c1=v0, c2=a0/2): I3 vale por construcción.
+    - `None`: la convención REAL (ADR-010 enmendado): ya está escrita por `_fisica_lanzamiento` (ejes permutados
+      X->y, Y->z, Z->x y origen en la liberación); no se toca.
     - dict `{"X": ("z", -1), "Y": ("y", -1), "Z": ("x", 1)}`: el eje P del polinomio es s·(eje q de los
       9P): c0=s·r0^q, c1=s·v0^q, c2=s·a0^q/2 (permutación con signo).
     - `"ruido"`: polinomios sin relación con los 9P (no canónicos).

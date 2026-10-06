@@ -19,7 +19,7 @@ fi
 # (2) Pruebas con datos sintéticos: deben pasar antes de tocar datos reales.
 uv run pytest -q
 
-# (3) F0 sobre los datos reales. Sale con código != 0 si una compuerta (G0.1-G0.6) falla,
+# (3) F0 sobre los datos reales. Sale con código != 0 si una compuerta (G0.1-G0.8) falla,
 #     DESPUÉS de escribir el reporte. Si hay valores "sin regla" no escribe pitches.parquet.
 uv run pitcheo f00
 

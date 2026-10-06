@@ -4,8 +4,12 @@ arrastre-Magnus y el estimador de densidad por juego (Props. 1-3, pendientes).
 Los 9P son las columnas `x0,y0,z0`, `vx0,vy0,vz0`, `ax0,ay0,az0`: el modelo de aceleración
 constante  r(t) = r0 + v0·t + ½·a·t²  con convención conocida (ejes Trackman de ROADMAP §2: origen
 en la punta del plato, y hacia el montículo, z hacia arriba; pies y segundos). Por ADR-010 esa es
-la trayectoria canónica del proyecto. Los polinomios `PitchTrajectory{X,Y,Z}c{0,1,2}` del dato real
-no comparten ejes con los 9P y ninguna fase depende de ellos.
+la trayectoria canónica del proyecto.
+
+**Marco temporal único (ADR-014, ROADMAP §1.3).** El reloj de los 9P arranca en y0 = 50 ft; los polinomios
+`PitchTrajectory{X,Y,Z}c{0,1,2}` y `ZoneTime` arrancan en la liberación (t_s < 0 en el reloj de los 9P).
+Por eso el tiempo al plato NO es `ZoneTime`: es la raíz de y(t_p) = y_p con los 9P, y
+`ZoneTime ≈ t_p − t_s`. Los polinomios son los 9P en ejes permutados (ADR-010, enmienda).
 """
 from __future__ import annotations
 
@@ -42,8 +46,8 @@ def velocidad_9p(t, v0, a) -> np.ndarray:
     return v0 + a * (t[..., None] if t.ndim else t)
 
 
-def tiempo_en_plano_y(r0, v0, a, y_plano: float = Y_FRENTE_PLATO_FT) -> np.ndarray:
-    """Primer t > 0 con y(t) = y_plano (raíz positiva más pequeña de la cuadrática en y). NaN si no existe."""
+def tiempo_al_plato(r0, v0, a, y_plano: float = Y_FRENTE_PLATO_FT) -> np.ndarray:
+    """ADR-014: primer t > 0 con y(t) = y_plano en el reloj de los 9P (raíz positiva menor). NaN si no existe."""
     r0, v0, a = (np.atleast_2d(np.asarray(x, dtype=float)) for x in (r0, v0, a))
     c0, c1, c2 = r0[:, 1] - y_plano, v0[:, 1], 0.5 * a[:, 1]
     with np.errstate(invalid="ignore", divide="ignore"):
@@ -56,24 +60,42 @@ def tiempo_en_plano_y(r0, v0, a, y_plano: float = Y_FRENTE_PLATO_FT) -> np.ndarr
     return np.where(np.abs(c2) < 1e-12, np.where(t_lineal > 0, t_lineal, np.nan), cuadratico)
 
 
-def verificar_9p(df: pl.DataFrame) -> dict:
-    """Contrasta los 9P con lo que el dato dice por su cuenta (agregado, informativo).
+def _estad(v: np.ndarray) -> dict:
+    v = v[np.isfinite(v)]
+    if v.size == 0:
+        return {"mediana": None, "p99": None, "n": 0}
+    return {"mediana": float(np.median(v)), "p99": float(np.quantile(v, 0.99)), "n": int(v.size)}
 
-    1. La posición (x, z) en t = ZoneTime debe reproducir PlateLocSide / PlateLocHeight.
-    2. y(ZoneTime) debe caer en el frente del plato (17/12 ft).
+
+def calibrar_plano_y_signo(df: pl.DataFrame, t_s: np.ndarray | None = None,
+                           planos=(Y_FRENTE_PLATO_FT, 0.0), signos=(1, -1)) -> dict:
+    """ADR-014: elige el plano y_p y el signo s de PlateLocSide = s·x(t_p) con los 9P (agregado).
+
+    Para cada combinación calcula t_p (raíz de y(t_p) = y_p), evalúa la trayectoria 9P en t_p y compara
+    con `PlateLocSide` / `PlateLocHeight`. Elige la de menor suma de errores medianos. Con `t_s` (por
+    lanzamiento, alineado con las filas de `df`, NaN si no definido; ADR-010) verifica además
+    `ZoneTime ≈ t_p − t_s` con el y_p elegido.
     """
-    d = df.select(*_R0, *_V0, *_A0, "ZoneTime", "PlateLocSide", "PlateLocHeight").drop_nulls()
-    if d.height < 10:
-        return {"n": d.height}
-    r0, v0, a = nueve_p(d)
-    r = trayectoria_9p(d["ZoneTime"].to_numpy(), r0, v0, a)
-    err_x = np.abs(r[:, 0] - d["PlateLocSide"].to_numpy())
-    err_z = np.abs(r[:, 2] - d["PlateLocHeight"].to_numpy())
-    err_y = np.abs(r[:, 1] - Y_FRENTE_PLATO_FT)
-    q = lambda v, p: float(np.quantile(v, p))
-    return {
-        "n": int(d.height),
-        "error_plato_x_ft": {"mediana": q(err_x, 0.5), "p99": q(err_x, 0.99)},
-        "error_plato_z_ft": {"mediana": q(err_z, 0.5), "p99": q(err_z, 0.99)},
-        "error_y_en_zonetime_ft": {"mediana": q(err_y, 0.5), "p99": q(err_y, 0.99)},
-    }
+    d = df.select(*_R0, *_V0, *_A0, "ZoneTime", "PlateLocSide", "PlateLocHeight").to_numpy().astype(float)
+    ok = np.isfinite(d).all(axis=1)
+    if ok.sum() < 10:
+        return {"n": int(ok.sum())}
+    r0, v0, a, zt, lado, alto = d[ok, 0:3], d[ok, 3:6], d[ok, 6:9], d[ok, 9], d[ok, 10], d[ok, 11]
+    combos, tp_de = [], {}
+    for yp in planos:
+        tp = tiempo_al_plato(r0, v0, a, yp)
+        tp_de[float(yp)] = tp
+        r = trayectoria_9p(tp, r0, v0, a)
+        e_alto = np.abs(r[:, 2] - alto)
+        for sg in signos:
+            e_lado = np.abs(sg * r[:, 0] - lado)
+            combos.append({"y_plano_ft": float(yp), "signo": int(sg),
+                           "error_side_ft": _estad(e_lado), "error_height_ft": _estad(e_alto)})
+    elegida = min(combos, key=lambda c: (c["error_side_ft"]["mediana"] or np.inf) + (c["error_height_ft"]["mediana"] or np.inf))
+    out = {"n": int(ok.sum()), "combinaciones": combos, "elegida": elegida, "zonetime": None}
+    if t_s is not None:
+        tp = tp_de[elegida["y_plano_ft"]]
+        e = np.abs(zt - (tp - np.asarray(t_s, dtype=float)[ok]))
+        out["zonetime"] = _estad(e)
+        out["zonetime_cruda"] = _estad(np.abs(zt - tp))   # lo que se hacía mal: ZoneTime ≈ t_p
+    return out
