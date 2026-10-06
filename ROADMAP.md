@@ -1,7 +1,7 @@
 # ROADMAP MAESTRO — Stuff+ LMB calibrado por densidad del aire
 
 **Proyecto:** Hackathon ISAC 2026 · Reto Diablos Rojos · `romoruz/calidad-de-pitcheo`
-**Versión:** 2.4 (2.3 + decisiones sobre la corrida real de F0: ADR-010 a 013)
+**Versión:** 2.5 (2.4 + segunda corrida de F0: marco temporal de los 9P y turnos finales faltantes; ADR-014 y 015)
 **Ruta local (clon del repo + datos):** `/home/rodrigo/calidad-de-pitcheo`
 **Regla:** solo el orquestador cambia este archivo. Claude Code lo lee, no lo edita.
 
@@ -183,6 +183,37 @@ Fallaron G0.1, G0.2 y G0.3. Ninguna falla es un error de código: las tres son s
 **Buenas noticias de la corrida:** 765 lanzadores tienen ≥ 30 lanzamientos en ≥ 2 cubetas y 665 aparecen en las tres. La identificación intra-lanzador de F2, F3 y H1 tiene muestra de sobra. I9 = 100 %: la cubeta es constante por juego. Cero valores sin regla. Exclusiones totales 0.33 % (≈ 0.85 % con ADR-013).
 
 **Nota para F7:** 2026 trae 135 604 lanzamientos, ~55 % de una temporada completa. El *season holdout* debe reportar el tamaño de cada pliegue y no comparar métricas sin esa nota.
+
+### 1.3 Decisiones del orquestador sobre la segunda corrida de F0
+
+**Hallazgo 1 — los polinomios sí son los 9P (corrige ADR-010).** La regresión conjunta da $R^2=1.000000$ con coeficientes exactamente $0.5000$: $c_2^X=\tfrac12a_{y0}$, $c_2^Y=\tfrac12a_{z0}$, $c_2^Z=\tfrac12a_{x0}$. Es una **permutación exacta** (X→y, Y→z, Z→x, signos +). La regla de v2.4 la rechazó porque comparó $c_1$ con $\mathbf v_0$ sin tiempo: si el polinomio empieza en otro instante $t_s$, entonces
+
+$$c_1=\mathbf v_0+\mathbf a\,t_s,\qquad c_0=\mathbf r_0+\mathbf v_0t_s+\tfrac12\mathbf a\,t_s^2,$$
+
+y $c_1$ ya no encaja con $\mathbf v_0$ solo. El eje con más curvatura (vertical) pierde más $R^2$, que es justo lo observado (0.989). Con el intercepto del eje X, $t_s\approx-0.69/27\approx-0.026$ s: unos 3.5 ft antes de $y_0=50$ ft, es decir, **el polinomio arranca en la liberación** (~54 ft).
+
+**Hallazgo 2 — el `ZoneTime` se mide desde la liberación (ADR-014).** La verificación de v2.4 evaluó los 9P en $t=$`ZoneTime`, pero el reloj de los 9P empieza en $y_0=50$ ft. Con $t_s\approx-0.026$ s, el error esperado en $y$ es $|v_y|\,|t_s|\approx135\times0.026\approx3.5$ ft. Se observaron 4.27 ft de mediana: el mismo orden. El error de 1.29 ft en `PlateLocSide` es demasiado grande para venir solo del tiempo ($|v_x|\,|t_s|\approx0.15$ ft): apunta a un **signo invertido** entre $x$ y `PlateLocSide`.
+
+| ADR | Decisión |
+|---|---|
+| **010 (enmienda)** | Los polinomios son los 9P en ejes permutados (X→y, Y→z, Z→x) con origen de tiempo en la liberación. Se reclasifican de `no_canonicos` a **`equivalentes`**. La trayectoria canónica sigue siendo 9P; el polinomio da $t_s$ por lanzamiento: $t_{s,i}=(c^X_{1,i}-v_{y0,i})/a_{y0,i}$ |
+| **014** | **Marco temporal único.** El tiempo al plato **no** es `ZoneTime`: es la raíz de $y(t_p)=y_p$ con la trayectoria 9P. El plano $y_p\in\{17/12,\ 0\}$ ft y el signo $s\in\{+1,-1\}$ en `PlateLocSide` $=s\,x(t_p)$ se eligen por mínimo error contra `PlateLoc*`. Verificación cruzada: `ZoneTime` $\approx t_p-t_s$. La Prop. 1 usa $t_m=\tfrac12(t_s+t_p)$, el punto medio entre liberación y plato |
+
+**Hallazgo 3 — los outs que faltan son turnos finales perdidos, no robos (ADR-015).** De las 4 763 medias entradas con 2 outs, solo el 9.5 % deja un turno incompleto (lo que dejaría un robo o un pickoff con 2 outs). El 90 % restante pierde **el último turno completo**: todos sus lanzamientos faltan. Además, comparadas con las de 3 outs, tienen **0.525 ponches menos** por media entrada y solo 0.388 outs en juego menos. Si los turnos perdidos fueran un final al azar, la mayoría serían outs en juego.
+
+*Consecuencia:* los ponches que terminan la entrada se pierden con mucha más frecuencia que los outs en juego. Es **falta no aleatoria** (MNAR), y sesga hacia abajo $P(K\mid 2\text{ strikes})$ y con ello $V(c)$. Con la cuenta gruesa por déficits, la fracción de ponches entre los turnos perdidos es
+
+$$\hat\pi_K=\frac{0.525}{0.525+0.388+0.026}\approx0.56 .$$
+
+**Corrección por ponderación inversa (Horvitz–Thompson).** Sea $M$ el número de turnos finales perdidos, y $n_K$ y $n_B$ los turnos finales registrados que terminan en ponche o en out en juego (estado previo `Outs=2`). Cada lanzamiento de un turno final de tipo $\tau$ recibe peso
+
+$$\omega_K=\frac{n_K+\pi M}{n_K},\qquad \omega_B=\frac{n_B+(1-\pi)M}{n_B}.$$
+
+**Proposición 15 (insesgamiento y cotas).** Si, dado su tipo, que un turno final se pierda es independiente de sus lanzamientos, los conteos ponderados de transiciones son insesgados para los conteos completos cuando $\pi$ es el verdadero. Como $\pi$ solo se estima de forma gruesa, se calculan $V(c)$ y todo lo que depende de él con $\pi\in\{0,\hat\pi_K,1\}$: los extremos son **cotas** (estilo Manski) que no necesitan ningún supuesto sobre $\pi$.
+
+*Demostración.* $\mathbb E[\sum_i\omega_{\tau(i)}\mathbb 1_i]=\sum_\tau\omega_\tau\,n_\tau\,\bar{\mathbb 1}_\tau=\sum_\tau(n_\tau+M_\tau)\,\bar{\mathbb 1}_\tau$, con $M_K=\pi M$, porque bajo el supuesto los perdidos de tipo $\tau$ tienen la misma distribución de transiciones que los registrados. $V(c)$ es monótono en la masa de K, así que los extremos de $\pi$ acotan su valor. ∎
+
+**Lo que se verifica ahora en F0:** la tasa de medias entradas de 2 outs **por cubeta y año**. Si difiere entre cubetas, la pérdida de datos se confunde con la altitud en cualquier comparación de outcomes entre cubetas (F8). Es la amenaza más seria que ha aparecido hasta ahora.
 
 ---
 
@@ -413,6 +444,43 @@ excluir_modelo ≤ 3 % y excluir_cadena ≤ 0.5 %.
 ```
 *(+ sufijo §0.3)*
 
+**Compuertas redefinidas en v2.5 (§1.3):** G0.2 y G0.3 cambian; se agregan G0.7 y G0.8.
+
+| Compuerta | v2.5 |
+|---|---|
+| G0.2 | ADR-010 enmendado: permutación (X→y, Y→z, Z→x) confirmada con la regresión conjunta de $c_2$ ($R^2\ge0.9999$) **y** $c_1$ ajustado con $t_s$ por lanzamiento ($R^2\ge0.999$ en los tres ejes) |
+| G0.3 | Diagnóstico de las de 2 outs producido **y** clasificado: % con turno incompleto (robo o pickoff) vs. % con turno final perdido |
+| **G0.7** | Verificación de ADR-014 con $t_p$ de la raíz de $y(t)=y_p$, con el $y_p$ y el signo elegidos: mediana de $\lvert$error$\rvert$ ≤ 0.05 ft en `PlateLocSide` y en `PlateLocHeight`, p99 ≤ 0.3 ft; y mediana de $\lvert$`ZoneTime`$-(t_p-t_s)\rvert$ ≤ 0.005 s |
+| **G0.8** | Tasa de medias entradas con turno final perdido por cubeta (todos los años juntos): máximo − mínimo ≤ 3 puntos porcentuales. Si falla: **discrepancia, no se sigue a F1** |
+
+**Prompt de corrección 2 de F0 (v2.5, Sonnet, misma rama `fase00`):**
+
+```text
+Haz merge de main en fase00 (no rebase). ROADMAP.md está en v2.5: lee §1.3 y las
+compuertas v2.5 de §4-F0. En la rama fase00:
+1. ADR-010 (enmienda): t_s por lanzamiento con t_s = (c1_X − vy0)/ay0; distribución
+   (mediana, IQR, p1, p99). Regresión de c1 de cada eje del polinomio sobre
+   (v0 + a0·t_s) del eje permutado: R² y pendiente. Reclasifica a "equivalentes"
+   si se cumple G0.2.
+2. ADR-014 en src/pitcheo/fisica.py: tiempo_al_plato(y_p) = raíz de
+   y0 + vy0 t + ½ ay0 t² = y_p (la raíz positiva menor); elige y_p ∈ {17/12, 0}
+   y el signo s ∈ {+1, −1} de PlateLocSide = s·x(t_p) por mínimo error mediano;
+   reporta la tabla de las 4 combinaciones. Verifica ZoneTime ≈ t_p − t_s.
+   Deja en config/default.yaml el y_p y el signo elegidos.
+3. ADR-012/015: clasifica cada media entrada no final de 2 outs como
+   "turno incompleto" o "turno final perdido"; tasa de "turno final perdido" por
+   cubeta × año y por cubeta (todos los años), con IC binomial de Wilson.
+   Déficits de eventos (K, OUT_BIP, SAC) y π̂_K de §1.3 con IC por bootstrap de
+   medias entradas. NO implementes todavía los pesos ω (eso es F4).
+4. Sintético: polinomio con permutación X→y, Y→z, Z→x y origen en la liberación;
+   ZoneTime desde la liberación; PlateLocSide con el signo que elijas como
+   verdadero en el generador; turnos finales perdidos con más probabilidad si
+   terminan en K. Una prueba por caso: el código debe recuperar t_s, y_p, el
+   signo y π_K sembrados.
+5. ADR-010 (enmienda), ADR-014 y ADR-015 en docs/DECISIONES.md citando §1.3.
+```
+*(+ sufijo §0.3)*
+
 **Salidas:** `data/interim/pitches.parquet` (local), `reports/FASE_00.md`.
 
 ---
@@ -460,7 +528,7 @@ haz merge a main, crea el tag fase01 y reporta en reports/FASE_01.md el hash.
 
 $$\ddot{\mathbf r}=\mathbf g-\kappa\,C_D\lVert\mathbf v\rVert\mathbf v+\kappa\,C_L\lVert\mathbf v\rVert^2\hat{\mathbf n},\qquad \hat{\mathbf n}=\frac{\boldsymbol\omega_T\times\mathbf v}{\lVert\boldsymbol\omega_T\times\mathbf v\rVert}\perp\mathbf v$$
 
-**Proposición 1 (descomposición arrastre–Magnus).** Sea $\tilde{\mathbf a}=\mathbf a-\mathbf g$ con $\mathbf a=(a_{x0},a_{y0},a_{z0})$ y $\bar{\mathbf v}=\mathbf v_0+\mathbf a\,t_m$, $t_m=\tfrac12$`ZoneTime`. Entonces
+**Proposición 1 (descomposición arrastre–Magnus).** Sea $\tilde{\mathbf a}=\mathbf a-\mathbf g$ con $\mathbf a=(a_{x0},a_{y0},a_{z0})$ y $\bar{\mathbf v}=\mathbf v_0+\mathbf a\,t_m$, $t_m=\tfrac12(t_s+t_p)$ (punto medio entre liberación y plato en el reloj de los 9P, ADR-014). Entonces
 
 $$\rho C_D=-\frac{2m}{A}\,\frac{\tilde{\mathbf a}\cdot\hat{\bar{\mathbf v}}}{\lVert\bar{\mathbf v}\rVert^2},\qquad \rho C_L=\frac{2m}{A}\,\frac{\lVert\tilde{\mathbf a}-(\tilde{\mathbf a}\cdot\hat{\bar{\mathbf v}})\hat{\bar{\mathbf v}}\rVert}{\lVert\bar{\mathbf v}\rVert^2}$$
 
@@ -547,7 +615,7 @@ Es una definición sin modelo paramétrico de $C_L(S)$: "qué fracción de la su
 **Vector invariante** $\psi_i$: velocidad de salida, $\omega$, $\varepsilon$, $\omega_T$, dirección de $\hat{\mathbf n}$ (seno y coseno), $C_D$, $C_L$, `RelHeight`, `RelSide`, `Extension`, `VertRelAngle`, `HorzRelAngle`.
 **Vector realizado** $z_i$ (depende de ρ): `InducedVertBreak`, `HorzBreak`, `ZoneSpeed`, `SpeedDrop`, `ZoneTime`, VAA.
 
-**Operador $T_{\rho\to\rho'}$.** Integrar la ecuación de F2 con DOP853 desde la liberación hasta el frente del plato (evento $y=17/12$ ft) con condiciones iniciales observadas, $C_D,C_L,\hat{\mathbf n}$ fijos y $\kappa(\rho')$. Devuelve $z'$ y el **desplazamiento de ubicación** en el plato.
+**Operador $T_{\rho\to\rho'}$.** Integrar la ecuación de F2 con DOP853 desde la liberación hasta el plano del plato $y=y_p$ elegido en ADR-014 con condiciones iniciales observadas, $C_D,C_L,\hat{\mathbf n}$ fijos y $\kappa(\rho')$. Devuelve $z'$ y el **desplazamiento de ubicación** en el plato.
 
 **Proposición 4 (escalamiento lineal del movimiento).** La desviación Magnus a lo largo de una distancia $D$ es
 
@@ -605,7 +673,7 @@ Es convexo (objetivo cuadrático, restricciones lineales), así que tiene óptim
 
 *Nota.* Carreras por eventos no-PA (wild pitch, robos, errores) quedan en $u_h$: sesgan el intercepto, no las pendientes, si son independientes de la mezcla de eventos.
 
-**4.2 Cadena de Markov de conteos.** No necesita orden: la transición de cada lanzamiento la determinan su conteo previo y su `PitchCall`. Estados transitorios: los 12 conteos. Absorbentes: K, BB/HBP, BIP.
+**4.2 Cadena de Markov de conteos.** No necesita orden: la transición de cada lanzamiento la determinan su conteo previo y su `PitchCall`. Estados transitorios: los 12 conteos. Absorbentes: K, BB/HBP, BIP. Las transiciones se cuentan con los pesos $\omega$ de ADR-015 y se repiten con $\pi\in\{0,\hat\pi_K,1\}$ (Prop. 15). En la regresión de 4.1, además del criterio A, se ajusta un modelo **C** con todas las medias entradas no finales y consistentes más un regresor "outs faltantes" $=3-\text{outs}_h$.
 
 **Proposición 6 (existencia y unicidad del valor del conteo).** Sea $Q\in\mathbb R^{12\times12}$ la matriz transitoria (con autolazos en conteos de 2 strikes por foul) y $R$ la de absorción. Si desde todo conteo la absorción ocurre con probabilidad positiva en a lo más $m$ pasos, entonces $\rho(Q)<1$, $N=(I-Q)^{-1}=\sum_{k\ge0}Q^k$ existe, y
 
@@ -654,6 +722,7 @@ Guarda data/interim/objetivo.parquet. reports/FASE_04.md con el Bloque.
 - **G4.3** $V(B+1,S)\ge V(B,S)$ y $V(B,S+1)\le V(B,S)$ en todos los conteos.
 - **G4.4** Multiclase del batazo calibrado: ECE < 0.02.
 - **G4.5** Multiplicador de carry de la cubeta alta > 1 con IC sin 1.
+- **G4.6** $V(c)$ reportado con $\pi\in\{0,\hat\pi_K,1\}$; pesos lineales A vs. C dentro de sus IC.
 
 ---
 
@@ -782,6 +851,7 @@ fuera de fold en data/interim/predicciones.parquet y modelos en artefactos/
 - **G6.2** ECE < 0.01 en N1–N4 tras calibración.
 - **G6.3** Correlación Stuff+ directo vs. integral > 0.9.
 - **G6.4** Percentil empírico de 120 reportado.
+- **G6.5** Correlación de Spearman del Stuff+ lanzador×familia entre las cotas $\pi=0$ y $\pi=1$ (ADR-015) ≥ 0.98. Si no, la pérdida de turnos finales afecta los rankings y se escala.
 
 ---
 
@@ -1016,6 +1086,9 @@ PR, merge a main, tag v1.0.
 | Valores categóricos nuevos en datos futuros | Media | Bajo | G0.5 | Fallo explícito "sin regla", nunca asignación silenciosa |
 | Medias entradas de 2 outs sesgan los pesos lineales | Media | Medio | ADR-012 | Criterio A principal, B sensibilidad; escalar si difieren |
 | Banderas `is_*` inconsistentes con `PitchCall` | Confirmada | Bajo | ADR-011 | Árbol desde `pitch_call_h` |
+| Turnos finales perdidos, más si son ponche (MNAR) | Confirmada | Medio | ADR-015 | Pesos ω, cotas con π ∈ {0, 1}, G4.6 y G6.5 |
+| Pérdida de datos distinta por cubeta | Desconocida | **Alto** | G0.8 | Si se confirma: comparaciones de outcomes solo con medias entradas A, y ajuste por cubeta |
+| Reloj y signos de los 9P mal supuestos | Confirmada (corregida) | Alto | G0.7 | ADR-014 antes de F2 |
 | Sesgo de sensor por parque | Media | Alto | G2.3 (Prop. 3) | Sobreidentificación; acotar sesgo |
 | Convención del polinomio distinta | Media | Medio | I3 | Ajustar fórmula de $t^\ast$; ADR |
 | Pocos lanzadores en varias cubetas | Media | Alto | F0 | Efectos aleatorios en vez de fijos; ampliar IC |
