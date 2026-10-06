@@ -1,6 +1,6 @@
 # FASE 00 — Ingesta y QA por identidades
 
-Filas de entrada: 635,002 · filas de salida: 635,002 · 6.6s
+Filas de entrada: 635,002 · filas de salida: 635,002 · 8.0s
 
 `data/interim/pitches.parquet` particionado por year: 2024: 243,254, 2025: 256,144, 2026: 135,604
 
@@ -22,12 +22,12 @@ Ninguno: todo valor de las columnas inventariadas tiene regla en `config/categor
 |---|---|---|---|
 | I1 | 100.0000 % | 635,002 | tol. 0.05 mph |
 | I2 | 100.0000 % | 635,002 | exacta |
-| I3 | 0.0000 % | 635,002 | X: 0.0000 %, 2c2/a0=-1.8680 · Y: 0.0000 %, 2c2/a0=-0.9992 · Z: 0.3351 %, 2c2/a0=0.1749 |
+| I3 | 0.0000 % | 635,002 | **sustituida por G0.2 (ADR-010)**, ya no es compuerta; X: 0.0000 %, 2c2/a0=-1.8680 · Y: 0.0000 %, 2c2/a0=-0.9992 · Z: 0.3351 %, 2c2/a0=0.1749 |
 | I4 | 100.0000 % | 634,300 | pendiente (origen) 1.0000, con intercepto 1.0000, r=1.000000 |
 | I5 | 100.0000 % | 634,300 | R=0.999287, espejo=False, desfase aprendido 180.0° |
 | I6′ | 99.7491 % | 634,161 | suma 99.9290 % · contacto⇔Foul/InPlay 99.7491 % · whiff⇒StrikeSwinging 100.0000 % |
 | I7 | 86.1167 % | 37,023 | criterio A estricto (n = medias entradas); A sin la final: 86.5887 %; **B (no finales): 91.9790 %**; inconsistentes (≥4 outs): 101; outs por media entrada {'0': 75, '1': 201, '2': 4763, '3': 31883, '4': 84, '5': 8, '6': 7, '8': 1, '9': 1} |
-| I8 | 87.5000 % | 8 | tipos: Changeup=✓, Curveball=✓, Cutter=✗, Four-Seam=✓, Sinker=✓, Slider=✓, Splitter=✓, Sweeper=✓ |
+| I8 | 87.5000 % | 8 | tipos: Changeup=✓, Curveball=✓, Cutter=✗ (|HB| mediana D 2.1 / Z 2.2 in), Four-Seam=✓, Sinker=✓, Slider=✓, Splitter=✓, Sweeper=✓ · fallas no informativas (mediana de |HorzBreak| < 2 in en una mano): 0 de 1 |
 | I9 | 100.0000 % | 2,117 | juegos incoherentes: 0 |
 | I10 | 99.9987 % | 635,002 | violaciones: 8 {'3.0': 8} |
 
@@ -229,11 +229,11 @@ El árbol de desenlaces se define desde `pitch_call_h` (partición exacta); las 
 | es_bip | 0 | is_ball_in_play | 1 | StrikeSwinging | 1 |
 | es_bip | 0 | is_ball_in_play | 1 | BallCalled | 1 |
 
-## ADR-012 / ADR-015 — medias entradas de 2 outs: ¿robo o turno final perdido?
+## ADR-012 / ADR-016 — medias entradas de 2 outs registrados: out faltante
 
-Sin orden de lanzamientos, un turno es **incompleto** si hay lanzamientos de un bateador de la media entrada sin ningún evento terminal (lo que dejaría un robo o un pickoff con 2 outs). Si todos sus turnos terminan, la media entrada perdió su **último turno completo**.
+Sin orden de lanzamientos, un turno es **incompleto** si hay lanzamientos de un bateador de la media entrada sin ningún evento terminal (lo que dejaría un robo o un pickoff con 2 outs). Si todos sus turnos terminan, la media entrada tiene un **out faltante (sin turno incompleto)**: `OutsOnPlay` no lo cuenta (U) o se perdió con su turno (L). La Prop. 16 de más abajo los separa.
 
-**Clasificación de las 4,449 medias entradas NO finales de 2 outs:** turno incompleto 415 (**9.328 %**) · turno final perdido 4,034 (**90.672 %**).
+**Clasificación de las 4,449 medias entradas NO finales de 2 outs:** turno incompleto 415 (**9.328 %**) · out faltante (sin turno incompleto) 4,034 (**90.672 %**).
 
 | métrica | 2 outs | 3 outs |
 |---|---|---|
@@ -241,7 +241,7 @@ Sin orden de lanzamientos, un turno es **incompleto** si hay lanzamientos de un 
 | % que es la última del juego | 6.592 | 5.228 |
 | lanzamientos por media entrada (mediana / media) | 14 / 15.1 | 16 / 17.5 |
 | % con ≥1 turno incompleto | 9.469 | 2.948 |
-| **ponches por out registrado** | 0.187 | 0.300 |
+| ponches por out registrado | 0.187 | 0.300 |
 | eventos K por media entrada | 0.374 | 0.899 |
 | eventos OUT_BIP por media entrada | 1.579 | 1.967 |
 | eventos SAC por media entrada | 0.029 | 0.055 |
@@ -250,22 +250,98 @@ Sin orden de lanzamientos, un turno es **incompleto** si hay lanzamientos de un 
 | eventos ROE por media entrada | 0.057 | 0.046 |
 | outs implicados por eventos − OutsOnPlay | {'-2': 3, '-1': 129, '0': 4585, '1': 46} | {'-3': 5, '-2': 116, '-1': 2467, '0': 29118, '1': 173, '2': 3, '3': 1} |
 
-### Tasa de turno final perdido por cubeta (G0.8)
+## ADR-016 — ¿outs no contabilizados (U) o turnos perdidos (L)?
 
-Sobre las medias entradas **no finales**; IC de Wilson al 95 %. Si difiere entre cubetas, la pérdida de datos se confunde con la altitud en cualquier comparación de outcomes (F8).
+**Conjunto T** = medias entradas no finales, `Inning` ≤ 9, consistentes (outs registrados ≤ 3) y sin turno incompleto. `O_h` = Σ `OutsOnPlay`; **P** = {O_h = 2}; `N_h` = turnos con evento 1B, 2B, 3B, BB, HBP o ROE; **Z** = {N_h = 0}. Bajo S1 (un U exige un corredor, luego Z = 0) y S2 (L no depende de Z): r_b = p⁰_b / f_b, con f_b = P(Z | b), p⁰_b = P(P ∧ Z | b) y θ_b = r_b / P(P | b).
 
-| cubeta | medias_entradas | dos_outs | turno_incompleto | turno_final_perdido | tasa_perdido_% | ic95_wilson_% |
+| filtro | excluye (en cascada) | no lo cumplen (solo este filtro) | quedan |
+|---|---|---|---|
+| todas las medias entradas | — | — | 37,023 |
+| no es la final del juego | 2,127 | 2,127 | 34,896 |
+| Inning ≤ 9 | 358 | 509 | 34,538 |
+| consistente (outs < 4) | 95 | 101 | 34,443 |
+| sin turno incompleto | 1,376 | 1,523 | 33,067 |
+
+T: 33,067 medias entradas · |P| = 3,998 · |Z| = 9,424 · |P ∧ Z| = 84
+
+### Prop. 16 por cubeta y global (IC95 por bootstrap de 2,123 juegos, 1000 réplicas, semilla 2026)
+
+| cubeta | medias entradas | P % | f_b = Z % | p⁰_b % | **r̂_b %** [IC95] | **θ̂_b** [IC95] |
+|---|---|---|---|---|---|---|
+| (sin cubeta) | 133 | 14.29 | 21.05 | 0.000 | **0.000** [0.000, 0.000] | **0.000** [0.000, 0.000] |
+| Extreme Altitude | 9,366 | 14.81 | 24.90 | 0.246 | **0.986** [0.580, 1.467] | **0.067** [0.039, 0.098] |
+| Medium Altitude | 7,844 | 12.30 | 26.38 | 0.191 | **0.725** [0.343, 1.149] | **0.059** [0.029, 0.091] |
+| No Altitude | 15,724 | 10.35 | 31.77 | 0.293 | **0.921** [0.659, 1.216] | **0.089** [0.064, 0.116] |
+| global | 33,067 | 12.09 | 28.50 | 0.254 | **0.891** [0.710, 1.089] | **0.074** [0.059, 0.090] |
+
+**G0.9 (mecanismo):** θ̂ global = 0.0737 IC95 [0.059, 0.090] → **U** (U si IC95 sup ≤ 0.25 · L si IC95 inf ≥ 0.50 · mezcla en otro caso). Se reporta siempre; no falla.
+
+### Prop. 17 — cota del sesgo del contraste Extreme − No
+
+- m̃_b (turnos por media entrada de T_b): Extreme Altitude 4.6683 · No Altitude 4.3336
+- n_b (turnos): Extreme Altitude 43,723 · No Altitude 68,142 · κ̄ (K por turno, global) = 0.18464
+- **W(Γ=1) = 0.00423 · W(Γ=2) = 0.00844** · SE_ref = 0.00238 · 3.92·SE_ref = 0.00932 · W(Γ=2)/SE_ref = 3.550
+- **G0.8′:** pasa · `perdida_ignorable` = **false** (F8 reporta los contrastes con intervalo de Imbens–Manski)
+
+### Corroboraciones (informativas, no son compuertas)
+
+**(a) Rodados entre los OUT_BIP con `Outs` previo ∈ {0, 1}** (hit_type == GroundBall): U (doble matanza) predice más rodados en P que en T∖P; L, la misma mezcla.
+
+| grupo | n | rodados | % | IC95 Wilson % |
+|---|---|---|---|---|
+| P | 4,873 | 3,547 | 72.789 | [71.522, 74.02] |
+| T∖P | 35,321 | 15,902 | 45.021 | [44.503, 45.541] |
+
+**(b) Columna `Outs` (estado previo), P vs. T∖P.** U no quita lanzamientos: `Outs` es continuo y empieza en 0; L deja huecos o arranca en 1.
+
+| grupo | medias entradas | % mín. Outs > 0 | % out terminal con Outs = 2 | % hueco en Outs |
+|---|---|---|---|---|
+| P | 3,998 | 2.401 | 39.57 | 36.018 |
+| T∖P | 29,069 | 0.083 | 98.191 | 0.378 |
+
+**(c) Logit de 1[h ∈ P]** sobre cubeta + year, sin y con factor(min(N_h, 5)); errores agrupados por juego; OR contra No Altitude (IC95). Si el OR cae al controlar por N_h, la diferencia es tráfico de corredores.
+
+| cubeta | OR sin N_h | OR con N_h |
+|---|---|---|
+| Extreme Altitude | 1.510 [1.39, 1.63] | 1.426 [1.31, 1.55] |
+| Medium Altitude | 1.211 [1.11, 1.32] | 1.146 [1.05, 1.25] |
+
+**(d) Jugadas con `OutsOnPlay` ≥ 2:** 277 en 2,127 juegos; a la tasa MLB de referencia (1.63 dobles matanzas por juego, solo referencia) se esperarían ≈ 3,467: se registra el 8.0 %.
+
+| evento | OutsOnPlay | n |
+|---|---|---|
+| 1B | 2 | 13 |
+| 1B | 3 | 1 |
+| 2B | 2 | 4 |
+| BB | 2 | 3 |
+| BB | 3 | 4 |
+| HR | 2 | 1 |
+| HR | 3 | 1 |
+| NO_TERMINAL | 2 | 17 |
+| NO_TERMINAL | 3 | 5 |
+| OUT_BIP | 2 | 217 |
+| OUT_BIP | 3 | 2 |
+| ROE | 2 | 1 |
+| SAC | 2 | 8 |
+
+**(e) |P| por juego vs. Poisson** (figura `docs/figuras/f00/P_por_juego_vs_poisson.png`): 2,123 juegos · λ = 1.883 · dispersión de Pearson φ = 1.00 (≈ 1 = evento de juego a tasa constante; ≫ 1 = concentrado en algunos juegos) · P(≥1) observada 0.846 vs Poisson 0.848 · P(>2) 0.294 vs 0.292
+
+### Tablas informativas
+
+**Out faltante (sin turno incompleto) por cubeta** (antiguo G0.8, ya no es compuerta): medias entradas no finales, IC de Wilson al 95 %. Mezcla U y L; la Prop. 16 los separa.
+
+| cubeta | medias_entradas | dos_outs | turno_incompleto | out_faltante | tasa_% | ic95_wilson_% |
 |---|---|---|---|---|---|---|
 | (sin cubeta) | 153 | 22 | 1 | 21 | 13.725 | [9.156, 20.072] |
 | Extreme Altitude | 9,799 | 1,476 | 78 | 1,398 | 14.267 | [13.588, 14.973] |
 | Medium Altitude | 8,332 | 1,091 | 115 | 976 | 11.714 | [11.041, 12.422] |
 | No Altitude | 16,612 | 1,860 | 221 | 1,639 | 9.866 | [9.422, 10.329] |
 
-**Rango entre cubetas (máx − mín): 4.400 pp** · M (turnos finales perdidos, no finales) = 4,034 de 34,896 medias entradas
+Rango entre cubetas (máx − mín): 4.400 pp
 
 **Por cubeta y año:**
 
-| cubeta | year | medias_entradas | turno_final_perdido | tasa_perdido_% | ic95_wilson_% |
+| cubeta | year | medias_entradas | out_faltante | tasa_% | ic95_wilson_% |
 |---|---|---|---|---|---|
 | (sin cubeta) | 2025 | 53 | 6 | 11.321 | [5.293, 22.577] |
 | (sin cubeta) | 2026 | 100 | 15 | 15.000 | [9.306, 23.284] |
@@ -279,16 +355,10 @@ Sobre las medias entradas **no finales**; IC de Wilson al 95 %. Si difiere entre
 | No Altitude | 2025 | 6,426 | 677 | 10.535 | [9.808, 11.310] |
 | No Altitude | 2026 | 3,567 | 307 | 8.607 | [7.730, 9.572] |
 
-### Déficits de eventos y π̂_K (ROADMAP §1.3)
+**Déficits de eventos** (media por media entrada de las de 3 outs − media de las de 2 outs; IC95 por bootstrap de medias entradas). Informativos: el estimador de la fracción de ponches por déficits se retiró (ADR-016: no está identificado; D01 resuelta). No se implementan pesos ω (F4).
 
-Déficit = media por media entrada de las de 3 outs − media de las de 2 outs; π̂_K = d_K / (d_K + d_OUT_BIP + d_SAC). IC95 por bootstrap de medias entradas. **No se implementan los pesos ω (eso es F4).**
-
-- **todas las de 2 outs (misma población que §1.3)** (n = 4,763 vs 31,883): d_K = 0.525 [0.506, 0.542] · d_OUT_BIP = 0.387 [0.370, 0.407] · d_SAC = 0.026 [0.021, 0.032] · **π̂_K = 0.559** [0.539, 0.577]
-- **solo las de turno final perdido** (n = 4,312 vs 31,883): d_K = 0.538 [0.522, 0.557] · d_OUT_BIP = 0.363 [0.345, 0.380] · d_SAC = 0.028 [0.022, 0.033] · **π̂_K = 0.579** [0.562, 0.599]
-
-- Agrupamiento por juego de los turnos finales perdidos: 2,126 juegos · tasa media 11.56 % · dispersión de Pearson φ = 1.10 (≈ 1 si se reparten al azar entre juegos; ≫ 1 si se concentran en algunos) · 84.7 % de los juegos con ≥ 1 · 29.9 % con > 2
-
-> Nota de identificación: los déficits comparan las medias entradas de 2 outs con las de 3 outs **registradas**. π̂_K es una estimación gruesa: con datos sintéticos sembrados con una verdad de π_K = 0.40, 0.71 y 0.93 devuelve ≈ 0.34, 0.30 y 0.30; es decir, mide los ponches entre los terceros outs **registrados** (≈ la fracción de ponches entre todos los outs) y es **insensible** a la pérdida selectiva. Si el valor real supera claramente esa fracción, no lo explica «se pierde el último turno»: compara los **ponches por out registrado** de la tabla (iguales si solo faltara el último turno) y la dispersión por juego. Las cotas con π ∈ {0, 1} de Prop. 15 no dependen de este valor. Ver `docs/discrepancias/D01.md`.
+- **todas las de 2 outs** (n = 4,763 vs 31,883): d_K = 0.525 [0.506, 0.542] · d_OUT_BIP = 0.387 [0.370, 0.407] · d_SAC = 0.026 [0.021, 0.032]
+- **solo las de out faltante sin turno incompleto** (n = 4,312 vs 31,883): d_K = 0.538 [0.519, 0.556] · d_OUT_BIP = 0.363 [0.344, 0.383] · d_SAC = 0.028 [0.022, 0.033]
 
 **OutsOnPlay × evento_terminal** (¿cuenta el out de los ponches?)
 
@@ -333,18 +403,19 @@ Déficit = media por media entrada de las de 3 outs − media de las de 2 outs; 
 
 - **G0.1** ✅ I1 100.0000 % · I2 100.0000 % (mín. 99.9%) · I6′ 99.7491 % (mín. 99.5%) · tabla de discrepancias is_* × pitch_call_h: producida
 - **G0.2** ✅ ADR-010 enmendado: permutación {'X': 'y', 'Y': 'z', 'Z': 'x'} · c2 R² por pares 1.000000 y conjunta 1.000000 (mín. 0.9999) · c1 con t_s R² mín. 1.000000 (mín. 0.999) → **equivalentes**; la trayectoria canónica sigue siendo la de los 9P
-- **G0.3** ✅ diagnóstico de las 4,763 medias entradas de 2 outs producido y clasificado (no finales: 4,449): turno incompleto 9.328 % vs turno final perdido 90.672 %
+- **G0.3** ✅ diagnóstico de las 4,763 medias entradas de 2 outs producido y clasificado (no finales: 4,449): turno incompleto 9.328 % vs out faltante (sin turno incompleto) 90.672 %
 - **G0.4** ✅ I9 100.0000 % de 2,117 juegos con cubeta
 - **G0.5** ✅ valores sin regla: 0
 - **G0.6** ✅ excluir_modelo 0.803 % (máx. 3%) · excluir_cadena 0.135 % (máx. 0.5%)
 - **G0.7** ✅ ADR-014 con y_p = 1.4167 ft y signo -1: |error| mediana/p99 PlateLocSide 0.0017/0.0091 ft · PlateLocHeight 0.0013/0.0318 ft (máx. 0.05/0.3) · |ZoneTime − (t_p − t_s)| mediana 0.00003 s (máx. 0.005) · config vigente coincide
-- **G0.8** ❌ tasa de turno final perdido por cubeta (todos los años): Extreme Altitude 14.27 %, Medium Altitude 11.71 %, No Altitude 9.87 % · máx − mín = 4.400 pp (máx. 3.0 pp) → **DISCREPANCIA: la pérdida de datos se confunde con la altitud; no se sigue a F1**
+- **G0.8′** ✅ Prop. 17: W(Γ=1) 0.0042 · **W(Γ=2) 0.0084** vs 3.92·SE_ref = 0.0093 y 1·SE_ref = 0.0024 (κ̄ 0.1846, n Extreme Altitude 43,723 / No Altitude 68,142) · r̂ Extreme Altitude 0.9863 % / No Altitude 0.9209 % · **perdida_ignorable = false**
+- **G0.9** ✅ θ̂ global = 0.0737 IC95 [0.059, 0.090] → **U** (U si sup ≤ 0.25 · L si inf ≥ 0.5 · mezcla en otro caso); se reporta siempre, no falla
 
 ### Bloque para el orquestador — F00
 - Modelo(s) usado(s): Sonnet
-- Compuertas: G0.1 ✅ | G0.2 ✅ | G0.3 ✅ | G0.4 ✅ | G0.5 ✅ | G0.6 ✅ | G0.7 ✅ | G0.8 ❌
-- Cifras clave: 635,002 lanzamientos · 2,127 juegos · excluir_modelo 0.8035 % · excluir_cadena 0.1348 % · I1 100.0000 % · I6′ 99.7491 % · I7 A 86.1167 % / B no finales 91.9790 % · ADR-010: equivalentes · t_s mediana -0.0363 s · ADR-014 y_p 1.4167 ft, signo -1, |ZoneTime−(t_p−t_s)| mediana 0.00003 s · turno final perdido: rango entre cubetas 4.400 pp · π̂_K 0.559
-- Desviaciones respecto al ROADMAP: ninguna (compuertas v2.5: ADR-010 enmendado, 014 y 015)
+- Compuertas: G0.1 ✅ | G0.2 ✅ | G0.3 ✅ | G0.4 ✅ | G0.5 ✅ | G0.6 ✅ | G0.7 ✅ | G0.8′ ✅ | G0.9 ✅
+- Cifras clave: 635,002 lanzamientos · 2,127 juegos · excluir_modelo 0.8035 % · excluir_cadena 0.1348 % · I1 100.0000 % · I6′ 99.7491 % · I7 A 86.1167 % / B no finales 91.9790 % · ADR-010: equivalentes · t_s mediana -0.0363 s · ADR-014 y_p 1.4167 ft, signo -1, |ZoneTime−(t_p−t_s)| mediana 0.00003 s · ADR-016: θ̂ 0.074 [0.059, 0.090] → **U** · r̂ por cubeta: (sin cubeta) 0.0000 %, Extreme Altitude 0.9863 %, Medium Altitude 0.7250 %, No Altitude 0.9209 % · W(Γ=2) 0.00844 vs 3.92·SE_ref 0.00932 (SE_ref 0.00238) · perdida_ignorable false
+- Desviaciones respecto al ROADMAP: ninguna (compuertas v2.6: G0.8′ y G0.9 de ADR-016)
 - Mejora posible detectada: ninguna
 - Riesgo de empeorar: ninguno
 - Rama / PR / commit de resultados locales: fase00 / (pendiente) / (pendiente)

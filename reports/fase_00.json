@@ -10,7 +10,7 @@
     },
     "G0.3": {
       "ok": true,
-      "detalle": "diagnóstico de las 4,763 medias entradas de 2 outs producido y clasificado (no finales: 4,449): turno incompleto 9.328 % vs turno final perdido 90.672 %"
+      "detalle": "diagnóstico de las 4,763 medias entradas de 2 outs producido y clasificado (no finales: 4,449): turno incompleto 9.328 % vs out faltante (sin turno incompleto) 90.672 %"
     },
     "G0.4": {
       "ok": true,
@@ -28,12 +28,16 @@
       "ok": true,
       "detalle": "ADR-014 con y_p = 1.4167 ft y signo -1: |error| mediana/p99 PlateLocSide 0.0017/0.0091 ft · PlateLocHeight 0.0013/0.0318 ft (máx. 0.05/0.3) · |ZoneTime − (t_p − t_s)| mediana 0.00003 s (máx. 0.005) · config vigente coincide"
     },
-    "G0.8": {
-      "ok": false,
-      "detalle": "tasa de turno final perdido por cubeta (todos los años): Extreme Altitude 14.27 %, Medium Altitude 11.71 %, No Altitude 9.87 % · máx − mín = 4.400 pp (máx. 3.0 pp) → **DISCREPANCIA: la pérdida de datos se confunde con la altitud; no se sigue a F1**"
+    "G0.8′": {
+      "ok": true,
+      "detalle": "Prop. 17: W(Γ=1) 0.0042 · **W(Γ=2) 0.0084** vs 3.92·SE_ref = 0.0093 y 1·SE_ref = 0.0024 (κ̄ 0.1846, n Extreme Altitude 43,723 / No Altitude 68,142) · r̂ Extreme Altitude 0.9863 % / No Altitude 0.9209 % · **perdida_ignorable = false**"
+    },
+    "G0.9": {
+      "ok": true,
+      "detalle": "θ̂ global = 0.0737 IC95 [0.059, 0.090] → **U** (U si sup ≤ 0.25 · L si inf ≥ 0.5 · mezcla en otro caso); se reporta siempre, no falla"
     }
   },
-  "segundos": 6.6,
+  "segundos": 8.0,
   "salida": {
     "ruta": "data/interim/pitches.parquet",
     "filas_por_year": {
@@ -557,7 +561,8 @@
         }
       },
       "tolerancia_relativa": 0.01,
-      "piso": 1.0
+      "piso": 1.0,
+      "sustituida_por": "G0.2 (ADR-010 enmendado)"
     },
     "I4": {
       "cumplimiento": 1.0,
@@ -613,25 +618,28 @@
         "Changeup": {
           "evaluado": true,
           "media_derecho": 11.5838864450345,
-          "media_zurdo": -11.761881602802529,
+          "media_zurdo": -11.761881602802527,
           "signo_opuesto": true
         },
         "Curveball": {
           "evaluado": true,
-          "media_derecho": -7.92919013729187,
-          "media_zurdo": 7.960424908595155,
+          "media_derecho": -7.9291901372918705,
+          "media_zurdo": 7.9604249085951535,
           "signo_opuesto": true
         },
         "Cutter": {
           "evaluado": true,
-          "media_derecho": -0.3860143037816173,
-          "media_zurdo": -1.1254073653901524,
-          "signo_opuesto": false
+          "media_derecho": -0.38601430378161783,
+          "media_zurdo": -1.1254073653901526,
+          "signo_opuesto": false,
+          "mediana_abs_derecho_in": 2.0677149999999997,
+          "mediana_abs_zurdo_in": 2.2376,
+          "no_informativo": false
         },
         "Four-Seam": {
           "evaluado": true,
-          "media_derecho": 8.329586578556277,
-          "media_zurdo": -8.047659213093702,
+          "media_derecho": 8.329586578556281,
+          "media_zurdo": -8.047659213093711,
           "signo_opuesto": true
         },
         "Knuckleball": {
@@ -645,32 +653,37 @@
         },
         "Sinker": {
           "evaluado": true,
-          "media_derecho": 14.019297297792594,
-          "media_zurdo": -12.945971838197268,
+          "media_derecho": 14.019297297792576,
+          "media_zurdo": -12.945971838197266,
           "signo_opuesto": true
         },
         "Slider": {
           "evaluado": true,
-          "media_derecho": -3.9220815387958465,
-          "media_zurdo": 4.857442486855424,
+          "media_derecho": -3.9220815387958536,
+          "media_zurdo": 4.857442486855425,
           "signo_opuesto": true
         },
         "Splitter": {
           "evaluado": true,
-          "media_derecho": 5.891630668376802,
+          "media_derecho": 5.8916306683767985,
           "media_zurdo": -8.835250373443984,
           "signo_opuesto": true
         },
         "Sweeper": {
           "evaluado": true,
-          "media_derecho": -10.142330116822432,
+          "media_derecho": -10.14233011682243,
           "media_zurdo": 10.816884967741935,
           "signo_opuesto": true
         },
         "TwoSeamFastBall": {
           "evaluado": false
         }
-      }
+      },
+      "mediana_min_in": 2.0,
+      "fallas": [
+        "Cutter"
+      ],
+      "fallas_no_informativas": []
     },
     "I9": {
       "cumplimiento": 1.0,
@@ -1667,9 +1680,9 @@
       "clasificacion_no_finales": {
         "n": 4449,
         "turno_incompleto": 415,
-        "turno_final_perdido": 4034,
+        "out_faltante": 4034,
         "pct_turno_incompleto": 9.328,
-        "pct_turno_final_perdido": 90.672
+        "pct_out_faltante": 90.672
       },
       "outs_on_play_x_evento_terminal": [
         {
@@ -1844,299 +1857,742 @@
         }
       ]
     },
-    "perdida_turnos": {
-      "por_cubeta": [
-        {
-          "cubeta": "(sin cubeta)",
-          "medias_entradas": 153,
-          "dos_outs": 22,
-          "turno_incompleto": 1,
-          "turno_final_perdido": 21,
-          "tasa_dos_outs": 0.1437908496732026,
-          "tasa_turno_final_perdido": 0.13725490196078433,
-          "ic95_wilson": [
-            0.09155625124127831,
-            0.200723348048706
-          ]
-        },
-        {
-          "cubeta": "Extreme Altitude",
-          "medias_entradas": 9799,
-          "dos_outs": 1476,
-          "turno_incompleto": 78,
-          "turno_final_perdido": 1398,
-          "tasa_dos_outs": 0.1506276150627615,
-          "tasa_turno_final_perdido": 0.1426676191448107,
-          "ic95_wilson": [
-            0.1358828690760715,
-            0.14973243659203195
-          ]
-        },
-        {
-          "cubeta": "Medium Altitude",
-          "medias_entradas": 8332,
-          "dos_outs": 1091,
-          "turno_incompleto": 115,
-          "turno_final_perdido": 976,
-          "tasa_dos_outs": 0.13094095055208835,
-          "tasa_turno_final_perdido": 0.1171387421987518,
-          "ic95_wilson": [
-            0.11040929518903082,
-            0.12422107494660133
-          ]
-        },
-        {
-          "cubeta": "No Altitude",
-          "medias_entradas": 16612,
-          "dos_outs": 1860,
-          "turno_incompleto": 221,
-          "turno_final_perdido": 1639,
-          "tasa_dos_outs": 0.11196725258849025,
-          "tasa_turno_final_perdido": 0.0986636166626535,
-          "ic95_wilson": [
-            0.09422108768182964,
-            0.1032917244287528
-          ]
-        }
-      ],
-      "por_cubeta_anio": [
-        {
-          "cubeta": "(sin cubeta)",
-          "year": 2025,
-          "medias_entradas": 53,
-          "dos_outs": 6,
-          "turno_incompleto": 0,
-          "turno_final_perdido": 6,
-          "tasa_dos_outs": 0.11320754716981132,
-          "tasa_turno_final_perdido": 0.11320754716981132,
-          "ic95_wilson": [
-            0.052929589110686695,
-            0.22576770301339144
-          ]
-        },
-        {
-          "cubeta": "(sin cubeta)",
-          "year": 2026,
-          "medias_entradas": 100,
-          "dos_outs": 16,
-          "turno_incompleto": 1,
-          "turno_final_perdido": 15,
-          "tasa_dos_outs": 0.16,
-          "tasa_turno_final_perdido": 0.15,
-          "ic95_wilson": [
-            0.09305903191162297,
-            0.23283733332157835
-          ]
-        },
-        {
-          "cubeta": "Extreme Altitude",
-          "year": 2024,
-          "medias_entradas": 3642,
-          "dos_outs": 558,
-          "turno_incompleto": 35,
-          "turno_final_perdido": 523,
-          "tasa_dos_outs": 0.15321252059308071,
-          "tasa_turno_final_perdido": 0.14360241625480505,
-          "ic95_wilson": [
-            0.13258825875644584,
-            0.15536764146697588
-          ]
-        },
-        {
-          "cubeta": "Extreme Altitude",
-          "year": 2025,
-          "medias_entradas": 3836,
-          "dos_outs": 574,
-          "turno_incompleto": 20,
-          "turno_final_perdido": 554,
-          "tasa_dos_outs": 0.14963503649635038,
-          "tasa_turno_final_perdido": 0.14442127215849843,
-          "ic95_wilson": [
-            0.13365285511627253,
-            0.15590117232069253
-          ]
-        },
-        {
-          "cubeta": "Extreme Altitude",
-          "year": 2026,
-          "medias_entradas": 2321,
-          "dos_outs": 344,
-          "turno_incompleto": 23,
-          "turno_final_perdido": 321,
-          "tasa_dos_outs": 0.14821197759586385,
-          "tasa_turno_final_perdido": 0.13830245583800085,
-          "ic95_wilson": [
-            0.12485436802659508,
-            0.15294589156958552
-          ]
-        },
-        {
-          "cubeta": "Medium Altitude",
-          "year": 2024,
-          "medias_entradas": 3334,
-          "dos_outs": 478,
-          "turno_incompleto": 67,
-          "turno_final_perdido": 411,
-          "tasa_dos_outs": 0.14337132573485303,
-          "tasa_turno_final_perdido": 0.1232753449310138,
-          "ic95_wilson": [
-            0.11254746985316318,
-            0.13487038244995395
-          ]
-        },
-        {
-          "cubeta": "Medium Altitude",
-          "year": 2025,
-          "medias_entradas": 3503,
-          "dos_outs": 436,
-          "turno_incompleto": 34,
-          "turno_final_perdido": 402,
-          "tasa_dos_outs": 0.12446474450471025,
-          "tasa_turno_final_perdido": 0.11475877819012276,
-          "ic95_wilson": [
-            0.10462310169051686,
-            0.12573848635497686
-          ]
-        },
-        {
-          "cubeta": "Medium Altitude",
-          "year": 2026,
-          "medias_entradas": 1495,
-          "dos_outs": 177,
-          "turno_incompleto": 14,
-          "turno_final_perdido": 163,
-          "tasa_dos_outs": 0.11839464882943143,
-          "tasa_turno_final_perdido": 0.10903010033444815,
-          "ic95_wilson": [
-            0.09422126192302793,
-            0.1258430864377328
-          ]
-        },
-        {
-          "cubeta": "No Altitude",
-          "year": 2024,
-          "medias_entradas": 6619,
-          "dos_outs": 757,
-          "turno_incompleto": 102,
-          "turno_final_perdido": 655,
-          "tasa_dos_outs": 0.11436772926423931,
-          "tasa_turno_final_perdido": 0.09895754645716875,
-          "ic95_wilson": [
-            0.09199472080849438,
-            0.10638562396677548
-          ]
-        },
-        {
-          "cubeta": "No Altitude",
-          "year": 2025,
-          "medias_entradas": 6426,
-          "dos_outs": 753,
-          "turno_incompleto": 76,
-          "turno_final_perdido": 677,
-          "tasa_dos_outs": 0.11718020541549953,
-          "tasa_turno_final_perdido": 0.10535325241207594,
-          "ic95_wilson": [
-            0.09808111383921143,
-            0.11309696557101852
-          ]
-        },
-        {
-          "cubeta": "No Altitude",
-          "year": 2026,
-          "medias_entradas": 3567,
-          "dos_outs": 350,
-          "turno_incompleto": 43,
-          "turno_final_perdido": 307,
-          "tasa_dos_outs": 0.09812167087188113,
-          "tasa_turno_final_perdido": 0.08606672273619288,
-          "ic95_wilson": [
-            0.07730216327545388,
-            0.09572192157894012
-          ]
-        }
-      ],
-      "cubetas_comparadas": [
-        "Extreme Altitude",
-        "Medium Altitude",
-        "No Altitude"
-      ],
-      "rango_pp": 4.400400248215719,
-      "medias_entradas_no_finales": 34896,
-      "con_cubeta": 34743,
-      "turnos_finales_perdidos_M": 4034,
-      "por_juego": {
-        "juegos": 2126,
-        "tasa_media": 0.11560064190738194,
-        "dispersion_pearson_phi": 1.1048988524808956,
-        "pct_juegos_con_al_menos_una": 84.66603951081844,
-        "pct_juegos_con_mas_de_dos": 29.868297271872063
+    "mecanismo_outs": {
+      "T": {
+        "pasos": [
+          {
+            "filtro": "todas las medias entradas",
+            "excluye": null,
+            "excluye_solo_este": null,
+            "quedan": 37023
+          },
+          {
+            "filtro": "no es la final del juego",
+            "excluye": 2127,
+            "excluye_solo_este": 2127,
+            "quedan": 34896
+          },
+          {
+            "filtro": "Inning ≤ 9",
+            "excluye": 358,
+            "excluye_solo_este": 509,
+            "quedan": 34538
+          },
+          {
+            "filtro": "consistente (outs < 4)",
+            "excluye": 95,
+            "excluye_solo_este": 101,
+            "quedan": 34443
+          },
+          {
+            "filtro": "sin turno incompleto",
+            "excluye": 1376,
+            "excluye_solo_este": 1523,
+            "quedan": 33067
+          }
+        ],
+        "medias_entradas": 33067,
+        "P": 3998,
+        "Z": 9424,
+        "PZ": 84
       },
-      "todas_las_de_2_outs": {
-        "n_dos": 4763,
-        "n_tres": 31883,
-        "deficit": {
-          "K": {
-            "estimado": 0.5254389163233415,
-            "ic95": [
-              0.5064121854002873,
-              0.5418974209905313
-            ]
+      "prop16": {
+        "por_cubeta": [
+          {
+            "cubeta": "(sin cubeta)",
+            "medias_entradas": 133,
+            "P": 19,
+            "Z": 28,
+            "PZ": 0,
+            "turnos": 621,
+            "m_tilde": 4.669172932330827,
+            "ponches": 105,
+            "f": 0.21052631578947367,
+            "p0": 0.0,
+            "r_hat": 0.0,
+            "tasa_P": 0.14285714285714285,
+            "theta_hat": 0.0,
+            "ic95": {
+              "f": [
+                0.1602977099236641,
+                0.2647058823529412
+              ],
+              "r_hat": [
+                0.0,
+                0.0
+              ],
+              "tasa_P": [
+                0.088,
+                0.19117647058823528
+              ],
+              "theta_hat": [
+                0.0,
+                0.0
+              ]
+            }
           },
-          "OUT_BIP": {
-            "estimado": 0.38748707030203056,
-            "ic95": [
-              0.3704525452402542,
-              0.4069793409768364
-            ]
+          {
+            "cubeta": "Extreme Altitude",
+            "medias_entradas": 9366,
+            "P": 1387,
+            "Z": 2332,
+            "PZ": 23,
+            "turnos": 43723,
+            "m_tilde": 4.6682682041426435,
+            "ponches": 7216,
+            "f": 0.24898569293188128,
+            "p0": 0.0024556907964979713,
+            "r_hat": 0.00986277873070326,
+            "tasa_P": 0.14808883194533418,
+            "theta_hat": 0.06660042220026441,
+            "ic95": {
+              "f": [
+                0.2401317942672374,
+                0.25924202231417665
+              ],
+              "r_hat": [
+                0.005797498169316617,
+                0.014669087024565885
+              ],
+              "tasa_P": [
+                0.14045580982623704,
+                0.15572189008016254
+              ],
+              "theta_hat": [
+                0.03926649168773387,
+                0.0979551770293925
+              ]
+            }
           },
-          "SAC": {
-            "estimado": 0.0263443532442577,
-            "ic95": [
-              0.021245793681046808,
-              0.0316464771676049
+          {
+            "cubeta": "Medium Altitude",
+            "medias_entradas": 7844,
+            "P": 965,
+            "Z": 2069,
+            "PZ": 15,
+            "turnos": 35931,
+            "m_tilde": 4.580698623151453,
+            "ponches": 6393,
+            "f": 0.2637684854665987,
+            "p0": 0.0019122896481387048,
+            "r_hat": 0.007249879168680522,
+            "tasa_P": 0.12302396736359,
+            "theta_hat": 0.05893062404054924,
+            "ic95": {
+              "f": [
+                0.25320932518638517,
+                0.27417917706503675
+              ],
+              "r_hat": [
+                0.0034260413308978906,
+                0.011488888155252197
+              ],
+              "tasa_P": [
+                0.1157139977885506,
+                0.13078078432572735
+              ],
+              "theta_hat": [
+                0.028603600068582802,
+                0.09112935517327062
+              ]
+            }
+          },
+          {
+            "cubeta": "No Altitude",
+            "medias_entradas": 15724,
+            "P": 1627,
+            "Z": 4995,
+            "PZ": 46,
+            "turnos": 68142,
+            "m_tilde": 4.333630119562453,
+            "ponches": 13690,
+            "f": 0.3176672602391249,
+            "p0": 0.0029254642584584075,
+            "r_hat": 0.009209209209209208,
+            "tasa_P": 0.10347239888069193,
+            "theta_hat": 0.08900160147855292,
+            "ic95": {
+              "f": [
+                0.31067277119522263,
+                0.3257239036954808
+              ],
+              "r_hat": [
+                0.006585479025155033,
+                0.01215927870960018
+              ],
+              "tasa_P": [
+                0.09890151629951492,
+                0.10839541905616788
+              ],
+              "theta_hat": [
+                0.06396162748757499,
+                0.11581848035801533
+              ]
+            }
+          }
+        ],
+        "global": {
+          "cubeta": "global",
+          "medias_entradas": 33067,
+          "P": 3998,
+          "Z": 9424,
+          "PZ": 84,
+          "turnos": 148417,
+          "m_tilde": 4.488372093023256,
+          "ponches": 27404,
+          "f": 0.2849971270450903,
+          "p0": 0.002540296972812774,
+          "r_hat": 0.008913412563667233,
+          "tasa_P": 0.12090603925363656,
+          "theta_hat": 0.073721814217805,
+          "ic95": {
+            "f": [
+              0.28041420908810855,
+              0.2903703383020255
+            ],
+            "r_hat": [
+              0.007101106040712389,
+              0.010892962960128632
+            ],
+            "tasa_P": [
+              0.11716865376412589,
+              0.12455377418466472
+            ],
+            "theta_hat": [
+              0.05883384516714321,
+              0.09012397158621648
             ]
           }
         },
-        "pi_k": {
-          "estimado": 0.5594118051212734,
-          "ic95": [
-            0.5394757497321805,
-            0.576774601650834
-          ]
+        "juegos": 2123,
+        "bootstrap": {
+          "n": 1000,
+          "seed": 2026,
+          "unidad": "juego, dentro de cada cubeta"
         }
       },
-      "solo_turno_final_perdido": {
-        "n_dos": 4312,
-        "n_tres": 31883,
-        "deficit": {
-          "K": {
-            "estimado": 0.5380895780997044,
-            "ic95": [
-              0.5222237703722744,
-              0.556651316026064
+      "prop17": {
+        "evaluable": true,
+        "cubeta_extrema": "Extreme Altitude",
+        "cubeta_base": "No Altitude",
+        "kappa_bar": 0.18464192107373145,
+        "SE_ref": 0.002377519257572935,
+        "n_extrema": 43723,
+        "n_base": 68142,
+        "W": {
+          "1": 0.004228823610869279,
+          "2": 0.008439801854972149
+        },
+        "m_tilde": {
+          "Extreme Altitude": 4.6682682041426435,
+          "No Altitude": 4.333630119562453
+        },
+        "r_hat": {
+          "Extreme Altitude": 0.00986277873070326,
+          "No Altitude": 0.009209209209209208
+        }
+      },
+      "G08p": {
+        "ok": true,
+        "perdida_ignorable": false,
+        "W": 0.008439801854972149,
+        "SE_ref": 0.002377519257572935,
+        "W_sobre_SE_ref": 3.5498353286054263,
+        "umbral_ic": 3.92,
+        "umbral_ignorable": 1.0,
+        "regla": "W(Γ=2) ≤ 3.92·SE_ref; ignorable si W(Γ=2) ≤ SE_ref"
+      },
+      "G09": {
+        "mecanismo": "U",
+        "theta_global": 0.073721814217805,
+        "ic95": [
+          0.05883384516714321,
+          0.09012397158621648
+        ],
+        "regla": "U si IC95 sup ≤ 0.25 · L si IC95 inf ≥ 0.50 · mezcla en otro caso"
+      },
+      "mecanismo_outs": "U",
+      "perdida_ignorable": false,
+      "corroboraciones": {
+        "a_rodados": {
+          "definicion": "hit_type == GroundBall",
+          "P": {
+            "n": 4873,
+            "k": 3547,
+            "pct": 72.789,
+            "ic95_wilson_pct": [
+              71.522,
+              74.02
             ]
           },
-          "OUT_BIP": {
-            "estimado": 0.36310160752989673,
-            "ic95": [
-              0.34522387851203634,
-              0.38014254267414543
-            ]
-          },
-          "SAC": {
-            "estimado": 0.027742246014634795,
-            "ic95": [
-              0.021976704984429097,
-              0.03309462179727513
+          "T_menos_P": {
+            "n": 35321,
+            "k": 15902,
+            "pct": 45.021,
+            "ic95_wilson_pct": [
+              44.503,
+              45.541
             ]
           }
         },
-        "pi_k": {
-          "estimado": 0.5792552617546255,
-          "ic95": [
-            0.5624600669546966,
-            0.5987706877418892
+        "b_outs_previo": {
+          "P": {
+            "n": 3998,
+            "pct_min_outs_mayor_0": 2.401,
+            "pct_out_con_estado_2": 39.57,
+            "pct_hueco_en_outs": 36.018
+          },
+          "T_menos_P": {
+            "n": 29069,
+            "pct_min_outs_mayor_0": 0.083,
+            "pct_out_con_estado_2": 98.191,
+            "pct_hueco_en_outs": 0.378
+          }
+        },
+        "c_logit": {
+          "base": "No Altitude",
+          "n": 32934,
+          "sin_N_h": {
+            "Extreme Altitude": {
+              "OR": 1.509999795867741,
+              "ic95": [
+                1.394966852306617,
+                1.6345186839030692
+              ]
+            },
+            "Medium Altitude": {
+              "OR": 1.211010921240419,
+              "ic95": [
+                1.11009452801459,
+                1.3211014146574493
+              ]
+            },
+            "convergio": true
+          },
+          "con_N_h": {
+            "Extreme Altitude": {
+              "OR": 1.425882304602911,
+              "ic95": [
+                1.314173215775984,
+                1.5470870370609358
+              ]
+            },
+            "Medium Altitude": {
+              "OR": 1.1458026810881918,
+              "ic95": [
+                1.0469525131684239,
+                1.2539859902678199
+              ]
+            },
+            "convergio": true
+          }
+        },
+        "d_dobles": {
+          "por_evento": [
+            {
+              "evento": "1B",
+              "OutsOnPlay": 2,
+              "n": 13
+            },
+            {
+              "evento": "1B",
+              "OutsOnPlay": 3,
+              "n": 1
+            },
+            {
+              "evento": "2B",
+              "OutsOnPlay": 2,
+              "n": 4
+            },
+            {
+              "evento": "BB",
+              "OutsOnPlay": 2,
+              "n": 3
+            },
+            {
+              "evento": "BB",
+              "OutsOnPlay": 3,
+              "n": 4
+            },
+            {
+              "evento": "HR",
+              "OutsOnPlay": 2,
+              "n": 1
+            },
+            {
+              "evento": "HR",
+              "OutsOnPlay": 3,
+              "n": 1
+            },
+            {
+              "evento": "NO_TERMINAL",
+              "OutsOnPlay": 2,
+              "n": 17
+            },
+            {
+              "evento": "NO_TERMINAL",
+              "OutsOnPlay": 3,
+              "n": 5
+            },
+            {
+              "evento": "OUT_BIP",
+              "OutsOnPlay": 2,
+              "n": 217
+            },
+            {
+              "evento": "OUT_BIP",
+              "OutsOnPlay": 3,
+              "n": 2
+            },
+            {
+              "evento": "ROE",
+              "OutsOnPlay": 2,
+              "n": 1
+            },
+            {
+              "evento": "SAC",
+              "OutsOnPlay": 2,
+              "n": 8
+            }
+          ],
+          "jugadas_con_2_o_mas_outs": 277,
+          "juegos": 2127,
+          "tasa_mlb_ref_por_juego": 1.63,
+          "dobles_matanzas_esperadas_ref": 3467.0099999999998,
+          "fraccion_registrada": 0.07989593338352068
+        },
+        "e_poisson": {
+          "juegos": 2123,
+          "lambda": 1.8831841733396137,
+          "varianza": 1.8770168119642905,
+          "dispersion_phi": 0.9967250354677812,
+          "P_ge1": {
+            "observado": 0.8464437117286858,
+            "poisson": 0.8478949948576662
+          },
+          "P_gt2": {
+            "observado": 0.2943947244465379,
+            "poisson": 0.29174198234695115
+          },
+          "histograma": [
+            {
+              "k": 0,
+              "juegos": 326,
+              "esperados_poisson": 322.91892591717465
+            },
+            {
+              "k": 1,
+              "juegos": 612,
+              "esperados_poisson": 608.1158105590506
+            },
+            {
+              "k": 2,
+              "juegos": 560,
+              "esperados_poisson": 572.5970350011974
+            },
+            {
+              "k": 3,
+              "juegos": 344,
+              "esperados_poisson": 359.43522467181464
+            },
+            {
+              "k": 4,
+              "juegos": 200,
+              "esperados_poisson": 169.22068161068233
+            },
+            {
+              "k": 5,
+              "juegos": 59,
+              "esperados_poisson": 63.734741882195785
+            },
+            {
+              "k": 6,
+              "juegos": 17,
+              "esperados_poisson": 20.004042867406078
+            },
+            {
+              "k": 7,
+              "juegos": 4,
+              "esperados_poisson": 5.381613847243761
+            },
+            {
+              "k": 8,
+              "juegos": 0,
+              "esperados_poisson": 1.2668212530193441
+            },
+            {
+              "k": 9,
+              "juegos": 1,
+              "esperados_poisson": 0.26507308157069903
+            }
           ]
+        }
+      },
+      "informativas": {
+        "out_faltante_por_cubeta": [
+          {
+            "cubeta": "(sin cubeta)",
+            "medias_entradas": 153,
+            "dos_outs": 22,
+            "turno_incompleto": 1,
+            "out_faltante": 21,
+            "tasa_dos_outs": 0.1437908496732026,
+            "tasa_out_faltante": 0.13725490196078433,
+            "ic95_wilson": [
+              0.09155625124127831,
+              0.200723348048706
+            ]
+          },
+          {
+            "cubeta": "Extreme Altitude",
+            "medias_entradas": 9799,
+            "dos_outs": 1476,
+            "turno_incompleto": 78,
+            "out_faltante": 1398,
+            "tasa_dos_outs": 0.1506276150627615,
+            "tasa_out_faltante": 0.1426676191448107,
+            "ic95_wilson": [
+              0.1358828690760715,
+              0.14973243659203195
+            ]
+          },
+          {
+            "cubeta": "Medium Altitude",
+            "medias_entradas": 8332,
+            "dos_outs": 1091,
+            "turno_incompleto": 115,
+            "out_faltante": 976,
+            "tasa_dos_outs": 0.13094095055208835,
+            "tasa_out_faltante": 0.1171387421987518,
+            "ic95_wilson": [
+              0.11040929518903082,
+              0.12422107494660133
+            ]
+          },
+          {
+            "cubeta": "No Altitude",
+            "medias_entradas": 16612,
+            "dos_outs": 1860,
+            "turno_incompleto": 221,
+            "out_faltante": 1639,
+            "tasa_dos_outs": 0.11196725258849025,
+            "tasa_out_faltante": 0.0986636166626535,
+            "ic95_wilson": [
+              0.09422108768182964,
+              0.1032917244287528
+            ]
+          }
+        ],
+        "out_faltante_por_cubeta_anio": [
+          {
+            "cubeta": "(sin cubeta)",
+            "year": 2025,
+            "medias_entradas": 53,
+            "dos_outs": 6,
+            "turno_incompleto": 0,
+            "out_faltante": 6,
+            "tasa_dos_outs": 0.11320754716981132,
+            "tasa_out_faltante": 0.11320754716981132,
+            "ic95_wilson": [
+              0.052929589110686695,
+              0.22576770301339144
+            ]
+          },
+          {
+            "cubeta": "(sin cubeta)",
+            "year": 2026,
+            "medias_entradas": 100,
+            "dos_outs": 16,
+            "turno_incompleto": 1,
+            "out_faltante": 15,
+            "tasa_dos_outs": 0.16,
+            "tasa_out_faltante": 0.15,
+            "ic95_wilson": [
+              0.09305903191162297,
+              0.23283733332157835
+            ]
+          },
+          {
+            "cubeta": "Extreme Altitude",
+            "year": 2024,
+            "medias_entradas": 3642,
+            "dos_outs": 558,
+            "turno_incompleto": 35,
+            "out_faltante": 523,
+            "tasa_dos_outs": 0.15321252059308071,
+            "tasa_out_faltante": 0.14360241625480505,
+            "ic95_wilson": [
+              0.13258825875644584,
+              0.15536764146697588
+            ]
+          },
+          {
+            "cubeta": "Extreme Altitude",
+            "year": 2025,
+            "medias_entradas": 3836,
+            "dos_outs": 574,
+            "turno_incompleto": 20,
+            "out_faltante": 554,
+            "tasa_dos_outs": 0.14963503649635038,
+            "tasa_out_faltante": 0.14442127215849843,
+            "ic95_wilson": [
+              0.13365285511627253,
+              0.15590117232069253
+            ]
+          },
+          {
+            "cubeta": "Extreme Altitude",
+            "year": 2026,
+            "medias_entradas": 2321,
+            "dos_outs": 344,
+            "turno_incompleto": 23,
+            "out_faltante": 321,
+            "tasa_dos_outs": 0.14821197759586385,
+            "tasa_out_faltante": 0.13830245583800085,
+            "ic95_wilson": [
+              0.12485436802659508,
+              0.15294589156958552
+            ]
+          },
+          {
+            "cubeta": "Medium Altitude",
+            "year": 2024,
+            "medias_entradas": 3334,
+            "dos_outs": 478,
+            "turno_incompleto": 67,
+            "out_faltante": 411,
+            "tasa_dos_outs": 0.14337132573485303,
+            "tasa_out_faltante": 0.1232753449310138,
+            "ic95_wilson": [
+              0.11254746985316318,
+              0.13487038244995395
+            ]
+          },
+          {
+            "cubeta": "Medium Altitude",
+            "year": 2025,
+            "medias_entradas": 3503,
+            "dos_outs": 436,
+            "turno_incompleto": 34,
+            "out_faltante": 402,
+            "tasa_dos_outs": 0.12446474450471025,
+            "tasa_out_faltante": 0.11475877819012276,
+            "ic95_wilson": [
+              0.10462310169051686,
+              0.12573848635497686
+            ]
+          },
+          {
+            "cubeta": "Medium Altitude",
+            "year": 2026,
+            "medias_entradas": 1495,
+            "dos_outs": 177,
+            "turno_incompleto": 14,
+            "out_faltante": 163,
+            "tasa_dos_outs": 0.11839464882943143,
+            "tasa_out_faltante": 0.10903010033444815,
+            "ic95_wilson": [
+              0.09422126192302793,
+              0.1258430864377328
+            ]
+          },
+          {
+            "cubeta": "No Altitude",
+            "year": 2024,
+            "medias_entradas": 6619,
+            "dos_outs": 757,
+            "turno_incompleto": 102,
+            "out_faltante": 655,
+            "tasa_dos_outs": 0.11436772926423931,
+            "tasa_out_faltante": 0.09895754645716875,
+            "ic95_wilson": [
+              0.09199472080849438,
+              0.10638562396677548
+            ]
+          },
+          {
+            "cubeta": "No Altitude",
+            "year": 2025,
+            "medias_entradas": 6426,
+            "dos_outs": 753,
+            "turno_incompleto": 76,
+            "out_faltante": 677,
+            "tasa_dos_outs": 0.11718020541549953,
+            "tasa_out_faltante": 0.10535325241207594,
+            "ic95_wilson": [
+              0.09808111383921143,
+              0.11309696557101852
+            ]
+          },
+          {
+            "cubeta": "No Altitude",
+            "year": 2026,
+            "medias_entradas": 3567,
+            "dos_outs": 350,
+            "turno_incompleto": 43,
+            "out_faltante": 307,
+            "tasa_dos_outs": 0.09812167087188113,
+            "tasa_out_faltante": 0.08606672273619288,
+            "ic95_wilson": [
+              0.07730216327545388,
+              0.09572192157894012
+            ]
+          }
+        ],
+        "rango_pp": 4.400400248215719,
+        "deficits_todas_las_de_2_outs": {
+          "n_dos": 4763,
+          "n_tres": 31883,
+          "deficit": {
+            "K": {
+              "estimado": 0.5254389163233415,
+              "ic95": [
+                0.5064121854002873,
+                0.5418974209905313
+              ]
+            },
+            "OUT_BIP": {
+              "estimado": 0.38748707030203056,
+              "ic95": [
+                0.3704525452402542,
+                0.4069793409768364
+              ]
+            },
+            "SAC": {
+              "estimado": 0.0263443532442577,
+              "ic95": [
+                0.021245793681046808,
+                0.0316464771676049
+              ]
+            }
+          }
+        },
+        "deficits_sin_turno_incompleto": {
+          "n_dos": 4312,
+          "n_tres": 31883,
+          "deficit": {
+            "K": {
+              "estimado": 0.5380895780997044,
+              "ic95": [
+                0.5193350546979021,
+                0.5555733832847337
+              ]
+            },
+            "OUT_BIP": {
+              "estimado": 0.36310160752989673,
+              "ic95": [
+                0.3442738623001645,
+                0.3830482827053716
+              ]
+            },
+            "SAC": {
+              "estimado": 0.027742246014634795,
+              "ic95": [
+                0.022299358916765304,
+                0.03322685297013308
+              ]
+            }
+          }
         }
       }
     }
