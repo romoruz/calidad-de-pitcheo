@@ -13,6 +13,50 @@ regla nunca se asigna en silencio: hace fallar la fase (G0.5).
 
 ---
 
+## Plantilla de ADR
+
+Cada decisión de arquitectura se registra con cuatro apartados (ROADMAP §5):
+
+- **Contexto.** El problema o hallazgo y por qué hay que decidir ahora.
+- **Decisión.** Lo que se hace, en términos operativos.
+- **Alternativas.** Qué más se consideró y por qué se descartó.
+- **Consecuencias.** Qué cambia en el resto del roadmap (fases, compuertas, código) y qué riesgo
+  queda abierto.
+
+Los ADR posteriores (002 en adelante) ya siguen esta estructura aunque la expresen en prosa o en
+tabla.
+
+---
+
+## ADR-001 — ρ por juego desde la trayectoria, porque el dataset no trae estadio ni clima
+
+- **Contexto.** El efecto altitud del reto depende de la densidad del aire ρ de cada lanzamiento.
+  El diccionario del organizador **no** trae estadio, fecha ni clima: solo `altitude_category`
+  (tres cubetas) y `year` (ROADMAP §1, hallazgo 2). No se puede unir con una fuente externa de
+  clima (Open-Meteo) ni hacer un *park holdout* real, porque no hay identificador de parque ni de
+  partido con fecha. Lo que sí hay es la cinemática 9P completa (`x0…az0`) y los polinomios de
+  trayectoria, que son exactos (ADR-010, enmienda): la trayectoria contiene la huella de ρ a
+  través del arrastre y del Magnus.
+- **Decisión.** Estimar la densidad **por juego** $\hat\rho_g$ directamente desde la propia
+  trayectoria (F2), y no desde una tabla de altitudes. La cubeta `altitude_category` se usa solo
+  para imputación por juego (ADR-005) y para reportes; "Harp Helú" se define por **densidad**
+  (la moda de la clase de densidad más alta dentro de *Extreme*), no por el nombre del estadio.
+  Es el núcleo del proyecto (ROADMAP §1, hallazgo 1).
+- **Alternativas.** (a) Usar la altitud nominal de la cubeta como ρ: la cubeta *Extreme* mezcla
+  parques sobre ~1 800 m con densidades distintas (ADR-005), y colapsarlos pierde la variación que
+  mueve el lanzamiento. (b) Unir con clima externo: imposible sin estadio ni fecha. (c) Tratar la
+  cubeta como efecto fijo sin ρ continua: no permite H1 (que necesita $\log\hat\rho_g$ continuo) ni
+  el operador de traslación de F3.
+- **Consecuencias.** F2 estima $\hat\rho_g$ con un EE por juego de ~0.01 en $\log\rho$ (§1.1), lo
+  que da potencia a H1. Las columnas que dependen de ρ (`ZoneSpeed`, `SpeedDrop`, `*Break`, `pfx*`)
+  son los **canales** del efecto y se transforman con el operador $T$ en el contrafactual (F3,
+  hallazgo 6). La cubeta nula de 10 juegos (3 020 lanzamientos) queda fuera de las pruebas
+  confirmatorias y F2 le **predice** la cubeta como validación 🔎 (ADR-005). Riesgo abierto: si la
+  trayectoria no identifica ρ con suficiente precisión por juego, H1 pierde potencia; se mide en la
+  compuerta de F2.
+
+---
+
 ## ADR-002 — `AutoPitchType` (12 valores): se conserva la etiqueta y se agrega `familia`
 
 - **Contexto.** El dato real trae 12 valores; el diccionario lista 8 (extra: `Knuckleball`,
