@@ -74,7 +74,7 @@ representativa de un vuelo con $\lVert\mathbf v\rVert$ variable. $\blacksquare$
 
 **Por qué $\rho C$ y no $\rho$ a secas.** La trayectoria solo identifica el producto $\rho C_D$ (y
 $\rho C_L$): no se puede separar densidad de coeficiente con un lanzamiento. La separación la hace la
-Prop. 2: $C_D$ y $C_L$ dependen de $(S,k,h)$ —misma pelota, misma física— y $\rho$ depende del juego,
+Prop. 2′: $C_D$ y $C_L$ dependen de $(S,k,h)$ —misma pelota, misma física— y $\rho$ depende del juego,
 así que el efecto fijo de juego aísla $\log\rho_g$ salvo una constante.
 
 ## F2.2 Error de la regla del punto medio, como función de $\Delta=t_p-t_s$
@@ -113,31 +113,46 @@ $\Delta\approx0.40$ s $\Rightarrow s\approx0.10$) sale $\varepsilon_{\text{mid}}
 peor caso (lanzamientos lentos/largos, $s\le0.20$, lo que §4-F2 llama "15–20 % de caída")
 $\varepsilon_{\text{mid}}\le s^2/4\le1\%$, justo el umbral de G2.1.
 
-**Lo que salva a $\hat\rho_g$.** $\varepsilon_{\text{mid}}$ es una función **suave de la rapidez**,
-que correlaciona con la forma $k$. Como $f_D(S,k,h,\text{year})$ de la Prop. 2 es una función común
-flexible de forma y giro, el sesgo del punto medio se **absorbe en $f_D$** y casi no toca al efecto
-de juego $\delta_g$, siempre que la distribución de rapidez por forma sea parecida entre juegos
-(la condición de soporte común de la Prop. 2). Términos de orden superior que descarto aquí y que la
-sintética debe cuantificar: la rotación de $\hat{\mathbf v}$ (el lanzamiento se curva) y la
-proyección $\mathbf g\cdot\hat{\mathbf v}$ (pequeña, lanzamiento casi horizontal; Prop. 3b).
+**Dependencia en $\rho$ y sesgo diferencial (corrección §1.6(4)).** Como $s=\kappa C_D\lVert\mathbf v\rVert\Delta$
+y $\kappa=\rho A/2m$, se tiene $s\propto\rho$ y por tanto $\varepsilon_{\text{mid}}\propto\rho^2$. La parte
+que varía con la forma/rapidez **a $\rho$ fija** entra en $f_D$, pero la parte que **varía con $\rho$ NO la
+absorbe $f_D$** (que es común a todos los juegos, independiente de la densidad): un $f_D$ sin densidad no puede
+capturar un término proporcional a $\rho$, así que ese pedazo sí llega a $\delta_g$. Lo que de verdad sesga a
+$\delta_g$ —identificado de **diferencias** de densidad— es el **diferencial** entre cubetas:
 
-## F2.3 Proposición 2 — identificación de $\rho_g$ y diseño del estimador
+$$\varepsilon_{\text{mid}}(\rho_0)-\varepsilon_{\text{mid}}(0.76\rho_0)=\frac{s_0^2}{4}\,(1-0.76^2)\approx\frac{s_0^2}{4}\cdot0.42\approx0.001\ \text{en }\log\rho\quad(s_0\approx0.10),$$
 
-Con $y^D_i=\log(\rho C_D)_i$,
+despreciable frente a la señal de 0.27 y bajo la resolución 0.01 de G2.2(c). La sintética lo verifica
+(F2.5). Términos de orden superior que la sintética también cuantifica: la rotación de $\hat{\mathbf v}$
+(el lanzamiento se curva) y la proyección $\mathbf g\cdot\hat{\mathbf v}$ (pequeña, lanzamiento casi
+horizontal; Prop. 3′).
 
-$$y^D_i=\delta_{g(i)}+f_D(S_i,k_i,h_i,\text{year}_i)+\eta_i,\qquad\mathbb E[\eta_i\mid\cdot]=0,$$
+## F2.3 Proposición 2′ — dos efectos fijos (juego + lanzador×forma) y diseño del estimador
 
-$f_D$ común a todos los juegos (misma pelota, misma física). Bajo **soporte común** de $(S,k,h)$
-entre juegos, $\delta_g-\delta_{g'}=\log(\rho_g/\rho_{g'})$ está identificado; el nivel absoluto no
-(cualquier constante pasa de $\delta$ a $f_D$), de ahí la normalización. **Demostración:** efectos
-fijos con covariable flexible común; la diferencia de dos efectos fijos es estimable si la matriz de
-los dummies, proyectada fuera del espacio de $f_D$, tiene rango completo, lo que da el soporte
-común. $\blacksquare$
+(Sustituye a la Prop. 2 original; revisión del orquestador §1.6(2).) Con $y^D_i=\log(\rho C_D)_i$,
 
-**Diseño del estimador (lo que implementará Sonnet).** OLS de $y^D_i$ sobre:
-dummies de juego $\{\delta_g\}$ + base B-spline de $S$ **por estrato** $(k,h,\text{year})$ (tensor
-estratificado: una spline de $S$ con nudos fijos sobre el rango agrupado de cada estrato). Lo mismo
-con $y^L_i=\log(\rho C_L)_i$ para $\delta^L_g$.
+$$y^D_i=\delta_{g(i)}+\alpha_{j(i),k(i)}+f_D(S_i,k_i,h_i,\text{year}_i)+\eta_i,\qquad\mathbb E[\eta_i\mid\cdot]=0,$$
+
+con **dos** efectos fijos: juego $\delta_g$ y lanzador×forma $\alpha_{j,k}$, más $f_D$ común (misma pelota,
+misma física). **Por qué el segundo efecto fijo:** sin $\alpha_{j,k}$, el $C_D$ medio del *staff* local carga
+en el parque (los lanzadores de casa lanzan más en su parque), con un sesgo de orden $0.01$ en $\log\rho$ —
+**igual a la resolución que pide G2.2(c)**. El efecto fijo de lanzador×forma lo elimina.
+
+$\delta_g-\delta_{g'}=\log(\rho_g/\rho_{g'})$ está identificado dentro del **conjunto conectado** del grafo
+bipartito juegos–(lanzador×forma) (Abowd–Kramarz–Margolis 1999, AKM): dos juegos son comparables si una
+cadena de lanzadores×forma compartidos los une. F2 **reporta el tamaño del componente conectado** (cuántos
+juegos y lanzador×forma entran); los juegos fuera del gigante no tienen $\delta_g$ identificado y van a 🔎. El
+nivel absoluto sigue sin identificarse (cualquier constante pasa de $\delta$ a $f_D$), de ahí la
+normalización. **Demostración:** modelo AKM de dos efectos fijos con covariable flexible común; las
+diferencias de efectos fijos del mismo factor son estimables en el componente conectado del grafo bipartito,
+donde la matriz de diseño proyectada tiene rango completo. $\blacksquare$
+
+**Diseño del estimador (lo que implementará Sonnet).** $y^D_i$ sobre dummies de juego $\{\delta_g\}$ + dummies
+de lanzador×forma $\{\alpha_{j,k}\}$ + base B-spline de $S$ **por estrato** $(k,h,\text{year})$ (nudos fijos
+sobre el rango agrupado del estrato). Como hay miles de dummies en los dos factores, se estima por
+**proyecciones alternadas** (Guimarães–Portugal 2010): se barren en turnos las medias por juego y por
+lanzador×forma (al estilo de la transformación "within" iterada) hasta converger, con $f_D$ parcializado. Lo
+mismo con $y^L_i=\log(\rho C_L)_i$ para $\delta^L_g$.
 
 **Normalización.** $\bar\delta_{\text{No Altitude}}:=0$ calculada **solo** sobre los juegos cuya
 cubeta imputada (ADR-005) es *No Altitude*. Entonces $\hat\rho_g/\rho_{ref}=e^{\hat\delta_g}$. No se
@@ -158,67 +173,82 @@ confirmatorias** G2.2. Uso 🔎: se predice su cubeta a partir de $\hat\delta_g$
    por juego, el **$n$ efectivo** = lanzamientos que caen en regiones de $S$ compartidas con $\ge1$
    juego de otra cubeta.
 4. **Fallback por coarsening** cuando un estrato tiene soporte en un solo juego o la spline no se
-   separa del dummy: se reduce la spline (menos nudos → lineal → media única) y, si aún falla, se
-   funde el estrato a un nivel más grueso: quitar `year`, luego fundir forma $k$ en `familia`
-   (ADR-002), hasta recuperar soporte común. El coarsening aplicado se **registra** en el reporte.
+   separa del dummy, en este orden (§1.6(5)): menos nudos → spline lineal → **fundir forma $k$ en
+   `familia`** (ADR-002) → marcar el juego como baja confianza. **Nunca se elimina `year`**, porque la
+   pelota cambia de arrastre entre temporadas y colapsar años mezclaría dos $f_D$ distintos. El coarsening
+   aplicado se **registra** en el reporte.
 5. Un juego con $n$ efectivo $< n_{\min}$ (umbral en `config/default.yaml`, propuesta $n_{\min}=30$)
    o con número de condición sobre el tope se marca **baja confianza**: sale de las medias
    confirmatorias y se reporta 🔎.
 
-**Estimador de $\sigma_\eta$.** Desviación estándar residual de la regresión de efectos fijos:
+**Estimador de $\sigma_\eta$.** Desviación estándar residual de la regresión de dos efectos fijos:
 
-$$\hat\sigma_\eta^2=\frac{1}{N-p}\sum_i\hat\eta_i^2,\qquad p=(\#\text{juegos}-1)+\sum_{\text{estratos}}\text{df}_{\text{spline}},$$
+$$\hat\sigma_\eta^2=\frac{1}{N-p}\sum_i\hat\eta_i^2,\qquad p=(\#\text{juegos}-1)+\#\{\alpha_{j,k}\}_{\text{conectados}}+\sum_{\text{estratos}}\text{df}_{\text{spline}},$$
 
-($\#\text{juegos}-1$ por la normalización). Es el $\sigma_\eta$ que pide G2.4 y la escala de los SE.
+($\#\text{juegos}-1$ por la normalización; $\#\{\alpha_{j,k}\}$ cuenta los efectos de lanzador×forma del
+componente conectado). Es el $\sigma_\eta$ que pide G2.4 y la escala de los SE.
 
-**SE de $\hat\delta_g$ con agrupamiento por lanzador dentro del juego.** Los lanzamientos de un mismo
-lanzador en un juego tienen residuos correlacionados (mando/liberación del lanzador, no capturados
-por $f_D$). El SE **ingenuo** $\hat\sigma_\eta/\sqrt{n_g}$ supone independencia y subestima. Se usa el
-estimador **robusto por conglomerados**, con conglomerados = (lanzador × juego):
+**Errores estándar (§1.6(3)).**
 
-$$\widehat{\operatorname{Var}}(\hat\delta_g)=\frac{1}{n_g^2}\sum_{p\in P(g)}\Big(\sum_{i\in p,\,g}\hat\eta_i\Big)^2,\qquad P(g)=\text{lanzadores del juego }g,$$
-
-equivalente a $\dfrac{\sigma_\eta^2}{n_g}\big(1+(\bar m_g-1)\,\text{ICC}_p\big)$ con $\bar m_g$ el
-promedio de lanzamientos por lanzador en $g$ e $\text{ICC}_p$ la correlación intra-lanzador de
-$\eta$. **G2.4** exige que la **mediana** de $\sqrt{\widehat{\operatorname{Var}}(\hat\delta_g)}$ sobre
-los juegos sea $<0.03$. Se reportan el SE ingenuo y el agrupado para ver el efecto de diseño.
+- **Para $\delta_g$:** corrección **CR2** (Bell–McCaffrey 2002) con conglomerados = **lanzador dentro del
+  juego**. Como hay pocos conglomerados por juego (~9 lanzadores), el estimador robusto estándar (CR0)
+  subestima; CR2 ajusta el apalancamiento de cada conglomerado y da la referencia con grados de libertad de
+  Satterthwaite. El SE ingenuo $\hat\sigma_\eta/\sqrt{n_g}$ supone independencia y se reporta solo de
+  contraste. **G2.4** usa la **mediana** del SE **CR2** sobre los juegos, y exige $<0.03$.
+- **Para los contrastes de medias por cubeta y la regresión de Deming:** **agrupamiento doble
+  juego × lanzador** (Cameron–Gelbach–Miller 2011), porque un lanzador aparece en varios juegos y un juego
+  tiene varios lanzadores; el SE de dos vías suma los dos agrupamientos y resta la intersección.
 
 *Precisión esperada (§4-F2):* con ~250 lanzamientos/juego y $\sigma_\eta\approx0.15$, el SE ingenuo
-$\approx0.01$; el agrupado será algo mayor según $\text{ICC}_p$, y debe seguir bajo 0.03 contra una
-señal de 0.27.
+$\approx0.01$; el CR2 será algo mayor según la correlación intra-lanzador, y debe seguir bajo 0.03 contra
+una señal de 0.27.
 
-## F2.4 Proposición 3 — robustez a sesgos de calibración (con el término de gravedad explícito)
+## F2.4 Proposición 3′ — robustez a sesgos de calibración (escala y reloj unificados)
 
-**(a) Error de escala espacial $\lambda_g$ por parque** ($\tilde{\mathbf r}=\lambda\mathbf r$). Entonces
-$\tilde{\mathbf v}=\lambda\mathbf v$, $\tilde{\mathbf a}=\lambda\mathbf a$ y, en la Prop. 1,
-$\rho C_D$ se recupera como
-$-\dfrac{2m}{A}\dfrac{\lambda\tilde{\mathbf a}\cdot\hat{\mathbf v}}{\lambda^2\lVert\bar{\mathbf v}\rVert^2}=\dfrac1\lambda(\rho C_D)_{\text{verdadero}}$:
-$\hat\delta_g$ absorbe $-\log\lambda_g$. Un sesgo de 2 % da 0.02 de error en $\delta$, **un orden bajo
-la señal** ($|\log0.762|=0.27$). Como $\lambda$ escala $C_D$ y $C_L$ **por igual**, $\delta^D$ y
-$\delta^L$ se desplazan lo mismo: la **sobreidentificación (Deming) no se entera** y el orden/bandas
-de G2.2 se conservan.
+(Sustituye a la Prop. 3 original; revisión del orquestador §1.6(1). La versión anterior afirmaba por error
+que la escala $\lambda$ no la detecta Deming; sí la detecta.) Con escala espacial $\lambda_g$ y reloj
+$\tau_g$ por parque, lo **medido** es $\tilde{\mathbf r}=\lambda\mathbf r$ en tiempos estirados por $\tau$,
+de modo que $\tilde{\mathbf v}=(\lambda/\tau)\mathbf v$ y $\tilde{\mathbf a}=(\lambda/\tau^2)\mathbf a_{\text{full}}$,
+con $\mathbf a_{\text{full}}=\mathbf a_{\text{aero}}+\mathbf g$. Al restar la **gravedad verdadera**,
 
-**(b) Error de reloj $\tau$** (el tiempo medido es $\tau$ veces el real). La posición es correcta pero
-las derivadas no: $\tilde{\mathbf v}=\mathbf v/\tau$ y, para la aceleración **medida completa** (que
-incluye gravedad), $\tilde{\mathbf a}_{\text{full}}=\mathbf a_{\text{full}}/\tau^2$. Al restar la
-**gravedad verdadera**,
+$$\tilde{\mathbf a}-\mathbf g=\frac{\lambda}{\tau^2}\,\mathbf a_{\text{aero}}+c_g\,\mathbf g,\qquad c_g=\frac{\lambda_g}{\tau_g^2}-1 .$$
 
-$$\tilde{\mathbf a}=\tilde{\mathbf a}_{\text{full}}-\mathbf g=\frac{\mathbf a_{\text{aero}}+\mathbf g}{\tau^2}-\mathbf g=\frac{\mathbf a_{\text{aero}}}{\tau^2}+\mathbf g(\tau^{-2}-1).$$
+**Consecuencias.**
 
-El cociente de la Prop. 1 queda, con $\lVert\tilde{\mathbf v}\rVert^2=\lVert\mathbf v\rVert^2/\tau^2$,
+- **(a)** El cociente aerodinámico $\mathbf a_{\text{aero}}/\lVert\mathbf v\rVert^2$ escala por $1/\lambda$
+  (el $\tau$ se cancela entre $\tilde{\mathbf a}$ y $\lVert\tilde{\mathbf v}\rVert^2$), así que
+  $\delta^D_g=\log\rho_g-\log\lambda_g$: **el reloj no entra en el canal de arrastre.**
+- **(b)** Tanto la escala como el reloj dejan el **mismo** residuo $c_g\,\mathbf g$, casi perpendicular a
+  $\mathbf v$ (gravedad vertical, lanzamiento casi horizontal). Ese residuo carga en el **canal de
+  sustentación**, así que $\delta^L_g-\delta^D_g$ estima $c_g=\lambda_g/\tau_g^2-1$: la **combinación**,
+  sin poder separar escala de reloj. En particular, una escala pura ($\tau=1$) da $c_g=\lambda-1\neq0$, así
+  que **$\lambda=1.02$ SÍ diverge en Deming** (mi versión anterior lo negaba: olvidaba que la gravedad
+  verdadera se resta sin escalar, dejando el término $(\lambda-1)\mathbf g$).
+- **(c)** Un sesgo de 2 % mueve $\delta$ un 2 %, **un orden bajo la señal** ($|\log0.762|=0.27$).
 
-$$\frac{\tilde{\mathbf a}\cdot\hat{\mathbf v}}{\lVert\tilde{\mathbf v}\rVert^2}=\frac{\mathbf a_{\text{aero}}\cdot\hat{\mathbf v}}{\lVert\mathbf v\rVert^2}+(1-\tau^2)\,\frac{\mathbf g\cdot\hat{\mathbf v}}{\lVert\mathbf v\rVert^2},$$
+**Mapa corregido "sesgo → compuerta".** El orden/bandas de G2.2 se conservan ante un sesgo de 2 % (solo
+desplaza $\delta$ un 2 %), pero **G2.3 (Deming) detecta tanto $\lambda$ como $\tau$**, porque ambos dejan
+$c_g\neq0$: $\delta^L-\delta^D\neq0$. Un sesgo de sensor no puede fabricar el efecto altitud y deja huella
+en la sobreidentificación. $\blacksquare$
 
-es decir el valor verdadero **más** un término $\propto(1-\tau^2)\,\mathbf g\cdot\hat{\mathbf v}$. Como
-el lanzamiento es casi horizontal, $\mathbf g\cdot\hat{\mathbf v}$ es pequeño: el **canal de arrastre
-(a lo largo de $\hat{\mathbf v}$) casi no se afecta**. El residuo perpendicular (Magnus) recoge toda
-la componente **vertical** de $\mathbf g(\tau^{-2}-1)$, así que el **canal de sustentación sí se
-sesga**. Resultado: $\delta^D$ y $\delta^L$ **divergen**, con la discrepancia concentrada en la
-vertical.
+**Detector adicional por $\hat{\mathbf e}=\hat{\mathbf v}\times\hat{\mathbf n}_{\text{spin}}$
+(§1.6(1)).** Un tercer eje ortogonal a $\hat{\mathbf v}$ y a la dirección de giro $\hat{\mathbf n}_{\text{spin}}$
+(de `SpinAxis`). En ese eje el Magnus verdadero no tiene componente, así que
 
-*Consecuencia (Prop. 3).* Un sesgo de sensor no fabrica el efecto altitud: la escala lo absorbe
-(orden de magnitud bajo la señal) y el reloj deja huella detectable. **La prueba de
-sobreidentificación $\delta^D$ vs $\delta^L$ (Deming, G2.3) es el detector.** $\blacksquare$
+$$\tilde{\mathbf a}\cdot\hat{\mathbf e}_i=c_g\,(\mathbf g\cdot\hat{\mathbf e}_i)+\beta_{j,k}+\epsilon_i,$$
+
+donde $\beta_{j,k}$ absorbe la estela por costuras y el desajuste de eje del lanzador; la regresión de
+$\tilde{\mathbf a}\cdot\hat{\mathbf e}$ sobre $\mathbf g\cdot\hat{\mathbf e}$ (con efecto fijo lanzador×forma)
+da $\hat c_g$ **por juego**, que separa el residuo de calibración del Magnus y complementa a Deming.
+
+**Condición: `SpinAxis` debe ser MEDIDO, no inferido del movimiento.** Si el eje se derivó del propio
+break, $\hat{\mathbf n}_{\text{spin}}$ es función de $\tilde{\mathbf a}$ y la ecuación es circular. Cómo se
+verifica con los datos: (i) regresar `SpinAxis` (y `SpinRate`) sobre las columnas de movimiento
+(`HorzBreak`, `InducedVertBreak`, `VertBreak`, `pfxx`, `pfxz`, `RelSpeed`); si el $R^2\approx1$ (residuo al
+nivel del redondeo), el eje es inferido; (ii) medir $\operatorname{Var}(\tilde{\mathbf a}\cdot\hat{\mathbf e})$
+dentro de cada lanzador×forma: si es $\approx0$ (piso de ruido), el eje no aporta información independiente y
+también es inferido. Si cualquiera de las dos lo marca inferido, se **declara así en el reporte** y el único
+detector de calibración es G2.3 (Deming).
 
 ## F2.5 Prueba sintética (a) — diseño
 
@@ -233,33 +263,41 @@ $\kappa=\rho A/(2m)$; $C_D,C_L$ son propiedades de la pelota/forma, no del parqu
 **Medición simulada.** Muestrear posiciones a la tasa de Trackman sobre la ventana de vuelo, añadir
 **ruido de posición realista** (gaussiano, $\sigma_{\text{pos}}\approx0.015$ m $\approx0.5$ in por eje)
 y **reajustar un modelo 9P de aceleración constante por mínimos cuadrados** sobre esas posiciones.
-Recuperar $\rho C_D,\rho C_L$ con la Prop. 1 evaluada en $t_m$ y estimar $\delta_g$ con el estimador
-de la Prop. 2. La sintética **corre aquí** (sin datos reales).
+Recuperar $\rho C_D,\rho C_L$ con la Prop. 1 evaluada en $t_m$ y estimar $\delta_g$ con el estimador de la
+Prop. 2′. Además de la física del lanzamiento, sembrar un **efecto de lanzador** $\alpha_j$ con desviación
+estándar $0.05$ en $\log C_D$ y **asignar cada *staff* a su parque local** (correlación lanzador–parque),
+para poder exhibir el sesgo de confusión de la Prop. 2′. La sintética **corre aquí** (sin datos reales).
 
-**Escenarios y qué compuerta responde a cada sesgo** (lo que pide el orquestador):
+**Escenarios y qué compuerta responde a cada sesgo** (corregido por §1.6(1) y (6)):
 
 | escenario | qué se inyecta | efecto esperado | compuerta que responde |
 |---|---|---|---|
-| base + ruido | $\sigma_{\text{pos}}$ realista | recuperación de $\rho$ con error $<1\%$; fija $\sigma_\eta$ y el SE de $\delta_g$ | **G2.1** (error $<1\%$) y **G2.4** ($\sigma_\eta$, SE mediano $<0.03$) |
-| escala $\lambda=1.02$ por parque | $\tilde{\mathbf r}=\lambda\mathbf r$ | $\hat\delta_g$ se corre $-\log1.02=-0.0198$ (2 %); orden/bandas G2.2 intactos; Deming sigue en pendiente 1 | **ninguna lo marca** (Prop. 3a): demuestra que la escala se absorbe y no puede fabricar la señal de 27 % |
-| reloj $\tau=1.01$ | $\tilde{\mathbf v}=\mathbf v/\tau$, $\tilde{\mathbf a}_{\text{full}}=\mathbf a_{\text{full}}/\tau^2$ | $\delta^D$ y $\delta^L$ divergen; discrepancia concentrada en la vertical | **G2.3** (Deming: pendiente fuera de $[0.85,1.15]$) |
+| base + ruido | $\sigma_{\text{pos}}$ realista | recuperación de $\rho$ con error $<1\%$; fija $\sigma_\eta$ y el SE de $\delta_g$ | **G2.1** y **G2.4** |
+| *staff* local sin $\alpha_{j,k}$ | $\alpha_j$ (SD $0.05$ en $\log C_D$) + lanzadores atados a su parque | el $C_D$ del *staff* carga en $\delta_g$: sesgo $\sim0.01$ en $\log\rho$ | **se ve el sesgo** con el modelo de un solo efecto fijo |
+| *staff* local con $\alpha_{j,k}$ | igual, pero estimando la **Prop. 2′** (juego + lanzador×forma) | el sesgo **desaparece** | el segundo efecto fijo lo corrige |
+| escala $\lambda=1.02$, $\tau=1$ | $\tilde{\mathbf r}=\lambda\mathbf r$ | $c_g=\lambda-1=+0.02$; $\delta^L-\delta^D$ diverge; $\hat c_g\approx+0.02$ | **G2.3** (Deming) y el detector $\hat{\mathbf e}$ |
+| reloj $\tau=1.01$, $\lambda=1$ | tiempos estirados por $\tau$ | $c_g=1/\tau^2-1\approx-0.0197$; $\delta^L-\delta^D$ diverge; $\hat c_g\approx-0.02$ | **G2.3** (Deming) y el detector $\hat{\mathbf e}$ |
 
-La sintética debe reportar, por escenario: error de recuperación de $\rho$ por nivel,
-$\hat\sigma_\eta$, el SE ingenuo y el agrupado de $\hat\delta_g$, la pendiente/intercepto de Deming y
-la fracción de la discrepancia $\delta^D-\delta^L$ que vive en la componente vertical. Así se ve que
-G2.1/G2.4 miden precisión, G2.3 detecta el reloj, y la escala queda —por diseño— absorbida.
+Ambos sesgos de calibración (la escala y el reloj) **deben detectarse en G2.3** con $\hat c_g\approx\pm0.02$:
+el punto clave de la corrección §1.6(1) es que la escala ya **no** pasa desapercibida.
 
-También cuantifica numéricamente $\varepsilon_{\text{mid}}$ (F2.2): comparar $\rho C$ recuperado con y
-sin la corrección del punto medio confirma la cota $s^2/4$ y que $f_D$ absorbe el resto.
+La sintética reporta, por escenario: error de recuperación de $\rho$ por nivel; $\hat\sigma_\eta$ y el SE
+CR2 de $\hat\delta_g$; la pendiente/intercepto de Deming; $\hat c_g$ del detector $\hat{\mathbf e}$ y la
+fracción de la discrepancia $\delta^L-\delta^D$ en la vertical; y, para el *staff* local, $\delta_g$ con y
+sin $\alpha_{j,k}$. También cuantifica $\varepsilon_{\text{mid}}$ y su **diferencial** entre densidades
+($\approx0.001$, F2.2), confirmando que es despreciable aunque $f_D$ no lo absorba.
 
 ## F2.6 Prueba de Deming $\delta^D$ vs $\delta^L$ (c)
 
-Bajo el modelo, $\delta^D_g=\delta^L_g$ (sobreidentificación). Ambos son ruidosos
-(errores-en-variables), así que se usa **regresión de Deming** con razón de varianzas
+Bajo el modelo, $\delta^D_g=\delta^L_g$ (sobreidentificación), porque $\delta^L-\delta^D=c_g=\lambda_g/\tau_g^2-1=0$
+sin sesgo de calibración (Prop. 3′). Ambos son ruidosos (errores-en-variables), así que se usa **regresión de
+Deming** con razón de varianzas
 $\lambda_{\text{Dem}}=\operatorname{Var}(\text{err }\delta^L)/\operatorname{Var}(\text{err }\delta^D)$
-estimada de los SE por juego (F2.3). La hipótesis física es **pendiente 1, intercepto 0**. **G2.3**
-aprueba si la pendiente $\in[0.85,1.15]$. Una desviación de la pendiente, con la discrepancia cargada
-en la vertical, es la firma de un error de reloj (Prop. 3b): va al orquestador.
+estimada de los SE por juego (F2.3). La inferencia de la pendiente usa **agrupamiento doble juego × lanzador**
+(§1.6(3)). La hipótesis física es **pendiente 1, intercepto 0**. **G2.3** aprueba si la pendiente
+$\in[0.85,1.15]$. Una desviación, con la discrepancia cargada en la vertical, es la firma de un sesgo de
+calibración —escala o reloj, que la Prop. 3′ no separa— y, junto con $\hat c_g$ del detector $\hat{\mathbf e}$,
+va al orquestador.
 
 ## F2.7 Mapa a las compuertas de F2
 
@@ -267,11 +305,12 @@ en la vertical, es la firma de un error de reloj (Prop. 3b): va al orquestador.
 |---|---|---|
 | **G2.1** | error sintético de recuperación de $\rho<1\%$ | F2.5 base; cota teórica $\varepsilon_{\text{mid}}\le s^2/4$ (F2.2) |
 | **G2.2** | orden $\bar\delta_{\text{No}}>\bar\delta_{\text{Medium}}>\bar\delta_{\text{Extreme}}$; $\bar\delta_{\text{Extreme}}\in[-0.30,-0.15]$; componente densa de *Extreme* en $[-0.32,-0.20]$ | F2.3 (medias por cubeta, parques latentes GMM+BIC 🔎) |
-| **G2.3** | Deming $\delta^L$ sobre $\delta^D$: pendiente $\in[0.85,1.15]$ | F2.6 |
-| **G2.4** | $\sigma_\eta$ medida y SE mediano de $\hat\delta_g<0.03$ | F2.3 (SE agrupado por lanzador) |
+| **G2.3** | Deming $\delta^L$ sobre $\delta^D$: pendiente $\in[0.85,1.15]$; detecta escala **y** reloj ($c_g\neq0$) | F2.6, Prop. 3′; $\hat c_g$ del detector $\hat{\mathbf e}$ |
+| **G2.4** | $\sigma_\eta$ medida y SE mediano **CR2** de $\hat\delta_g<0.03$ | F2.3 (CR2, lanzador dentro del juego) |
 
 **Si G2.2 falla con G2.3 aprobada:** las cubetas no corresponden a la altitud supuesta. **Si G2.3
-falla:** sesgo de sensor (Prop. 3b). Ambos van al orquestador.
+falla:** sesgo de calibración (escala o reloj, $c_g\neq0$; Prop. 3′). Ambos van al orquestador.
 
 **Ningún outcome entra en F2:** solo física por lanzamiento ($\mathbf r_0,\mathbf v_0,\mathbf a$,
-`SpinRate`, `SpinAxis`, forma, mano, año). Los `*_anon_id` solo agrupan (SE por lanzador) y validan.
+`SpinRate`, `SpinAxis`, forma, mano, año). Los `*_anon_id` entran como **efecto fijo lanzador×forma**
+(Prop. 2′), para agrupar los SE (CR2) y para validar; nunca como *feature* de un modelo de outcomes.
