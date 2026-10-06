@@ -107,7 +107,7 @@ def test_adr003_lanzador_se_descarta_sin_salida():
     d, rep = adr(mk(PitcherThrows=manos + ["Undefined", "Undefined"], pitcher_anon_id=ids + [None, None],
                     RelSide=rel + [None, 0.0]))
     assert d["pitcher_throws_r"][-2:].to_list() == [None, None]
-    assert d["motivo_exclusion"][-1] == "ADR-003:lanzador"
+    assert "ADR-003:lanzador" in d["motivo_exclusion"][-1]            # además, ADR-013: id de lanzador nulo
     assert rep["ADR-003"]["lanzador"]["descartadas"] == 2
 
 
@@ -206,7 +206,8 @@ def test_exclusiones_se_combinan_sin_doble_conteo():
     d, rep = adr(mk(AutoPitchType=["Knuckleball", "Four-Seam", "Four-Seam"], Outs=[3.0, 0.0, 0.0],
                     PitchCall=["BallCalled", "Undefined", "BallCalled"]))
     assert d["motivo_exclusion"].to_list() == ["ADR-002:EXC;ADR-006:Outs", "ADR-004:Undefined", None]
-    assert rep["exclusiones"]["total"] == 2
+    assert d["motivo_cadena"].to_list() == ["ADR-006:Outs", "ADR-004:Undefined", None]
+    assert rep["exclusiones"]["modelo"]["total"] == 2
 
 
 # --------------------------------------------------------------------------
@@ -319,3 +320,109 @@ def test_tipos_nan_pasa_a_nulo_y_enteros_float_a_int64():
 def test_tipos_entero_con_decimales_es_sin_regla():
     _, _, p = normalizar_tipos(pl.DataFrame({"Outs": [0.0, 1.5]}), DICC)
     assert p == [{"columna": "Outs", "valor": "no entero: 1.5", "n": 1}]
+
+
+# --------------------------------------------------------------------------
+# ADR-011 — el desenlace sale de pitch_call_h (partición exacta)
+# --------------------------------------------------------------------------
+_CLASES = {   # pitch_call_h -> (swing, whiff, contacto, foul, bip); Undefined -> todo nulo
+    "BallCalled": (0, 0, 0, 0, 0), "BallinDirt": (0, 0, 0, 0, 0), "BallIntentional": (0, 0, 0, 0, 0),
+    "StrikeCalled": (0, 0, 0, 0, 0), "HitByPitch": (0, 0, 0, 0, 0),
+    "StrikeSwinging": (1, 1, 0, 0, 0),
+    "FoulBall": (1, 0, 1, 1, 0), "FoulBallFieldable": (1, 0, 1, 1, 0), "FoulBallNotFieldable": (1, 0, 1, 1, 0),
+    "InPlay": (1, 0, 1, 0, 1),
+}
+
+
+@pytest.mark.parametrize("call,esperado", list(_CLASES.items()))
+def test_adr011_desenlace_desde_pitch_call_h(call, esperado):
+    d, _ = adr(mk(PitchCall=call))
+    cols = ("es_swing", "es_whiff", "es_contacto", "es_foul", "es_bip")
+    assert tuple(int(d[c][0]) for c in cols) == esperado
+
+
+def test_adr011_undefined_queda_en_nulo_y_es_particion_exacta_en_el_resto():
+    d, _ = adr(mk(PitchCall=["Undefined"] + list(_CLASES)))
+    cols = ("es_swing", "es_whiff", "es_contacto", "es_foul", "es_bip")
+    assert all(d[c][0] is None for c in cols)
+    r = d.slice(1)
+    assert (r["es_swing"] == (r["es_whiff"] | r["es_contacto"])).all()          # swing = whiff + contacto
+    assert (r["es_contacto"] == (r["es_foul"] | r["es_bip"])).all()
+    assert not (r["es_whiff"] & r["es_contacto"]).any()                         # disjuntas
+    assert not (r["es_foul"] & r["es_bip"]).any()
+
+
+# --------------------------------------------------------------------------
+# ADR-013 — excluir_modelo vs excluir_cadena
+# --------------------------------------------------------------------------
+def test_adr013_id_de_lanzador_nulo_excluye_del_modelo_pero_no_de_la_cadena():
+    d, rep = adr(mk(pitcher_anon_id=[None, "p1"]))
+    assert d["excluir_modelo"].to_list() == [True, False]
+    assert d["motivo_exclusion"][0] == "ADR-013:pitcher_id_nulo"
+    assert d["excluir_cadena"].to_list() == [False, False]
+    assert rep["exclusiones"]["cadena"]["total"] == 0
+
+
+@pytest.mark.parametrize("kw,modelo,cadena,motivo_cadena", [
+    ({"PitchCall": "Undefined"}, True, True, "ADR-004:Undefined"),
+    ({"Outs": 3.0}, True, True, "ADR-006:Outs"),
+    ({"PitchCall": "InPlay", "play_result": "NeutralPlay"}, False, True, "ADR-013:InPlay_sin_resultado"),
+    ({"PitchCall": "InPlay", "play_result": "Single"}, False, False, None),
+    ({"PitchCall": "BallCalled", "play_result": "NeutralPlay"}, False, False, None),   # NeutralPlay sin InPlay: normal
+    ({"AutoPitchType": "Knuckleball"}, True, False, None),                           # EXC: modelo, no cadena
+])
+def test_adr013_banderas_por_caso(kw, modelo, cadena, motivo_cadena):
+    d, _ = adr(mk(**kw))
+    assert d["excluir_modelo"][0] is modelo and d["excluir_cadena"][0] is cadena
+    assert d["motivo_cadena"][0] == motivo_cadena
+
+
+def test_adr013_la_mano_descartada_no_saca_a_la_fila_de_la_cadena():
+    d, _ = adr(mk(BatterSide=["Undefined"], batter_anon_id=[None]))
+    assert d["excluir_modelo"][0] is True and d["excluir_cadena"][0] is False
+
+
+# --------------------------------------------------------------------------
+# ADR-012 — completitud de media entrada (A estricto, B amplio)
+# --------------------------------------------------------------------------
+def _entradas() -> pl.DataFrame:
+    """Un juego con 5 medias entradas; la 5.ª es la final."""
+    filas = [  # (Inning, mitad, Outs antes, OutsOnPlay)
+        (1, "Top", 0, 1), (1, "Top", 1, 1), (1, "Top", 2, 1),                   # suma 3, hay estado 2
+        (1, "Bottom", 0, 1), (1, "Bottom", 1, 1), (1, "Bottom", 2, 0),           # suma 2, hay estado 2 (3er out sin lanzamiento)
+        (2, "Top", 0, 1), (2, "Top", 1, 0),                                      # suma 1, sin estado 2
+        (2, "Bottom", 0, 1), (2, "Bottom", 0, 1), (2, "Bottom", 1, 1), (2, "Bottom", 2, 1),   # suma 4: inconsistente
+        (3, "Top", 0, 1), (3, "Top", 1, 1), (3, "Top", 2, 1),                    # suma 3 pero es la final
+    ]
+    return pl.DataFrame({"game_anon_id": ["g1"] * len(filas),
+                         "Inning": [f[0] for f in filas], "Top/Bottom": [f[1] for f in filas],
+                         "Outs": [float(f[2]) for f in filas], "OutsOnPlay": [f[3] for f in filas]})
+
+
+def test_adr012_criterios_a_y_b_por_media_entrada():
+    from pitcheo.limpieza import tabla_medias_entradas
+    t = tabla_medias_entradas(_entradas()).sort("orden")
+    assert t["outs"].to_list() == [3, 2, 1, 4, 3]
+    assert t["A"].to_list() == [True, False, False, False, True]
+    assert t["final"].to_list() == [False, False, False, False, True]
+    # B: hay estado Outs = 2, no es final y no es inconsistente (>= 4 outs).
+    assert t["B"].to_list() == [True, True, False, False, False]
+
+
+def test_adr012_columnas_por_lanzamiento_y_resumen():
+    from pitcheo.limpieza import marcar_media_entrada
+    d, rep = marcar_media_entrada(_entradas())
+    assert d["media_entrada_A"].to_list() == [True] * 3 + [False] * 9 + [True] * 3
+    assert d["media_entrada_B"].to_list() == [True] * 6 + [False] * 9
+    assert rep["medias_entradas"] == 5 and rep["finales"] == 1 and rep["no_finales"] == 4
+    assert rep["A"] == 2 and rep["B_no_finales"] == 2 and rep["pct_B_no_finales"] == 50.0
+    assert rep["inconsistentes"] == 1 and rep["distribucion_outs"] == {"1": 1, "2": 1, "3": 2, "4": 1}
+
+
+def test_adr012_la_final_se_calcula_por_juego():
+    from pitcheo.limpieza import tabla_medias_entradas
+    e = _entradas()
+    dos = pl.concat([e, e.with_columns(pl.lit("g2").alias("game_anon_id")).filter(pl.col("Inning") <= 1)])
+    t = tabla_medias_entradas(dos)
+    assert t.filter(pl.col("final")).group_by("game_anon_id").len()["len"].to_list() == [1, 1]
+    assert t.filter((pl.col("game_anon_id") == "g2") & pl.col("final"))["Inning"].to_list() == [1]

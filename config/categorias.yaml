@@ -118,3 +118,32 @@ evento_terminal:
 # ADR-006 — Outs fuera de {0,1,2} se excluyen de modelos y cadena (se cuentan en I10).
 # ---------------------------------------------------------------------------
 outs_validos: [0, 1, 2]
+
+# ADR-012 — una media entrada con >= este número de outs es inconsistente (se excluye de A y de B).
+outs_inconsistente: 4
+
+# ---------------------------------------------------------------------------
+# ADR-011 — el árbol de desenlaces se define desde pitch_call_h (partición exacta por construcción).
+# Las banderas is_* del organizador solo son verificación cruzada (tabla de discrepancias).
+# Las filas con pitch_call_h = Undefined quedan en nulo: no pertenecen a ninguna clase.
+# ---------------------------------------------------------------------------
+desenlace:
+  es_swing: [StrikeSwinging, Foul, InPlay]
+  es_whiff: [StrikeSwinging]
+  es_contacto: [Foul, InPlay]
+  es_foul: [Foul]
+  es_bip: [InPlay]
+  # (columna derivada, bandera del organizador con la que se contrasta)
+  contraste:
+    es_swing: is_swing
+    es_whiff: is_whiff
+    es_contacto: is_contact
+    es_bip: is_ball_in_play
+
+# ---------------------------------------------------------------------------
+# ADR-013 — excluir_cadena: solo lo que invalida la transición del conteo.
+# (excluir_modelo suma además pitcher_anon_id nulo.) La mano o el ID no afectan al conteo.
+# ---------------------------------------------------------------------------
+exclusion_cadena:
+  # pitch_call_h = InPlay con estos play_result: bola en juego sin resultado (7 filas reales).
+  inplay_sin_resultado: [NeutralPlay]

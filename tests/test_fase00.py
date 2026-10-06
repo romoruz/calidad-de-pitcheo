@@ -50,7 +50,8 @@ def test_f0_reporte_trae_bloque_tabla_de_eventos_y_sin_filas(tmp_path, crudo):
     _correr(tmp_path, crudo)
     md = (tmp_path / "reports" / "FASE_00.md").read_text(encoding="utf-8")
     for txt in ("Bloque para el orquestador — F00", "play_result × pitch_call_h × KorBB", "ADR-003",
-                "Exclusiones de modelos", "G0.6"):
+                "excluir_modelo", "excluir_cadena", "ADR-010 — ejes de los polinomios", "ADR-011 — banderas is_*",
+                "ADR-012 — medias entradas de 2 outs", "OutsOnPlay × evento_terminal", "G0.6"):
         assert txt in md
     assert "pitch_00" not in md and "pitcher_0" not in md          # ni ids ni filas por lanzamiento
     js = json.loads((tmp_path / "reports" / "fase_00.json").read_text(encoding="utf-8"))
@@ -99,3 +100,61 @@ def test_cli_f00_sale_con_codigo_2_si_falla_una_compuerta(tmp_path, monkeypatch)
         cli.main(["f00", "--sintetico", "4", "--out", str(tmp_path / "out")])
     assert e.value.code == 2
     assert (tmp_path / "out" / "reports" / "FASE_00.md").exists()   # el reporte se escribe antes de salir
+
+
+def _modificar(tmp_path, crudo, **cambios):
+    """Copia del crudo con columnas reemplazadas por expresiones; devuelve la ruta."""
+    pl.read_parquet(crudo).with_columns(**cambios).write_parquet(tmp_path / "mod.parquet")
+    return tmp_path / "mod.parquet"
+
+
+def test_v24_reporte_trae_matriz_decision_y_diagnostico_en_el_json(tmp_path, crudo):
+    _correr(tmp_path, crudo)
+    js = json.loads((tmp_path / "reports" / "fase_00.json").read_text(encoding="utf-8"))
+    ex = js["extras"]
+    assert ex["polinomios"]["decision"] == "mapeo_con_signo" and "matriz" in ex["polinomios"]
+    assert ex["dos_outs"]["dos_outs"]["n"] > 0 and ex["discrepancias_flags"]["es_contacto"]["tabla"]
+    assert js["exclusiones"]["modelo"]["total"] >= js["exclusiones"]["cadena"]["total"]
+    md = (tmp_path / "reports" / "FASE_00.md").read_text(encoding="utf-8")
+    assert "mapeo_con_signo" in md and "| polinomio \\ 9P | x | y | z |" in md
+
+
+def test_v24_g02_pasa_aunque_los_polinomios_sean_no_canonicos(tmp_path):
+    """ADR-010: si ninguna permutación encaja, se declaran no canónicos y la compuerta PASA (la canónica es 9P)."""
+    p = tmp_path / "ruido.parquet"
+    generar(12, 8, convencion_polinomio="ruido").write_parquet(p)
+    res = _correr(tmp_path, p)
+    assert res["gates"]["G0.2"]["ok"] and "NO canónicos" in res["gates"]["G0.2"]["detalle"]
+    assert res["ok"], {k: v for k, v in res["gates"].items() if not v["ok"]}
+
+
+def test_v24_g02_pasa_con_polinomios_permutados(tmp_path):
+    p = tmp_path / "perm.parquet"
+    generar(12, 8, convencion_polinomio={"X": ("z", -1), "Y": ("y", -1), "Z": ("x", 1)}).write_parquet(p)
+    res = _correr(tmp_path, p)
+    assert res["gates"]["G0.2"]["ok"] and "verificación cruzada" in res["gates"]["G0.2"]["detalle"]
+
+
+def test_v24_g03_falla_si_el_criterio_b_cae_bajo_95(tmp_path, crudo):
+    p = _modificar(tmp_path, crudo, Outs=pl.lit(0.0))             # sin estado previo Outs = 2: B = 0 %
+    res = _correr(tmp_path, p)
+    assert not res["gates"]["G0.3"]["ok"] and "criterio B" in res["gates"]["G0.3"]["detalle"]
+    assert (tmp_path / "reports" / "FASE_00.md").exists()
+
+
+def test_v24_g06_falla_si_excluir_cadena_pasa_de_0_5_pct(tmp_path, crudo):
+    n = pl.read_parquet(crudo).height
+    p = _modificar(tmp_path, crudo, PitchCall=pl.when(pl.int_range(pl.len()) < int(0.02 * n))
+                   .then(pl.lit("Undefined", dtype=pl.Utf8)).otherwise(pl.col("PitchCall").cast(pl.Utf8))
+                   .cast(pl.Categorical))
+    res = _correr(tmp_path, p)
+    assert not res["gates"]["G0.6"]["ok"] and "excluir_cadena" in res["gates"]["G0.6"]["detalle"]
+
+
+def test_v24_g01_i6p_admite_el_0_25_pct_pero_no_un_1_pct(tmp_path, crudo):
+    ok = _correr(tmp_path, crudo)
+    assert ok["gates"]["G0.1"]["ok"]                             # el sintético ya trae ~0.25 % de discrepancia
+    n = pl.read_parquet(crudo).height
+    p = _modificar(tmp_path, crudo, is_contact=pl.when(pl.int_range(pl.len()) < int(0.03 * n))
+                   .then(1.0 - pl.col("is_contact")).otherwise(pl.col("is_contact")))
+    assert not _correr(tmp_path, p)["gates"]["G0.1"]["ok"]

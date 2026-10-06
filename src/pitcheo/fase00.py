@@ -63,32 +63,45 @@ def _ge(v, minimo) -> bool:
     return v is not None and v >= minimo
 
 
-def evaluar_gates(rep: dict, q: dict | None, g: dict) -> dict:
-    """G0.1-G0.6 de ROADMAP §4-F0."""
+def evaluar_gates(rep: dict, q: dict | None, g: dict, extras: dict | None = None) -> dict:
+    """G0.1-G0.6 de ROADMAP §4-F0 (compuertas redefinidas en v2.4, ADR-010 a 013)."""
     sin_regla = len(rep["sin_regla"])
-    gates: dict = {"G0.5": {"ok": sin_regla == 0,
-                            "detalle": f"valores sin regla: {sin_regla}"}}
-    if q is None:
-        for k, txt in (("G0.1", "I1, I2, I6′"), ("G0.2", "I3"), ("G0.3", "I7"), ("G0.4", "I9"),
-                       ("G0.6", "exclusiones totales")):
+    gates: dict = {"G0.5": {"ok": sin_regla == 0, "detalle": f"valores sin regla: {sin_regla}"}}
+    if q is None or extras is None:
+        for k, txt in (("G0.1", "I1, I2, I6′"), ("G0.2", "matriz de polinomios"), ("G0.3", "criterio B"),
+                       ("G0.4", "I9"), ("G0.6", "exclusiones")):
             gates[k] = {"ok": False, "detalle": f"no evaluada: hay valores sin regla ({txt})"}
         return dict(sorted(gates.items()))
     i1, i2, i6 = (q[k]["cumplimiento"] for k in ("I1", "I2", "I6p"))
-    gates["G0.1"] = {"ok": all(_ge(v, g["g01_identidades_min"]) for v in (i1, i2, i6)),
-                     "detalle": f"I1 {_pct(i1)} · I2 {_pct(i2)} · I6′ {_pct(i6)} (mín. {g['g01_identidades_min']:.1%})"}
-    i3 = q["I3"]
-    gates["G0.2"] = {"ok": _ge(i3["cumplimiento"], g["g02_i3_min"]),
-                     "detalle": f"I3 {_pct(i3['cumplimiento'])} (mín. {g['g02_i3_min']:.0%}); razón 2·c2/a0 por eje: "
-                                + ", ".join(f"{e}={_f(v['razon_mediana_2c2_sobre_a0'])}" for e, v in i3["por_eje"].items())
-                                + " — si falla: documentar la convención, no forzarla"}
-    gates["G0.3"] = {"ok": _ge(q["I7"]["cumplimiento"], g["g03_i7_min"]),
-                     "detalle": f"I7 {_pct(q['I7']['cumplimiento'])} de {q['I7']['n']:,} medias entradas "
-                                f"(mín. {g['g03_i7_min']:.0%})"}
+    hay_tabla = bool(extras.get("discrepancias_flags"))
+    gates["G0.1"] = {"ok": _ge(i1, g["g01_identidades_min"]) and _ge(i2, g["g01_identidades_min"])
+                     and _ge(i6, g["g01_i6p_min"]) and hay_tabla,
+                     "detalle": f"I1 {_pct(i1)} · I2 {_pct(i2)} (mín. {g['g01_identidades_min']:.1%}) · "
+                                f"I6′ {_pct(i6)} (mín. {g['g01_i6p_min']:.1%}) · tabla de discrepancias is_* × "
+                                f"pitch_call_h: {'producida' if hay_tabla else 'FALTA'}"}
+    pol = extras["polinomios"]
+    produjo = "matriz" in pol
+    if produjo and pol["existe"]:
+        txt = (f"matriz 3×3 producida · permutación con signo {pol['permutacion']} signos {pol['signos']} con "
+               f"R² mín. {_f(pol['r2_min_permutacion'], 6)} ≥ {g['g02_r2_min']} → los polinomios sirven de "
+               "verificación cruzada")
+    elif produjo:
+        txt = (f"matriz 3×3 producida · ningún mapeo con R² ≥ {g['g02_r2_min']} (mejor R² mín. "
+               f"{_f(pol['r2_min_permutacion'], 6)}) → ADR-010: polinomios NO canónicos")
+    else:
+        txt = "no se pudo producir la matriz"
+    gates["G0.2"] = {"ok": produjo, "detalle": txt + " · la trayectoria canónica es la de los 9P"}
+    i7, dos = q["I7"], extras["dos_outs"]["dos_outs"]
+    gates["G0.3"] = {"ok": _ge(i7.get("B_no_finales"), g["g03_b_min"]) and "n" in dos,
+                     "detalle": f"criterio B {_pct(i7.get('B_no_finales'))} de {i7.get('n_sin_ultima', 0):,} medias "
+                                f"entradas no finales (mín. {g['g03_b_min']:.0%}) · diagnóstico de las de 2 outs: "
+                                f"{'producido' if 'n' in dos else 'FALTA'} ({dos.get('n', 0):,} medias entradas)"}
     gates["G0.4"] = {"ok": q["I9"]["cumplimiento"] == g["g04_i9"],
                      "detalle": f"I9 {_pct(q['I9']['cumplimiento'])} de {q['I9']['n']:,} juegos con cubeta"}
-    pct_exc = rep["exclusiones"]["pct_total"]
-    gates["G0.6"] = {"ok": pct_exc <= 100 * g["g06_exclusiones_max"],
-                     "detalle": f"exclusiones {pct_exc:.3f} % de los lanzamientos (máx. {g['g06_exclusiones_max']:.0%})"}
+    em, ec = rep["exclusiones"]["modelo"], rep["exclusiones"]["cadena"]
+    gates["G0.6"] = {"ok": em["pct_total"] <= 100 * g["g06_modelo_max"] and ec["pct_total"] <= 100 * g["g06_cadena_max"],
+                     "detalle": f"excluir_modelo {em['pct_total']:.3f} % (máx. {g['g06_modelo_max']:.0%}) · "
+                                f"excluir_cadena {ec['pct_total']:.3f} % (máx. {g['g06_cadena_max']:.1%})"}
     return dict(sorted(gates.items()))
 
 
@@ -114,7 +127,95 @@ def _tabla(filas: list[dict], cols: list[str]) -> list[str]:
     return out
 
 
-def reporte_md(rep: dict, q: dict | None, alc: dict | None, gates: dict, escritos: dict, segundos: float) -> str:
+def _secciones_v24(extras: dict) -> list[str]:
+    """Secciones del reporte de v2.4: ADR-010 (matriz 3×3), ADR-011 (is_*), ADR-012 (medias entradas de 2 outs)."""
+    L: list[str] = []
+    pol = extras["polinomios"]
+    L += ["## ADR-010 — ejes de los polinomios de trayectoria vs. los 9P", ""]
+    if "matriz" not in pol:
+        L += [f"_Sin datos suficientes (n = {pol.get('n')})._", ""]
+    else:
+        L += [(f"n = {pol['n']:,} filas. Cada celda es **R² (pendiente)** de la regresión simple de la fila "
+              "(eje del polinomio) sobre la columna (eje de los 9P)."), ""]
+        for fam, nombre in (("c2", "aceleración a0 (ax0, ay0, az0)"), ("c1", "velocidad v0 (vx0, vy0, vz0)"),
+                            ("c0", "posición r0 (x0, y0, z0)")):
+            L += [f"**{fam} del polinomio sobre {nombre}**", "", "| polinomio \\ 9P | x | y | z |", "|---|---|---|---|"]
+            for P in "XYZ":
+                celdas = []
+                for q in "xyz":
+                    c = pol["matriz"][fam][P][q]
+                    celdas.append("—" if c["r2"] is None else f"{c['r2']:.4f} ({c['pendiente']:+.3f})")
+                L.append(f"| {P} | " + " | ".join(celdas) + " |")
+            L.append("")
+        L += [(f"- Mejor permutación con signo (R² mínimo sobre c2 y c1): {pol['permutacion']} · signos {pol['signos']} · "
+              f"R² mín. **{pol['r2_min_permutacion']:.6f}** (exigido {pol['r2_min_exigido']})"),
+              f"- Escala |2·pendiente(c2)| (1 = misma escala): {({k: _f(v) for k, v in pol['escala_2c2_sobre_a0'].items()})}",
+              f"- **Decisión: `{pol['decision']}`** — " + (
+                  "los polinomios son los 9P en otros ejes: sirven de verificación cruzada." if pol["existe"] else
+                  "ninguna permutación con signo alcanza el R² exigido: se declaran no canónicos y no se usan.")]
+        if pol.get("t_s"):
+            L.append("- Desplazamiento de tiempo t_s = (s·c1 − v0)/a0, mediana por eje [rango intercuartil]: "
+                     + ", ".join(f"{e}: {v['mediana_s']:.4f} s [{v['rango_intercuartil_s']:.4f}]" for e, v in pol["t_s"].items()))
+        L += ["", ("Regresión conjunta (informativa): cada eje del polinomio sobre los tres ejes de los 9P a la vez. "
+              "Si R² ≈ 1 con coeficientes que no son ±1 y 0, los polinomios están en un marco **rotado**, "
+              "no son una permutación con signo."), "",
+              "| familia | eje del polinomio | R² | coef. sobre (x, y, z) | intercepto |", "|---|---|---|---|---|"]
+        for fam, por_eje in pol["rotacion"].items():
+            for P, v in por_eje.items():
+                L.append(f"| {fam} | {P} | {_f(v['r2'], 6)} | ({', '.join(f'{c:+.4f}' for c in v['coef_xyz'])}) | "
+                         f"{v['intercepto']:.4f} |")
+        L.append("")
+    v = extras.get("verificacion_9p", {})
+    if v.get("error_plato_x_ft"):
+        L += [("**Verificación de la trayectoria canónica (9P):** posición en t = ZoneTime contra el dato "
+              f"(n = {v['n']:,}; |error| en pies, mediana / p99): PlateLocSide "
+              f"{v['error_plato_x_ft']['mediana']:.4f} / {v['error_plato_x_ft']['p99']:.4f} · PlateLocHeight "
+              f"{v['error_plato_z_ft']['mediana']:.4f} / {v['error_plato_z_ft']['p99']:.4f} · y(ZoneTime) − 17/12 ft "
+              f"{v['error_y_en_zonetime_ft']['mediana']:.4f} / {v['error_y_en_zonetime_ft']['p99']:.4f}"), ""]
+
+    disc = extras["discrepancias_flags"]
+    L += ["## ADR-011 — banderas is_* del organizador vs. pitch_call_h", "",
+          ("El árbol de desenlaces se define desde `pitch_call_h` (partición exacta); las `is_*` son verificación "
+          "cruzada. Abajo, solo las combinaciones que **discrepan**; la tabla completa (cada combinación con su n) "
+          "está en `reports/fase_00.json`."), "",
+          "| derivada | bandera | n | discrepantes | % |", "|---|---|---|---|---|"]
+    mal = []
+    for col, v in disc.items():
+        L.append(f"| {col} | {v['bandera']} | {v['n']:,} | {v['discrepantes']:,} | {v['pct_discrepantes']} |")
+        mal += [f for f in v["tabla"] if f["derivada_valor"] != f["bandera_valor"]]
+    L += [""] + _tabla(sorted(mal, key=lambda f: -f["n"]),
+                       ["derivada", "derivada_valor", "bandera", "bandera_valor", "pitch_call_h", "n"]) + [""]
+
+    dos = extras["dos_outs"]
+    d2, d3 = dos["dos_outs"], dos["tres_outs"]
+    L += ["## ADR-012 — medias entradas de 2 outs (diagnóstico)", "",
+          ("Candidatos: (1) tercer out sin lanzamiento propio (robo, pickoff) → la media entrada deja un turno "
+          "**incompleto**; (2) lanzamientos faltantes; (3) `OutsOnPlay` que no cuenta ciertos outs. Sin orden de "
+          "lanzamientos, el último turno reconstruible es el del bateador sin evento terminal."), ""]
+    if d2.get("n"):
+        def cuant(g, k):
+            c = g["lanzamientos_por_media_entrada"]
+            return f"{c['mediana']:.0f} / {c['media']:.1f}"
+        filas = [
+            ("medias entradas", f"{d2['n']:,}", f"{d3['n']:,}"),
+            ("% que es la última del juego", d2["pct_ultima_del_juego"], d3["pct_ultima_del_juego"]),
+            ("lanzamientos por media entrada (mediana / media)", cuant(d2, 0), cuant(d3, 0)),
+            ("% con ≥1 turno incompleto", d2["pct_con_turno_incompleto"], d3["pct_con_turno_incompleto"]),
+            ("turnos incompletos por media entrada", _f(d2["turnos_incompletos_media"]), _f(d3["turnos_incompletos_media"])),
+        ] + [(f"eventos {e} por media entrada", d2["eventos_terminales_por_media_entrada"][e],
+              d3["eventos_terminales_por_media_entrada"][e]) for e in d2["eventos_terminales_por_media_entrada"]] + [
+            ("outs implicados por eventos − OutsOnPlay", d2["outs_implicados_por_eventos_menos_OutsOnPlay"],
+             d3["outs_implicados_por_eventos_menos_OutsOnPlay"])]
+        L += ["| métrica | 2 outs | 3 outs |", "|---|---|---|"] + [f"| {a} | {b} | {c} |" for a, b, c in filas] + [""]
+    else:
+        L += ["_No hay medias entradas de 2 outs._", ""]
+    L += ["**OutsOnPlay × evento_terminal** (¿cuenta el out de los ponches?)", ""]
+    L += _tabla(dos["outs_on_play_x_evento_terminal"], ["evento", "OutsOnPlay", "n"]) + [""]
+    return L
+
+
+def reporte_md(rep: dict, q: dict | None, alc: dict | None, gates: dict, escritos: dict, segundos: float,
+               extras: dict | None = None) -> str:
     L = ["# FASE 00 — Ingesta y QA por identidades", "",
          f"Filas de entrada: {rep['filas_entrada']:,}"
          + (f" · filas de salida: {rep['filas_salida']:,}" if "filas_salida" in rep else "")
@@ -162,8 +263,9 @@ def reporte_md(rep: dict, q: dict | None, alc: dict | None, gates: dict, escrito
             "I5": f"R={_f(q['I5'].get('R'), 6)}, espejo={q['I5'].get('espejo')}, desfase aprendido {_f(q['I5'].get('desfase_grados'), 1)}°",
             "I6p": f"suma {_pct(q['I6p']['suma'])} · contacto⇔Foul/InPlay {_pct(q['I6p']['contacto_equivale_a_foul_o_inplay'])}"
                    f" · whiff⇒StrikeSwinging {_pct(q['I6p']['whiff_implica_strike_swinging'])}",
-            "I7": f"n son medias entradas; sin la última de cada juego: {_pct(q['I7'].get('sin_ultima_media_entrada'))}"
-                  f"; distribución de outs {q['I7'].get('distribucion_outs')}",
+            "I7": f"criterio A estricto (n = medias entradas); A sin la final: {_pct(q['I7'].get('sin_ultima_media_entrada'))}"
+                  f"; **B (no finales): {_pct(q['I7'].get('B_no_finales'))}**; inconsistentes (≥4 outs): "
+                  f"{q['I7'].get('inconsistentes')}; outs por media entrada {q['I7'].get('distribucion_outs')}",
             "I8": "tipos: " + ", ".join(f"{t}={'✓' if v.get('signo_opuesto') else '✗'}"
                                         for t, v in q["I8"]["tipos"].items() if v.get("evaluado")),
             "I9": f"juegos incoherentes: {q['I9']['juegos_incoherentes']}",
@@ -215,11 +317,18 @@ def reporte_md(rep: dict, q: dict | None, alc: dict | None, gates: dict, escrito
             f"- **ADR-006 Outs:** inválidos {a6['outs_invalidos']:,} ({a6['pct']} %) · nulos {a6['outs_nulos']:,}",
             f"- **ADR-007 eventos:** {rep['ADR-007']['eventos']}",
             f"- IDs nulos (informativo, no hay ADR): {rep['ids_nulos']}", "",
-            "### Exclusiones de modelos y cadena (`excluir_modelo`)", ""]
-        exc = rep["exclusiones"]
-        L += _tabla([{"motivo": m, "n": v["n"], "pct": v["pct"]} for m, v in exc["por_motivo"].items()],
-                    ["motivo", "n", "pct"])
-        L += ["", f"Total (unión, sin doble conteo): **{exc['total']:,}** lanzamientos = **{exc['pct_total']} %**.", ""]
+            f"- **ADR-011 desenlace desde pitch_call_h:** {rep.get('ADR-011')}",
+            f"- **ADR-012 medias entradas:** {rep.get('ADR-012')}",
+            ""]
+        for nombre, clave in (("excluir_modelo (ADR-002/003/004/006 + ID de lanzador nulo, ADR-013)", "modelo"),
+                              ("excluir_cadena (ADR-013: solo lo que invalida la transición del conteo)", "cadena")):
+            exc = rep["exclusiones"][clave]
+            L += [f"### {nombre}", ""]
+            L += _tabla([{"motivo": m, "n": v["n"], "pct": v["pct"]} for m, v in exc["por_motivo"].items()],
+                        ["motivo", "n", "pct"])
+            L += ["", f"Total (unión, sin doble conteo): **{exc['total']:,}** lanzamientos = **{exc['pct_total']} %**.", ""]
+        if extras:
+            L += _secciones_v24(extras)
 
     L += ["## Compuertas", ""]
     for k, v in gates.items():
@@ -228,10 +337,13 @@ def reporte_md(rep: dict, q: dict | None, alc: dict | None, gates: dict, escrito
           "- Modelo(s) usado(s): Sonnet",
           "- Compuertas: " + " | ".join(f"{k} {'✅' if v['ok'] else '❌'}" for k, v in gates.items()),
           (f"- Cifras clave: {alc['totales']['filas']:,} lanzamientos · {alc['totales']['juegos']:,} juegos · "
-           f"exclusiones {rep['exclusiones']['pct_total']} % · I1 {_pct(q['I1']['cumplimiento'])} · "
-           f"I3 {_pct(q['I3']['cumplimiento'])} · I7 {_pct(q['I7']['cumplimiento'])}")
+           f"excluir_modelo {rep['exclusiones']['modelo']['pct_total']} % · excluir_cadena "
+           f"{rep['exclusiones']['cadena']['pct_total']} % · I1 {_pct(q['I1']['cumplimiento'])} · "
+           f"I6′ {_pct(q['I6p']['cumplimiento'])} · I7 A {_pct(q['I7']['cumplimiento'])} / B no finales "
+           f"{_pct(q['I7'].get('B_no_finales'))} · ADR-010: "
+           f"{(extras or {}).get('polinomios', {}).get('decision', '—')}")
           if q is not None else "- Cifras clave: no disponibles (valores sin regla, ver arriba)",
-          "- Desviaciones respecto al ROADMAP: ninguna",
+          "- Desviaciones respecto al ROADMAP: ninguna (compuertas v2.4, ADR-010 a 013)",
           "- Mejora posible detectada: ninguna",
           "- Riesgo de empeorar: ninguno",
           "- Rama / PR / commit de resultados locales: fase00 / (pendiente) / (pendiente)",
@@ -277,13 +389,14 @@ def correr(cfg, parquet: Path, salida_pitches: Path, rep_dir: Path, log_dir: Pat
 
     limpio, rep = limpieza.limpiar(df, specs, cat, cfg["f00"])
     del df
-    q = alc = None
+    q = alc = extras = None
     escritos: dict = {}
     if limpio is not None:
         q = qa.correr_qa(limpio, cat, cfg["qa"])
         alc = alcance(limpio)
-        rep["identidades"], rep["alcance"] = q, alc
-        gates = evaluar_gates(rep, q, cfg["f00"]["gates"])
+        extras = qa.correr_extras(limpio, cat, cfg["qa"])
+        rep["identidades"], rep["alcance"], rep["extras"] = q, alc, extras
+        gates = evaluar_gates(rep, q, cfg["f00"]["gates"], extras)
         if gates["G0.5"]["ok"]:
             filas = io.escribir_particionado(limpio, salida_pitches)
             ruta = salida_pitches.relative_to(RAIZ) if salida_pitches.is_relative_to(RAIZ) else salida_pitches
@@ -293,7 +406,7 @@ def correr(cfg, parquet: Path, salida_pitches: Path, rep_dir: Path, log_dir: Pat
         gates = evaluar_gates(rep, None, cfg["f00"]["gates"])
 
     segundos = round(time.time() - t0, 1)
-    md = reporte_md(rep, q, alc, gates, escritos, segundos)
+    md = reporte_md(rep, q, alc, gates, escritos, segundos, extras)
     rep_dir.mkdir(parents=True, exist_ok=True)
     (rep_dir / "FASE_00.md").write_text(md, encoding="utf-8")
     _json({"gates": gates, "segundos": segundos, "salida": escritos, **rep}, rep_dir / "fase_00.json")

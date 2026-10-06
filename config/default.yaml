@@ -33,13 +33,15 @@ f00:
   umbral_moda: 0.95            # participación mínima de la moda del lanzador / bateador
   umbral_relside: 0.99         # concordancia mínima signo(RelSide) <-> mano, aprendida de los datos
   umbral_lado_ambos: 0.05      # bateador que muestra ambos lados >= 5 % cada uno -> opuesta al lanzador
-  # Compuertas (ROADMAP §4-F0).
+  # Compuertas v2.4 (ROADMAP §4-F0, ADR-010 a 013).
   gates:
-    g01_identidades_min: 0.999   # I1, I2, I6'
-    g02_i3_min: 0.99
-    g03_i7_min: 0.90
+    g01_identidades_min: 0.999   # I1, I2
+    g01_i6p_min: 0.995           # I6' (ADR-011: el árbol ya no depende de las banderas) + tabla de discrepancias
+    g02_r2_min: 0.99             # ADR-010: R^2 de la permutación con signo en los tres ejes
+    g03_b_min: 0.95              # ADR-012: criterio B sobre las medias entradas NO finales
     g04_i9: 1.0
-    g06_exclusiones_max: 0.03    # ADR-002 EXC + ADR-003 + ADR-004 + ADR-006
+    g06_modelo_max: 0.03         # excluir_modelo
+    g06_cadena_max: 0.005        # excluir_cadena
 
 # QA por identidades (ROADMAP §4-F0). Las tolerancias del ROADMAP no se tocan.
 qa:
@@ -50,6 +52,7 @@ qa:
   i5_min: 0.99
   i8_min_filas: 50               # filas mínimas por mano y tipo para evaluar I8
   i7_outs_por_media_entrada: 3
+  poli_piso: 1.0                 # ft/s^2 (ft/s en c1): piso del denominador al estimar t_s
 
 # Generador sintético (src/pitcheo/sintetico.py). NO son los datos reales: reproduce
 # el ESQUEMA y los casos sucios de reports/FASE_00_0.md y cumple las identidades I1-I10.

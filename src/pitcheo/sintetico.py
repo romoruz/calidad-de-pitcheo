@@ -63,13 +63,17 @@ _TIPOS = {
     "Slider":          {"vel": 85, "spin": 2500, "axis": 120, "mz": 1.0,  "mx": -11.0, "peso": 0.140},
     "Sweeper":         {"vel": 82, "spin": 2600, "axis": 100, "mz": 0.0,  "mx": -17.0, "peso": 0.030},
     "Curveball":       {"vel": 79, "spin": 2650, "axis": 40,  "mz": -12.0, "mx": -9.0, "peso": 0.090},
-    "Knuckleball":     {"vel": 76, "spin": 300,  "axis": 180, "mz": 2.0,  "mx": 1.0,   "peso": 0.003},
-    "Other":           {"vel": 85, "spin": 2000, "axis": 180, "mz": 6.0,  "mx": 2.0,   "peso": 0.010},
+    "Knuckleball":     {"vel": 76, "spin": 300,  "axis": 180, "mz": 2.0,  "mx": 1.0,   "peso": 0.002},
+    "Other":           {"vel": 85, "spin": 2000, "axis": 180, "mz": 6.0,  "mx": 2.0,   "peso": 0.005},
 }
 
 # Vocabulario REAL de hit_type (sin espacios) y su mezcla aproximada.
 _HIT_TYPES = ["GroundBall", "LineDrive", "FlyBall", "Popup", "Bunt"]
 _P_HIT_TYPES = [0.42, 0.24, 0.22, 0.08, 0.04]
+
+# ADR-012: el ~13 % de las medias entradas reales termina con 2 outs (y ~0.75 % con 0-1). Se reproduce con un
+# tercer out SIN lanzamiento propio (robo, pickoff): la media entrada se corta en mitad de un turno.
+_P_CORTE = {2: 0.075, 1: 0.003, 0: 0.002}
 
 # Resultados de bola en juego y su mezcla aproximada (nunca el 100 % de los datos reales).
 _P_FOUL = {"FoulBall": 0.70, "FoulBallFieldable": 0.10, "FoulBallNotFieldable": 0.20}
@@ -283,7 +287,8 @@ def _conteo_antes(call, balls_despues, strikes_despues):
 def generar(n_juegos: int = 40, semilla: int = 2026, cubetas: dict | None = None,
             n_lanzadores: int = 60, n_bateadores: int = 120, n_receptores: int = 24,
             n_lanzadores_nucleo: int = 12, anios: tuple[int, ...] = (2024, 2025, 2026),
-            innings_por_juego: int = 9, sucio: bool = True) -> pl.DataFrame:
+            innings_por_juego: int = 9, sucio: bool = True,
+            convencion_polinomio: dict | str | None = None) -> pl.DataFrame:
     """Genera un dataset sintético con el esquema (y, si `sucio`, los defectos) de los datos reales.
 
     Cada lanzador tiene una mano fija y cada bateador un lado fijo (algunos son `Switch`), de
@@ -324,8 +329,11 @@ def generar(n_juegos: int = 40, semilla: int = 2026, cubetas: dict | None = None
                 receptor = recs[rng.integers(0, len(recs))]
                 outs = 0
                 pa = 0
-                while outs < 3:
+                media_cortada = False
+                while outs < 3 and not media_cortada:
                     pa += 1
+                    corte = rng.random() < _P_CORTE.get(outs, 0.0)
+                    n_corte, n_lanz = int(rng.integers(1, 4)), 0
                     forzar_out = pa > 20  # salvaguarda: media entrada siempre cierra
                     bateador = bats[rng.integers(0, len(bats))]
                     lado_etq = "Switch" if switch[bateador] else lado_b[bateador]
@@ -405,11 +413,46 @@ def generar(n_juegos: int = 40, semilla: int = 2026, cubetas: dict | None = None
                             "in_strike_zone": int(en_zona), "outside_strike_zone": int(not en_zona),
                             "swung_outside_strike_zone": int(flags["is_swing"] and not en_zona),
                         })
+                        n_lanz += 1
+                        if corte and not terminada and n_lanz >= n_corte:
+                            media_cortada = True   # tercer out sin lanzamiento: el turno queda incompleto
+                            break
                     outs += outs_jugada
-    df = pl.DataFrame(filas)
+    df = _convencion_polinomio(pl.DataFrame(filas), convencion_polinomio, rng)
     if sucio:
         df = _ensuciar(df, rng, n_juegos)
     return _tipar_real(df, leer_diccionario(_RAIZ / "docs" / "diccionario.csv"))
+
+
+# --------------------------------------------------------------------------
+# ADR-010: ejes de los polinomios de trayectoria
+# --------------------------------------------------------------------------
+def _convencion_polinomio(df: pl.DataFrame, conv: dict | str | None, rng) -> pl.DataFrame:
+    """Reescribe PitchTrajectory{X,Y,Z}c{0,1,2} según la convención pedida.
+
+    - `None`: los polinomios SON los 9P (c0=r0, c1=v0, c2=a0/2): I3 vale por construcción.
+    - dict `{"X": ("z", -1), "Y": ("y", -1), "Z": ("x", 1)}`: el eje P del polinomio es s·(eje q de los
+      9P): c0=s·r0^q, c1=s·v0^q, c2=s·a0^q/2 (permutación con signo).
+    - `"ruido"`: polinomios sin relación con los 9P (no canónicos).
+    """
+    if conv is None:
+        return df
+    n = df.height
+    if conv == "ruido":
+        exprs = []
+        for p in "XYZ":
+            for k in (0, 1, 2):
+                c = f"PitchTrajectory{p}c{k}"
+                sd = float(df[c].std() or 1.0)
+                exprs.append(pl.Series(c, rng.normal(0.0, sd, n)))
+        return df.with_columns(exprs)
+    fuente = {"c0": {"x": "x0", "y": "y0", "z": "z0"}, "c1": {"x": "vx0", "y": "vy0", "z": "vz0"},
+              "c2": {"x": "ax0", "y": "ay0", "z": "az0"}}
+    exprs = []
+    for p, (q, signo) in conv.items():
+        for k, esc in (("c0", 1.0), ("c1", 1.0), ("c2", 0.5)):
+            exprs.append((signo * esc * pl.col(fuente[k][q])).alias(f"PitchTrajectory{p}{k}"))
+    return df.with_columns(exprs)
 
 
 # --------------------------------------------------------------------------
@@ -491,7 +534,50 @@ def _ensuciar(df: pl.DataFrame, rng, n_juegos: int) -> pl.DataFrame:
     en_nulo = pl.col("game_anon_id").is_in(nulos)
     df = _nulificar(df, df.select(en_nulo).to_series(), ["altitude_category"])
     sueltas = _mascara(rng, n, 0.003, 5) & ~df.select(en_nulo).to_series()
-    return _nulificar(df, sueltas, ["altitude_category"])
+    df = _nulificar(df, sueltas, ["altitude_category"])
+    return _ensuciar_v24(df, rng)
+
+
+def _ensuciar_v24(df: pl.DataFrame, rng) -> pl.DataFrame:
+    """Casos de la corrida real de F0 (ROADMAP §1.2, ADR-011 a 013)."""
+    n = df.height
+    # ADR-012: medias entradas con >= 4 outs (inconsistentes): se suman dos outs a dos medias entradas.
+    claves = df.select("game_anon_id", "Inning", "Top/Bottom").unique(maintain_order=True)
+    for g, i, m in claves.sample(n=min(2, claves.height), seed=int(rng.integers(1_000_000))).iter_rows():
+        en = ((pl.col("game_anon_id") == g) & (pl.col("Inning") == i) & (pl.col("Top/Bottom") == m)
+              & (pl.col("OutsOnPlay") == 0))
+        idx = np.flatnonzero(df.select(en).to_series().to_numpy())[:2]
+        df = _fijar(df, pl.Series(np.isin(np.arange(n), idx)), "OutsOnPlay", 1)
+
+    # ADR-011: fouls con KorBB = Strikeout (foul tip atrapado: ponche marcado como foul).
+    k_idx = np.flatnonzero(df.select((pl.col("KorBB") == "Strikeout")
+                                     & (pl.col("PitchCall") == "StrikeSwinging")).to_series().to_numpy())
+    if len(k_idx):
+        m_k = pl.Series(np.isin(np.arange(n), rng.choice(k_idx, size=min(3, len(k_idx)), replace=False)))
+        df = _fijar(df, m_k, "PitchCall", "FoulBall")
+        for c, v in (("is_whiff", 0), ("is_swinging_strike", 0), ("is_contact", 1)):
+            df = _fijar(df, m_k, c, v)
+
+    # ADR-011: las is_* del organizador no son partición exacta de PitchCall. En el dato real
+    # (reports/FASE_00.md): contacto <=> Foul/InPlay falla en ~0.25 % de las filas, swing = whiff + contacto
+    # en ~0.07 %, y whiff => StrikeSwinging nunca falla. Se rompe is_contact en fouls; en el 72 % de esas
+    # filas también is_swing (la suma sigue valiendo) y en el resto no (la suma falla). is_whiff no se toca.
+    foul_idx = np.flatnonzero(df.select(pl.col("PitchCall").is_in(list(_P_FOUL))).to_series().to_numpy())
+    if len(foul_idx):
+        k = min(len(foul_idx), max(4, round(n * 0.0025)))
+        elegidos = rng.choice(foul_idx, size=k, replace=False)
+        m_c = pl.Series(np.isin(np.arange(n), elegidos))
+        m_conserva = pl.Series(np.isin(np.arange(n), elegidos[:max(1, round(0.28 * k))]))
+        df = _fijar(df, m_c, "is_contact", 0)
+        df = _fijar(df, m_c & ~m_conserva, "is_swing", 0)
+
+    # ADR-013: bola en juego sin resultado (play_result = NeutralPlay con InPlay).
+    inplay = np.flatnonzero(df.select((pl.col("PitchCall") == "InPlay")
+                                      & (pl.col("play_result") == "Out")).to_series().to_numpy())
+    if len(inplay):
+        m_i = pl.Series(np.isin(np.arange(n), rng.choice(inplay, size=min(3, len(inplay)), replace=False)))
+        df = _fijar(df, m_i, "play_result", "NeutralPlay")
+    return df
 
 
 # --------------------------------------------------------------------------

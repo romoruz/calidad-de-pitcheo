@@ -54,7 +54,8 @@ bash scripts/fases/f00.sh
 # una compuerta (G0.1-G0.6), después de escribir el reporte.
 ```
 
-Implementa los ADR-002 a 007 (ROADMAP §1.1; texto completo en `docs/DECISIONES.md`) con las
+Implementa los ADR-002 a 007 (ROADMAP §1.1) y, desde v2.4, los ADR-010 a 013 (§1.2: ejes de los polinomios,
+banderas desde `pitch_call_h`, medias entradas A/B y `excluir_cadena`); texto completo en `docs/DECISIONES.md`. Usa las
 categorías reales de `config/categorias.yaml` (`docs/diccionario.csv` es del organizador y no se
 edita). Un valor sin regla nunca se asigna en silencio: va a la tabla "sin regla" del reporte, no se
 escribe `pitches.parquet` y la fase falla (G0.5). Revisa en el reporte la tabla

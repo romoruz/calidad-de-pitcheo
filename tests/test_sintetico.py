@@ -108,9 +108,10 @@ def test_caso_outs_3(df):
     assert (df["Outs"] == 3).sum() >= 3
 
 
-def test_caso_16_play_result(df):
-    assert _vals(df, "play_result") == set(CAT["columnas"]["play_result"]["valores"])
-    assert len(_vals(df, "play_result")) == 16
+def test_caso_16_play_result():
+    grande = generar(n_juegos=30, semilla=2026)      # el triple es raro: hace falta una muestra mayor
+    assert _vals(grande, "play_result") == set(CAT["columnas"]["play_result"]["valores"])
+    assert len(_vals(grande, "play_result")) == 16
 
 
 def test_caso_is_hit_by_pitch_siempre_cero_pero_hay_hbp(df):
@@ -140,3 +141,60 @@ def test_sin_sucio_no_hay_defectos(limpio):
 def test_la_cubeta_extreme_mezcla_varios_parques():
     """Extreme trae más de una altitud: no se identifica un parque por cubeta (ADR-005)."""
     assert len(CFG["sintetico"]["cubetas"]["Extreme Altitude"]["altitudes_m"]) >= 2
+
+
+# --------------------------------------------------------------------------
+# Casos de la corrida real de F0 (ROADMAP §1.2, ADR-010 a 013)
+# --------------------------------------------------------------------------
+def test_caso_medias_entradas_de_2_outs_y_de_mas_de_3(df):
+    from pitcheo.limpieza import tabla_medias_entradas
+    t = tabla_medias_entradas(df)
+    dos = (t["outs"] == 2).mean()
+    assert 0.04 < dos < 0.25                                   # real: 12.9 %
+    assert (t["outs"] >= 4).sum() >= 1 and (t["outs"] <= 1).sum() >= 1
+    assert t.filter(pl.col("outs") == 2)["tiene_estado_2"].all()   # el tercer out sin lanzamiento deja estado 2
+
+
+def test_caso_media_entrada_de_2_outs_termina_en_turno_incompleto(df):
+    """El mecanismo sembrado: robo/pickoff con el bateador a medias (lanzamientos sin evento terminal)."""
+    sin_ev = df.filter(pl.col("KorBB") == "Undefined").height
+    assert sin_ev > 0
+    # una media entrada de 2 outs tiene su último bateador sin ponche/base/bola en juego
+    t = generar(6, 99, sucio=False)
+    assert t.filter(pl.col("Outs") == 2).height > 0
+
+
+def test_caso_pitcher_id_nulo_y_foul_con_ponche_y_inplay_sin_resultado(df):
+    assert df["pitcher_anon_id"].null_count() > 0
+    foul = df.filter(pl.col("PitchCall").cast(pl.Utf8).str.starts_with("FoulBall") & (pl.col("KorBB") == "Strikeout"))
+    assert foul.height >= 1 and (foul["play_result"].cast(pl.Utf8) == "Strikeout").all()
+    inplay_neutral = df.filter((pl.col("PitchCall") == "InPlay") & (pl.col("play_result") == "NeutralPlay"))
+    assert inplay_neutral.height >= 1
+
+
+def test_caso_banderas_is_no_son_particion_de_pitchcall(df):
+    foul = df.filter(pl.col("PitchCall").cast(pl.Utf8).str.starts_with("FoulBall"))
+    assert (foul["is_contact"] == 0).sum() > 0                  # foul sin is_contact
+    assert (foul["is_contact"] == 0).mean() < 0.05
+    assert not ((df["is_whiff"] == 1) & (df["PitchCall"].cast(pl.Utf8) != "StrikeSwinging")).any()   # whiff => SS
+
+
+def test_convencion_de_polinomio_configurable():
+    conv = {"X": ("z", -1), "Y": ("y", -1), "Z": ("x", 1)}
+    d = generar(3, 1, sucio=False, convencion_polinomio=conv)
+    assert d["PitchTrajectoryXc2"].to_list() == pytest.approx((-d["az0"] / 2).to_list())
+    assert d["PitchTrajectoryYc1"].to_list() == pytest.approx((-d["vy0"]).to_list())
+    assert d["PitchTrajectoryZc0"].to_list() == pytest.approx(d["x0"].to_list())
+    ident = generar(3, 1, sucio=False)                           # por defecto: los polinomios SON los 9P
+    assert ident["PitchTrajectoryXc2"].to_list() == pytest.approx((ident["ax0"] / 2).to_list())
+    ruido = generar(3, 1, sucio=False, convencion_polinomio="ruido")
+    assert ruido["PitchTrajectoryXc2"].to_list() != pytest.approx((ruido["ax0"] / 2).to_list())
+
+
+def test_cada_defecto_sembrado_cabe_en_las_compuertas(df):
+    """El sintético sucio no debe rozar los topes: excluir_modelo <= 3 % y excluir_cadena <= 0.5 %."""
+    from pitcheo.io import leer_diccionario
+    from pitcheo.limpieza import limpiar
+    _d, rep = limpiar(df, leer_diccionario(CFG.ruta("diccionario")), CAT, CFG["f00"])
+    assert rep["exclusiones"]["modelo"]["pct_total"] < 3.0
+    assert rep["exclusiones"]["cadena"]["pct_total"] < 0.5

@@ -328,6 +328,72 @@ def incoherencias(df: pl.DataFrame, cat: dict) -> list[dict]:
     return out
 
 
+def _banderas(d: pl.DataFrame, motivos: dict, col_bool: str, col_motivo: str) -> tuple[pl.DataFrame, dict]:
+    """Bandera booleana + motivo (varios separados por ';'; nulo si ninguno) y su resumen agregado."""
+    n = d.height
+    d = d.with_columns(pl.concat_str(
+        [pl.when(e).then(pl.lit(m)) for m, e in motivos.items()], separator=";", ignore_nulls=True
+    ).alias(col_motivo))
+    d = d.with_columns(
+        (pl.col(col_motivo) != "").alias(col_bool),
+        pl.when(pl.col(col_motivo) == "").then(None).otherwise(pl.col(col_motivo)).alias(col_motivo))
+    por_motivo = {m: int(d.select(e.sum()).item()) for m, e in motivos.items()}
+    total = int(d[col_bool].sum())
+    return d, {"por_motivo": {m: {"n": c, "pct": _frac(c, n)} for m, c in por_motivo.items()},
+               "total": total, "pct_total": _frac(total, n)}
+
+
+def _desenlace_exprs(cat: dict) -> list[pl.Expr]:
+    """ADR-011: es_swing, es_whiff, es_contacto, es_foul, es_bip desde pitch_call_h (Undefined -> nulo)."""
+    pch = pl.col("pitch_call_h").cast(pl.Utf8)
+    indef = pch.is_in(cat["pitch_call_h"]["excluir"])
+    return [pl.when(indef).then(None).otherwise(pch.is_in(clases)).alias(col)
+            for col, clases in cat["desenlace"].items() if col.startswith("es_")]
+
+
+def tabla_medias_entradas(df: pl.DataFrame, inconsistente: int = 4) -> pl.DataFrame:
+    """Una fila por media entrada (juego, entrada, mitad) con sus outs y los criterios A y B (ADR-012).
+
+    - outs: suma de OutsOnPlay.   - tiene_estado_2: algún lanzamiento con Outs = 2 antes del lanzamiento.
+    - final: la última media entrada del juego en el dato (no hay una posterior).
+    - **A (estricto):** outs = 3.
+    - **B (amplio):** hay estado previo Outs = 2, existe una media entrada posterior del juego
+      (no es la final) y no es inconsistente (outs < `inconsistente`).
+    Las de >= `inconsistente` outs se excluyen de ambos.
+    """
+    g = (df.filter(pl.col("game_anon_id").is_not_null() & pl.col("Inning").is_not_null()
+                   & pl.col("Top/Bottom").is_not_null())
+         .group_by("game_anon_id", "Inning", pl.col("Top/Bottom").cast(pl.Utf8).alias("mitad"))
+         .agg(pl.col("OutsOnPlay").cast(pl.Float64).sum().cast(pl.Int64).alias("outs"),
+              (pl.col("Outs").cast(pl.Float64) == 2).any().alias("tiene_estado_2"),
+              pl.len().alias("n_lanz")))
+    g = g.with_columns((pl.col("Inning") * 2 + (pl.col("mitad") == "Bottom").cast(pl.Int64)).alias("orden"))
+    g = g.with_columns((pl.col("orden") == pl.col("orden").max().over("game_anon_id")).alias("final"))
+    return g.with_columns(
+        (pl.col("outs") == 3).alias("A"),
+        (pl.col("tiene_estado_2") & ~pl.col("final") & (pl.col("outs") < inconsistente)).alias("B"))
+
+
+def marcar_media_entrada(d: pl.DataFrame, inconsistente: int = 4) -> tuple[pl.DataFrame, dict]:
+    """Columnas media_entrada_A y media_entrada_B por lanzamiento (ADR-012) y su resumen agregado."""
+    t = tabla_medias_entradas(d, inconsistente)
+    claves = ["game_anon_id", "Inning", "mitad"]
+    d = (d.with_columns(pl.col("Top/Bottom").cast(pl.Utf8).alias("mitad"))
+         .join(t.select(*claves, pl.col("A").alias("media_entrada_A"), pl.col("B").alias("media_entrada_B")),
+               on=claves, how="left", maintain_order="left")
+         .with_columns(pl.col("media_entrada_A").fill_null(False), pl.col("media_entrada_B").fill_null(False))
+         .drop("mitad"))
+    no_fin = t.filter(~pl.col("final"))
+    rep = {
+        "medias_entradas": t.height, "finales": int(t["final"].sum()), "no_finales": no_fin.height,
+        "A": int(t["A"].sum()), "pct_A": _frac(int(t["A"].sum()), t.height),
+        "B_no_finales": int(no_fin["B"].sum()), "pct_B_no_finales": _frac(int(no_fin["B"].sum()), no_fin.height),
+        "inconsistentes": int((t["outs"] >= inconsistente).sum()),
+        "distribucion_outs": {str(k): int(v) for k, v in t.group_by("outs").len().sort("outs").iter_rows()},
+    }
+    return d, rep
+
+
 def aplicar_adr(df: pl.DataFrame, cat: dict, f00: dict) -> tuple[pl.DataFrame, dict]:
     """ADR-002 a 007. Devuelve el DataFrame con las columnas nuevas y el reporte agregado."""
     n = df.height
@@ -354,6 +420,10 @@ def aplicar_adr(df: pl.DataFrame, cat: dict, f00: dict) -> tuple[pl.DataFrame, d
     rep["ADR-004"] = {"foul_unificados": n_foul, "undefined_excluidos": n_undef,
                       "pct_undefined": _frac(n_undef, n)}
 
+    # ADR-011 desenlace desde pitch_call_h (partición exacta; Undefined queda en nulo) -------
+    d = d.with_columns(_desenlace_exprs(cat))
+    rep["ADR-011"] = {c: int(d[c].sum()) for c in cat["desenlace"] if c.startswith("es_") and c in d.columns}
+
     # ADR-003 mano --------------------------------------------------------
     d, rep_p = _mano_lanzador(d, f00)
     d, rep_b = _mano_bateador(d, f00)
@@ -374,25 +444,29 @@ def aplicar_adr(df: pl.DataFrame, cat: dict, f00: dict) -> tuple[pl.DataFrame, d
     n_outs_mal = int(d.select(outs_mal.sum()).item())
     rep["ADR-006"] = {"outs_invalidos": n_outs_mal, "pct": _frac(n_outs_mal, n),
                       "outs_nulos": int(d["Outs"].null_count())}
-    motivos = {
+    pch = pl.col("pitch_call_h").cast(pl.Utf8)
+    motivos_modelo = {
         "ADR-002:EXC": pl.col("familia") == "EXC",
         "ADR-003:lanzador": pl.col("pitcher_throws_r").is_null(),
         "ADR-003:bateador": pl.col("batter_side_r").is_null(),
-        "ADR-004:Undefined": pl.col("pitch_call_h").is_in(pc["excluir"]),
+        "ADR-004:Undefined": pch.is_in(pc["excluir"]),
         "ADR-006:Outs": outs_mal,
+        "ADR-013:pitcher_id_nulo": pl.col("pitcher_anon_id").is_null(),   # un "lanzador fantasma" en GroupKFold
     }
-    d = d.with_columns(pl.concat_str(
-        [pl.when(e).then(pl.lit(m)) for m, e in motivos.items()], separator=";", ignore_nulls=True
-    ).alias("motivo_exclusion"))
-    d = d.with_columns(
-        (pl.col("motivo_exclusion") != "").alias("excluir_modelo"),
-        pl.when(pl.col("motivo_exclusion") == "").then(None)
-        .otherwise(pl.col("motivo_exclusion")).alias("motivo_exclusion"))
-    por_motivo = {m: int(d.select(e.sum()).item()) for m, e in motivos.items()}
-    n_exc = int(d["excluir_modelo"].sum())
-    rep["exclusiones"] = {
-        "por_motivo": {m: {"n": c, "pct": _frac(c, n)} for m, c in por_motivo.items()},
-        "total": n_exc, "pct_total": _frac(n_exc, n)}
+    # excluir_cadena: solo lo que invalida la transición del conteo (la mano o el ID no la afectan).
+    motivos_cadena = {
+        "ADR-004:Undefined": pch.is_in(pc["excluir"]),
+        "ADR-006:Outs": outs_mal,
+        "ADR-013:InPlay_sin_resultado": (pch == "InPlay") & pl.col("play_result").cast(pl.Utf8).is_in(
+            cat["exclusion_cadena"]["inplay_sin_resultado"]),
+    }
+    d, exc_modelo = _banderas(d, motivos_modelo, "excluir_modelo", "motivo_exclusion")
+    d, exc_cadena = _banderas(d, motivos_cadena, "excluir_cadena", "motivo_cadena")
+    rep["exclusiones"] = {"modelo": exc_modelo, "cadena": exc_cadena}
+
+    # ADR-012 completitud de media entrada (A estricto / B amplio) ---------------
+    if {"Inning", "Top/Bottom", "OutsOnPlay", "Outs", "game_anon_id"} <= set(d.columns):
+        d, rep["ADR-012"] = marcar_media_entrada(d, int(cat.get("outs_inconsistente", 4)))
 
     # Enums de las columnas derivadas ------------------------------------
     d = d.with_columns(
