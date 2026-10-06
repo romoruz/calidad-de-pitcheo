@@ -1,16 +1,17 @@
-"""El generador sintético cumple el diccionario y las identidades I1-I8 de F0."""
+"""El generador sintético respeta el diccionario y REPRODUCE cada caso real de D00 (una prueba por caso)."""
 from __future__ import annotations
 
-import numpy as np
 import polars as pl
 import pytest
 
 from pitcheo.config import Config
 from pitcheo.io import leer_diccionario
-from pitcheo.sintetico import G_FTS2, generar, spinaxis_a_tilt
+from pitcheo.limpieza import cargar_categorias
+from pitcheo.sintetico import generar, spinaxis_a_tilt
 
 CFG = Config.load()
 DICC = leer_diccionario(CFG.ruta("diccionario"))
+CAT = cargar_categorias(CFG.ruta("categorias"))
 
 
 @pytest.fixture(scope="module")
@@ -18,118 +19,287 @@ def df() -> pl.DataFrame:
     return generar(n_juegos=12, semilla=2026)
 
 
+@pytest.fixture(scope="module")
+def limpio() -> pl.DataFrame:
+    return generar(n_juegos=12, semilla=2026, sucio=False)
+
+
+def _vals(df: pl.DataFrame, col: str) -> set:
+    return set(df[col].cast(pl.Utf8).drop_nulls().unique().to_list())
+
+
 # --------------------------------------------------------------------------
-# Diccionario
+# Esquema del diccionario
 # --------------------------------------------------------------------------
 def test_todas_las_columnas_presentes_y_en_orden(df):
     assert list(df.columns) == [s.nombre for s in DICC]
 
 
-def test_sin_columnas_no_documentadas(df):
-    assert set(df.columns) == {s.nombre for s in DICC}
-
-
-def test_tipos_por_diccionario(df):
-    enteros = (pl.Int8, pl.Int16, pl.Int32, pl.Int64)
-    for s in DICC:
-        dt = df.schema[s.nombre]
-        if s.es_entera:
-            assert dt in enteros, f"{s.nombre}: {dt} no es entero"
-        elif s.es_booleana:
-            assert dt == pl.Int8, f"{s.nombre}: {dt} no es Int8"
-            vals = set(df[s.nombre].drop_nulls().unique().to_list())
-            assert vals <= {0, 1}, f"{s.nombre}: valores {vals} fuera de 0/1"
-        elif s.es_numerica:
-            assert dt == pl.Float64, f"{s.nombre}: {dt} no es Float64"
-        else:
-            assert dt == pl.Utf8, f"{s.nombre}: {dt} no es Utf8"
-
-
-def test_categorias_cerradas(df):
-    for s in DICC:
-        enum = s.valores_enumerados
-        if enum is None:
-            continue
-        permitidos = {e.strip() for e in enum}
-        vistos = set(df[s.nombre].drop_nulls().unique().to_list())
-        assert vistos <= permitidos, f"{s.nombre}: {vistos - permitidos} fuera del diccionario"
-
-
-def test_rangos_enteros(df):
-    for s in DICC:
-        ri = s.rango_entero
-        if ri is None:
-            continue
-        col = df[s.nombre].drop_nulls()
-        if col.len():
-            assert col.min() >= ri[0] and col.max() <= ri[1], f"{s.nombre} fuera de {ri}"
-
-
-def test_ids_con_formato(df):
+def test_ids_con_formato_y_pitchuid_unico(df):
     assert df["game_anon_id"].str.contains(r"^game_\d{6}$").all()
-    assert df["pitcher_anon_id"].str.contains(r"^pitcher_\d{5}$").all()
-    assert df["batter_anon_id"].str.contains(r"^batter_\d{5}$").all()
-    assert df["catcher_anon_id"].str.contains(r"^catcher_\d{5}$").all()
-    assert df["PitchUID"].n_unique() == df.height  # único
+    assert df["pitcher_anon_id"].drop_nulls().str.contains(r"^pitcher_\d{5}$").all()
+    assert df["batter_anon_id"].drop_nulls().str.contains(r"^batter_\d{5}$").all()
+    assert df["catcher_anon_id"].drop_nulls().str.contains(r"^catcher_\d{5}$").all()
+    assert df["PitchUID"].n_unique() == df.height
+
+
+def test_esquema_de_tipos_real(df):
+    """Tal como llegan los datos reales (reports/FASE_00_0.md)."""
+    assert df.schema["year"] == pl.Int32 and df.schema["in_strike_zone"] == pl.Int32
+    assert df.schema["EffectiveVelo"] == pl.Utf8      # el dato real trae EffectiveVelo como texto
+    for c in ("AutoPitchType", "PitchCall", "play_result", "Top/Bottom"):
+        assert df.schema[c] == pl.Categorical
+    for s in DICC:
+        if s.nombre in ("year", "in_strike_zone", "EffectiveVelo"):
+            continue
+        if s.es_booleana or s.es_numerica:           # flags y enteros llegan como Float64
+            assert df.schema[s.nombre] == pl.Float64, s.nombre
+
+
+def test_todo_valor_tiene_regla_en_el_inventario(df):
+    """El generador solo emite valores inventariados en config/categorias.yaml."""
+    for col, info in CAT["columnas"].items():
+        assert _vals(df, col) <= set(info["valores"]), (col, _vals(df, col) - set(info["valores"]))
+
+
+def test_tilt_sin_cero_a_la_izquierda(df):
+    assert spinaxis_a_tilt(0.0) == "12:00"
+    assert spinaxis_a_tilt(30.0) == "1:00"
+    assert spinaxis_a_tilt(345.0) == "11:30"
+    assert df["Tilt"].drop_nulls().str.contains(r"^(1[0-2]|[1-9]):[0-5]\d$").all()
+
+
+def test_determinista():
+    a, b = generar(4, 3), generar(4, 3)
+    assert a.equals(b)
 
 
 # --------------------------------------------------------------------------
-# Identidades I1-I8
+# Un caso real por prueba
 # --------------------------------------------------------------------------
-def test_I1_speeddrop(df):
-    d = (df["RelSpeed"] - df["ZoneSpeed"] - df["SpeedDrop"]).abs().max()
-    assert d < 0.05
+def test_caso_12_autopitchtype(df):
+    esperados = set(CAT["familia"]["mapa"]) - {"Undefined"}
+    assert _vals(df, "AutoPitchType") == esperados and len(esperados) == 12
 
 
-def test_I2_count(df):
-    esperado = df["Balls"].cast(pl.Utf8) + "-" + df["Strikes"].cast(pl.Utf8)
-    assert (df["count"] == esperado).all()
-    assert df["Balls"].max() <= 3 and df["Strikes"].max() <= 2
+def test_caso_mano_lanzador_undefined_y_nula(df):
+    assert "Undefined" in _vals(df, "PitcherThrows")
+    assert df["PitcherThrows"].null_count() > 0
 
 
-def test_I3_polinomio(df):
-    for eje, acc in (("X", "ax0"), ("Y", "ay0"), ("Z", "az0")):
-        c2 = df[f"PitchTrajectory{eje}c2"].to_numpy()
-        a0 = df[acc].to_numpy()
-        assert np.allclose(2 * c2, a0, rtol=1e-9, atol=1e-9)
+def test_caso_bateador_switch_undefined_y_nulo(df):
+    assert {"Switch", "Undefined"} <= _vals(df, "BatterSide")
+    assert df["BatterSide"].null_count() > 0
 
 
-def test_I4_caida_gravedad(df):
-    izq = (df["InducedVertBreak"] - df["VertBreak"]).to_numpy()
-    der = 0.5 * G_FTS2 * df["ZoneTime"].to_numpy() ** 2 * 12.0
-    assert np.allclose(izq, der, rtol=1e-6, atol=1e-6)
+def test_caso_tres_foulball_y_undefined(df):
+    assert {"FoulBall", "FoulBallFieldable", "FoulBallNotFieldable", "Undefined"} <= _vals(df, "PitchCall")
 
 
-def test_I5_tilt_biyectivo(df):
-    recalc = [spinaxis_a_tilt(a) for a in df["SpinAxis"].to_list()]
-    assert (df["Tilt"] == pl.Series(recalc)).all()
-    # Correlación circular SpinAxis <-> Tilt (en ángulo) > 0.99.
-    def tilt_a_angulo(t):
-        h, m = (int(x) for x in t.split(":"))
-        return ((h % 12) * 60 + m) / 720.0 * 360.0
-    ang = np.radians(np.array([tilt_a_angulo(t) for t in df["Tilt"].to_list()]))
-    axis = np.radians(df["SpinAxis"].to_numpy())
-    r = np.abs(np.mean(np.exp(1j * (ang - axis))))
-    assert r > 0.99
+def test_caso_cubeta_nula_en_juegos_completos_y_sueltos(df):
+    nulos = df.filter(pl.col("altitude_category").is_null())
+    por_juego = df.group_by("game_anon_id").agg(pl.col("altitude_category").is_null().mean().alias("f"))
+    assert nulos.height > 0
+    assert (por_juego["f"] == 1.0).any()                                    # un juego entero nulo
+    assert ((por_juego["f"] > 0) & (por_juego["f"] < 1)).any()              # filas sueltas
 
 
-def test_I6_flags_swing(df):
-    assert (df["is_swing"] == df["is_whiff"] + df["is_contact"]).all()
-    whiffs = df.filter(pl.col("is_whiff") == 1)
-    assert (whiffs["PitchCall"] == "StrikeSwinging").all()
+def test_caso_outs_3(df):
+    assert (df["Outs"] == 3).sum() >= 3
 
 
-def test_I7_outs_por_media_entrada(df):
-    g = (df.group_by("game_anon_id", "Inning", "Top/Bottom")
-         .agg(pl.col("OutsOnPlay").sum().alias("outs")))
-    frac = (g["outs"] == 3).mean()
-    assert frac >= 0.90, f"solo {frac:.2%} de medias entradas con 3 outs"
+def test_caso_16_play_result(grande):
+    assert _vals(grande, "play_result") == set(CAT["columnas"]["play_result"]["valores"])
+    assert len(_vals(grande, "play_result")) == 16
 
 
-def test_I8_horzbreak_invierte_con_mano(df):
-    for tipo in df["AutoPitchType"].unique().to_list():
-        sub = df.filter(pl.col("AutoPitchType") == tipo)
-        r = sub.filter(pl.col("PitcherThrows") == "Right")["HorzBreak"]
-        l = sub.filter(pl.col("PitcherThrows") == "Left")["HorzBreak"]
-        if r.len() >= 20 and l.len() >= 20:
-            assert r.mean() * l.mean() < 0, f"{tipo}: mismo signo R={r.mean():.2f} L={l.mean():.2f}"
+def test_caso_is_hit_by_pitch_siempre_cero_pero_hay_hbp(df):
+    assert (df["is_hit_by_pitch"] == 0).all()
+    assert (df["PitchCall"].cast(pl.Utf8) == "HitByPitch").any()
+
+
+def test_caso_ids_nulos_y_efective_velo_texto(df):
+    for c in ("pitcher_anon_id", "batter_anon_id", "catcher_anon_id"):
+        assert df[c].null_count() > 0
+    assert df["EffectiveVelo"].str.contains(r"^\d+(\.\d+)?$").all()
+
+
+def test_caso_nulos_fisicos(df):
+    for c in ("SpinAxis", "Tilt", "VertBreak", "Extension", "SpinRate", "Distance"):
+        assert df[c].null_count() > 0, c
+
+
+def test_sin_sucio_no_hay_defectos(limpio):
+    assert _vals(limpio, "PitcherThrows") <= {"Left", "Right"}
+    assert "Undefined" not in _vals(limpio, "PitchCall")
+    assert limpio["altitude_category"].null_count() == 0
+    assert (limpio["Outs"] <= 2).all()
+    assert limpio["pitcher_anon_id"].null_count() == 0
+
+
+def test_la_cubeta_extreme_mezcla_varios_parques():
+    """Extreme trae más de una altitud: no se identifica un parque por cubeta (ADR-005)."""
+    assert len(CFG["sintetico"]["cubetas"]["Extreme Altitude"]["altitudes_m"]) >= 2
+
+
+# --------------------------------------------------------------------------
+# Casos de la corrida real de F0 (ROADMAP §1.2, ADR-010 a 013)
+# --------------------------------------------------------------------------
+@pytest.fixture(scope="module")
+def grande() -> pl.DataFrame:
+    return generar(n_juegos=30, semilla=2026)      # muestra mayor para lo raro (triples, 0-1 outs)
+
+
+def test_caso_medias_entradas_de_2_outs_y_de_mas_de_3(grande):
+    from pitcheo.limpieza import tabla_medias_entradas
+    t = tabla_medias_entradas(grande)
+    dos = (t["outs"] == 2).mean()
+    assert 0.04 < dos < 0.25                                   # real: 12.9 %
+    assert (t["outs"] >= 4).sum() >= 1 and (t["outs"] <= 1).sum() >= 1
+
+
+def test_caso_media_entrada_de_2_outs_termina_en_turno_incompleto(df):
+    """El mecanismo sembrado: robo/pickoff con el bateador a medias (lanzamientos sin evento terminal)."""
+    sin_ev = df.filter(pl.col("KorBB") == "Undefined").height
+    assert sin_ev > 0
+    # una media entrada de 2 outs tiene su último bateador sin ponche/base/bola en juego
+    t = generar(6, 99, sucio=False)
+    assert t.filter(pl.col("Outs") == 2).height > 0
+
+
+def test_caso_pitcher_id_nulo_y_foul_con_ponche_y_inplay_sin_resultado(df):
+    assert df["pitcher_anon_id"].null_count() > 0
+    foul = df.filter(pl.col("PitchCall").cast(pl.Utf8).str.starts_with("FoulBall") & (pl.col("KorBB") == "Strikeout"))
+    assert foul.height >= 1 and (foul["play_result"].cast(pl.Utf8) == "Strikeout").all()
+    inplay_neutral = df.filter((pl.col("PitchCall") == "InPlay") & (pl.col("play_result") == "NeutralPlay"))
+    assert inplay_neutral.height >= 1
+
+
+def test_caso_banderas_is_no_son_particion_de_pitchcall(df):
+    foul = df.filter(pl.col("PitchCall").cast(pl.Utf8).str.starts_with("FoulBall"))
+    assert (foul["is_contact"] == 0).sum() > 0                  # foul sin is_contact
+    assert (foul["is_contact"] == 0).mean() < 0.05
+    assert not ((df["is_whiff"] == 1) & (df["PitchCall"].cast(pl.Utf8) != "StrikeSwinging")).any()   # whiff => SS
+
+
+def test_convencion_de_polinomio_real_por_defecto():
+    """ADR-010 enmendado: los polinomios son los 9P con ejes permutados X→y, Y→z, Z→x y origen en la liberación."""
+    d, v = generar(3, 1, sucio=False, con_verdad=True)
+    assert d["PitchTrajectoryXc2"].to_list() == pytest.approx((d["ay0"] / 2).to_list())
+    assert d["PitchTrajectoryYc2"].to_list() == pytest.approx((d["az0"] / 2).to_list())
+    assert d["PitchTrajectoryZc2"].to_list() == pytest.approx((d["ax0"] / 2).to_list())
+    ts = v["t_s"]
+    for p, (v0, a0) in {"X": ("vy0", "ay0"), "Y": ("vz0", "az0"), "Z": ("vx0", "ax0")}.items():     # c1 = v0 + a·t_s
+        assert d[f"PitchTrajectory{p}c1"].to_list() == pytest.approx((d[v0] + d[a0] * ts).to_list())
+    for p, (r0, v0, a0) in {"X": ("y0", "vy0", "ay0"), "Y": ("z0", "vz0", "az0"), "Z": ("x0", "vx0", "ax0")}.items():
+        assert d[f"PitchTrajectory{p}c0"].to_list() == pytest.approx(
+            (d[r0] + d[v0] * ts + 0.5 * d[a0] * ts**2).to_list())
+    assert (ts < 0).all() and 0.01 < float(-ts.mean()) < 0.06           # real: ≈ -0.026 s (liberación ~54 ft)
+
+
+def test_convencion_de_polinomio_configurable():
+    conv = {"X": ("z", -1), "Y": ("y", -1), "Z": ("x", 1)}
+    d = generar(3, 1, sucio=False, convencion_polinomio=conv)
+    assert d["PitchTrajectoryXc2"].to_list() == pytest.approx((-d["az0"] / 2).to_list())
+    assert d["PitchTrajectoryYc1"].to_list() == pytest.approx((-d["vy0"]).to_list())
+    assert d["PitchTrajectoryZc0"].to_list() == pytest.approx(d["x0"].to_list())
+    ruido = generar(3, 1, sucio=False, convencion_polinomio="ruido")
+    assert ruido["PitchTrajectoryXc2"].to_list() != pytest.approx((ruido["ay0"] / 2).to_list())
+
+
+def test_caso_9p_arrancan_en_50_pies_y_zonetime_en_la_liberacion():
+    d, v = generar(3, 1, sucio=False, con_verdad=True)
+    assert d["y0"].to_list() == pytest.approx([50.0] * d.height)
+    assert d["ZoneTime"].min() > 0.3 and (v["t_s"] < 0).all()
+    # El tiempo de vuelo desde la liberación es mayor que el tiempo desde y = 50 ft (el reloj de los 9P).
+    from pitcheo.fisica import nueve_p, tiempo_al_plato
+    assert (d["ZoneTime"].to_numpy() - tiempo_al_plato(*nueve_p(d))).min() > 0.01
+
+
+def test_caso_plateloc_side_con_signo_sembrado_y_plano_configurable():
+    d, v = generar(3, 2, sucio=False, con_verdad=True)
+    assert v["signo_x"] == -1 and v["y_plano_ft"] == pytest.approx(17 / 12)
+    d1, _v1 = generar(3, 2, sucio=False, con_verdad=True, signo_plateloc_x=1)
+    assert (d1["PlateLocSide"] + d["PlateLocSide"]).abs().max() < 1e-9          # mismo vuelo, signo opuesto
+    d0, v0 = generar(3, 2, sucio=False, con_verdad=True, y_plano_ft=0.0)       # otro plano: otro vuelo y otras filas
+    assert d0["ZoneTime"].mean() > d["ZoneTime"].mean() and v0["y_plano_ft"] == 0.0
+
+
+@pytest.fixture(scope="module")
+def base_out():
+    """(ADR-016) 100 juegos del simulador base-out, sin ensuciar: dobles matanzas mal contadas y sin turnos perdidos."""
+    return generar(100, 7, sucio=False, con_verdad=True)
+
+
+def test_caso_base_out_dobles_matanzas_calibradas_y_mal_contadas(base_out):
+    d, v = base_out
+    por_juego = v["dobles_matanzas"] / d["game_anon_id"].n_unique()
+    assert 1.4 <= por_juego <= 2.4                                       # ≈ 1.6-2.0 por juego (MLB 1.63)
+    assert 0.85 <= v["dobles_matanzas_como_1_out"] / v["dobles_matanzas"] <= 0.99   # OutsOnPlay = 1 en ~93 %
+    registradas_2 = d.filter(pl.col("OutsOnPlay") == 2)
+    assert 0 < registradas_2.height == v["dobles_matanzas"] - v["dobles_matanzas_como_1_out"]
+    assert set(registradas_2["play_result"].to_list()) == {"Out"} and _vals(registradas_2, "hit_type") == {"GroundBall"}
+
+
+def test_caso_base_out_el_out_del_ponche_es_siempre_1_y_outs_previo_es_el_real(base_out):
+    d, _ = base_out
+    assert (d.filter(pl.col("KorBB") == "Strikeout")["OutsOnPlay"] == 1).all()
+    # `Outs` es el estado previo REAL: nunca baja dentro de la media entrada y llega a 2 como máximo.
+    g = d.group_by("game_anon_id", "Inning", "Top/Bottom", maintain_order=True).agg(
+        pl.col("Outs").diff().min().alias("min_dif"), pl.col("Outs").max().alias("max"), pl.col("Outs").first().alias("ini"))
+    assert (g["min_dif"].drop_nulls() >= 0).all() and (g["max"] <= 2).all()
+    # Una doble matanza cuenta 1 out registrado pero 2 reales: la media entrada queda con 2 outs registrados (P).
+    sumas = d.group_by("game_anon_id", "Inning", "Top/Bottom").agg(pl.col("OutsOnPlay").sum().alias("o"))
+    assert 0.05 < (sumas["o"] == 2).mean() < 0.2 and (sumas["o"] <= 3).all()
+
+
+def test_caso_base_out_mas_trafico_en_altura_y_nadie_en_base_es_posible(base_out):
+    d, _ = base_out
+    h = (d.group_by("game_anon_id", "Inning", "Top/Bottom")
+         .agg(pl.col("altitude_category").first().alias("c"),
+              pl.col("play_result").is_in(["Single", "Double", "Triple", "Walk", "HitByPitch", "Error"]).sum().alias("n")))
+    z = h.group_by("c").agg((pl.col("n") == 0).mean().alias("z")).to_dict(as_series=False)
+    z = dict(zip(z["c"], z["z"], strict=True))
+    assert z["Extreme Altitude"] < z["No Altitude"]                         # más corredores en altura
+    assert 0.2 < z["No Altitude"] < 0.6                                       # y bastantes entradas sin nadie en base
+
+
+def test_caso_extra_innings_con_corredor_colocado_y_pickoff_sin_lanzamiento():
+    d, _ = generar(40, 3, sucio=False, con_verdad=True, p_extra=1.0, p_pickoff_fantasma=1.0)
+    assert (d.group_by("game_anon_id").agg(pl.col("Inning").max().alias("m"))["m"] >= 10).all()   # todos van a extras
+    ini = (d.filter(pl.col("Inning") >= 10).group_by("game_anon_id", "Inning", "Top/Bottom", maintain_order=True)
+           .agg(pl.col("Outs").first().alias("ini")))
+    assert (ini["ini"] == 1).all()                      # el corredor colocado fue puesto out entre lanzamientos
+    sin_pickoff, _ = generar(20, 3, sucio=False, con_verdad=True, p_extra=1.0, p_pickoff_fantasma=0.0)
+    ini0 = (sin_pickoff.filter(pl.col("Inning") >= 10).group_by("game_anon_id", "Inning", "Top/Bottom", maintain_order=True)
+            .agg(pl.col("Outs").first().alias("ini")))
+    assert (ini0["ini"] == 0).all()
+    assert (generar(10, 3, sucio=False, p_extra=0.0)["Inning"] <= 9).all()      # sin extras no hay entradas > 9
+
+
+def test_caso_perdida_de_turnos_de_out_configurable_y_por_defecto_cero():
+    _d, v0 = generar(20, 4, con_verdad=True)
+    assert v0["perdidos"] == {"K": 0, "OUT_BIP": 0, "SAC": 0}               # sin ℓ sembrado no se pierde ningún turno
+    d1, v1 = generar(30, 4, con_verdad=True, perdida_cubeta={"No Altitude": 0.0, "Medium Altitude": 0.0,
+                                                            "Extreme Altitude": 0.0})
+    assert sum(v1["perdidos"].values()) == 0
+    d2, v2 = generar(30, 4, con_verdad=True, perdida_cubeta={"No Altitude": 0.2, "Medium Altitude": 0.2,
+                                                            "Extreme Altitude": 0.2})
+    assert sum(v2["perdidos"].values()) > 30 and d2.height < d1.height       # faltan los lanzamientos de esos turnos
+
+
+def test_caso_perdida_con_sesgo_a_ponche():
+    cub = {"No Altitude": 0.25, "Medium Altitude": 0.25, "Extreme Altitude": 0.25}
+    _a, va = generar(40, 6, con_verdad=True, perdida_cubeta=cub)
+    _b, vb = generar(40, 6, con_verdad=True, perdida_cubeta=cub, sesgo_k=8.0)
+    frac = lambda v: v["perdidos"]["K"] / sum(v["perdidos"].values())        
+    assert frac(vb) > frac(va) + 0.25 and frac(vb) > 0.6
+
+
+def test_cada_defecto_sembrado_cabe_en_las_compuertas(df):
+    """El sintético sucio no debe rozar los topes: excluir_modelo <= 3 % y excluir_cadena <= 0.5 %."""
+    from pitcheo.io import leer_diccionario
+    from pitcheo.limpieza import limpiar
+    _d, rep = limpiar(df, leer_diccionario(CFG.ruta("diccionario")), CAT, CFG["f00"])
+    assert rep["exclusiones"]["modelo"]["pct_total"] < 3.0
+    assert rep["exclusiones"]["cadena"]["pct_total"] < 0.5

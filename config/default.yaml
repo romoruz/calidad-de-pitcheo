@@ -8,11 +8,12 @@ rutas:
   raw_parquet: data/raw/stuff_model_df.parquet
   raw_pkl:     data/raw/stuff_model_df.pkl
   raw_rds:     data/raw/stuff_model_df.rds
-  # Datos tipados que produce F0 (fuera de git).
+  # Datos tipados y limpios que produce F0 (directorio particionado por year, fuera de git).
   interim:     data/interim
   pitches:     data/interim/pitches.parquet
-  # Diccionario de columnas (en git).
+  # Diccionario del organizador (NO se edita) y categorías reales (ROADMAP §1.1).
   diccionario: docs/diccionario.csv
+  categorias:  config/categorias.yaml
   # Reportes, logs y figuras (en git, salvo reports/privado/).
   reportes:    reports
   logs:        reports/logs
@@ -26,24 +27,67 @@ f00_0:
   # Perfilado: cuántos valores únicos listar antes de resumir como rango.
   max_unicos: 50
 
-# Generador sintético (src/pitcheo/sintetico.py). NO son los datos reales: solo
-# respetan el esquema del diccionario y cumplen las identidades I1-I8 de F0.
+# F0 — limpieza (ADR-002 a 007) y compuertas.
+f00:
+  # ADR-003: umbrales de imputación de mano.
+  umbral_moda: 0.95            # participación mínima de la moda del lanzador / bateador
+  umbral_relside: 0.99         # concordancia mínima signo(RelSide) <-> mano, aprendida de los datos
+  umbral_lado_ambos: 0.05      # bateador que muestra ambos lados >= 5 % cada uno -> opuesta al lanzador
+  # Compuertas (ROADMAP §4-F0): v2.4 (ADR-010 a 013), v2.5 (ADR-010 enmienda, 014) y v2.6 (ADR-016: G0.8′ y G0.9).
+  # Reglas y umbrales de v2.6 FIJADOS por el orquestador (§1.4) antes de la corrida: no se ajustan.
+  gates:
+    g01_identidades_min: 0.999   # I1, I2
+    g01_i6p_min: 0.995           # I6' (ADR-011: el árbol ya no depende de las banderas) + tabla de discrepancias
+    g02_r2_c2_min: 0.9999        # ADR-010 enmienda: permutación confirmada con la regresión de c2 (conjunta y por pares)
+    g02_r2_c1_min: 0.999         # ... y c1 ajustado con t_s por lanzamiento, en los tres ejes
+    g04_i9: 1.0
+    g06_modelo_max: 0.03         # excluir_modelo
+    g06_cadena_max: 0.005        # excluir_cadena
+    g07_mediana_ft: 0.05         # ADR-014: |error| mediano en PlateLocSide y PlateLocHeight
+    g07_p99_ft: 0.3              # ... y p99
+    g07_zonetime_s: 0.005        # ... y mediana de |ZoneTime - (t_p - t_s)|
+    g08_k_ic: 3.92               # G0.8′ (Prop. 17): W(Γ=2) <= 3.92·SE_ref (ancho del IC95 muestral, Imbens-Manski)
+    g08_k_ignorable: 1.0         # ... y si además W(Γ=2) <= 1·SE_ref -> qa.perdida_ignorable = true
+    g09_u_max: 0.25              # G0.9: U dominante si el IC95 superior de θ̂ <= 0.25
+    g09_l_min: 0.50              # ... L dominante si el IC95 inferior >= 0.50; mezcla en otro caso (se reporta, no falla)
+
+# QA por identidades (ROADMAP §4-F0). Las tolerancias del ROADMAP no se tocan.
+qa:
+  i1_tol_mph: 0.05
+  i3_rtol: 0.01
+  i3_piso: 1.0                   # ft/s^2: piso del denominador relativo cuando |a0| ~ 0
+  i4_pendiente: [0.95, 1.05]
+  i5_min: 0.99
+  i8_min_filas: 50               # filas mínimas por mano y tipo para evaluar I8
+  i7_outs_por_media_entrada: 3
+  poli_piso: 1.0                 # ft/s^2 (ft/s en c1): piso del denominador al estimar t_s
+  i8_mediana_min_in: 2.0         # I8: si la mediana de |HorzBreak| de una mano es menor, la falla es "no informativa"
+  bootstrap_n: 1000              # remuestreos de juegos (dentro de cada cubeta) para los IC de la Prop. 16 (ADR-016)
+  cubeta_extrema: Extreme Altitude   # contraste de la Prop. 17: Extreme − No
+  cubeta_base: No Altitude
+  gammas: [1, 2]                 # sensibilidad Γ de la Prop. 16 (W(Γ)); la regla G0.8′ usa Γ = 2
+  dobles_matanzas_por_juego_ref: 1.63   # MLB 2023 (132 por equipo en 162 juegos): solo referencia en la corroboración (d)
+  # Los escribe `pitcheo f00 --aplicar` con lo que midió F0 (ADR-016); los leen F4, F6 y F8. Valores de partida
+  # CONSERVADORES hasta la corrida real: mezcla (ω por cubeta con π ∈ {0,1}) y pérdida no ignorable (Imbens-Manski).
+  mecanismo_outs: mezcla          # U | L | mezcla  (G0.9)
+  perdida_ignorable: false        # G0.8′: true si W(Γ=2) <= SE_ref
+
+# Generador sintético (src/pitcheo/sintetico.py). NO son los datos reales: reproduce
+# el ESQUEMA y los casos sucios de reports/FASE_00_0.md y cumple las identidades I1-I10.
 sintetico:
   n_juegos: 40
-  # Cubetas de altitud: metros sobre el nivel del mar por cubeta. La densidad
-  # barométrica se calcula con la fórmula de ROADMAP §2. La cubeta "alta" ~ Harp Helú
-  # concentra la mitad de los juegos (prueba de "solo Diablos", F0).
+  # Cubetas REALES. Las altitudes por cubeta son ilustrativas: Extreme mezcla varios parques
+  # (ROADMAP §1.1 ADR-005). La densidad barométrica sigue la fórmula de ROADMAP §2.
   cubetas:
-    baja:  {altitud_m: 3,    peso_juegos: 0.20}
-    media: {altitud_m: 532,  peso_juegos: 0.30}
-    alta:  {altitud_m: 2232, peso_juegos: 0.50}
-  # Pool de identidades anónimas.
+    No Altitude:      {altitudes_m: [3, 10, 40],         peso_juegos: 0.46}
+    Medium Altitude:  {altitudes_m: [532, 600],          peso_juegos: 0.25}
+    Extreme Altitude: {altitudes_m: [1921, 2192, 2232],  peso_juegos: 0.29}
   n_lanzadores: 60
   n_bateadores: 120
   n_receptores: 24
-  # Núcleo de lanzadores "Diablos" que aparece en casi todos los juegos (prueba F0).
+  # Núcleo de lanzadores que aparece en muchos juegos (identificación intra-lanzador).
   n_lanzadores_nucleo: 12
-  anios: [2023, 2024, 2025]
+  anios: [2024, 2025, 2026]
   innings_por_juego: 9
 
 # Constantes físicas (ROADMAP §2). Se usan ya en el sintético para que los datos
@@ -51,6 +95,13 @@ sintetico:
 fisica:
   g_fts2: 32.174           # ft/s^2
   y_frente_plato_ft: 1.4167  # 17/12 ft: frente del plato
+  # ADR-014: plano y_p y signo s de PlateLocSide = s * x(t_p). F0 los ELIGE por mínimo error contra
+  # PlateLoc* entre las combinaciones candidatas; estos son los valores vigentes (los que usará F2 en
+  # adelante). `pitcheo f00 --aplicar` los reescribe con los elegidos por los datos.
+  y_plato_ft: 1.4166667
+  signo_plateloc_x: -1
+  planos_candidatos_ft: [1.4166667, 0.0]
+  signos_candidatos: [1, -1]
   # Fórmula barométrica ROADMAP §2: rho/rho0 = (1 - a*h)^b
   baro_a: 2.25577e-5
   baro_b: 5.25588

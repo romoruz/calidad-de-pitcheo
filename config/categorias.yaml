@@ -1,0 +1,149 @@
+# Categorías REALES del dataset y sus mapas (ROADMAP v2.3 §1.1, ADR-002 a 007).
+#
+# Fuente de verdad en lugar de docs/diccionario.csv, que es del organizador y no se edita.
+# Inventario construido con reports/FASE_00_0.md (corrida local sobre los datos reales).
+#
+# Regla de oro (CLAUDE.md): un valor que NO esté inventariado aquí jamás se asigna en
+# silencio. `pitcheo f00` lo lista en la tabla "sin regla" del reporte y la fase falla (G0.5).
+
+# ---------------------------------------------------------------------------
+# Inventario de valores por columna cruda.
+#   valores:        todos los valores reales vistos (más los del diccionario).
+#   permite_nulos:  si la columna trae nulos reales; un nulo en una columna que no lo
+#                   permite es un valor "sin regla".
+# ---------------------------------------------------------------------------
+columnas:
+  PitcherThrows:
+    valores: [Left, Right, Undefined]
+    permite_nulos: true
+  BatterSide:
+    valores: [Left, Right, Switch, Undefined]
+    permite_nulos: true
+  altitude_category:
+    # Orden físico de menor a mayor altitud (la cubeta de referencia de F2 es la primera).
+    valores: [No Altitude, Medium Altitude, Extreme Altitude]
+    permite_nulos: true
+  AutoPitchType:
+    valores: [Four-Seam, Sinker, TwoSeamFastBall, OneSeamFastBall, Cutter, Slider, Sweeper,
+              Curveball, Changeup, Splitter, Knuckleball, Other, Undefined]
+    permite_nulos: false
+  PitchCall:
+    valores: [BallCalled, BallinDirt, BallIntentional, FoulBall, FoulBallFieldable,
+              FoulBallNotFieldable, HitByPitch, InPlay, StrikeCalled, StrikeSwinging, Undefined]
+    permite_nulos: false
+  KorBB:
+    valores: [Strikeout, Walk, Undefined]
+    permite_nulos: false
+  play_result:
+    valores: [BallCalled, BallinDirt, Double, Error, FieldersChoice, FoulBallFieldable,
+              HitByPitch, HomeRun, NeutralPlay, Out, Sacrifice, Single, StrikeSwinging,
+              Strikeout, Triple, Walk]
+    permite_nulos: false
+  hit_type:
+    valores: [Bunt, FlyBall, GroundBall, LineDrive, Popup]
+    permite_nulos: true
+  Top/Bottom:
+    valores: [Top, Bottom]
+    permite_nulos: false
+
+# ---------------------------------------------------------------------------
+# ADR-002 — familia de lanzamiento (la etiqueta cruda se conserva).
+# ---------------------------------------------------------------------------
+familia:
+  orden: [FF, SI, FC, SL, CU, CH, EXC]
+  mapa:
+    Four-Seam: FF
+    Sinker: SI
+    TwoSeamFastBall: SI
+    OneSeamFastBall: SI
+    Cutter: FC
+    Slider: SL
+    Sweeper: SL
+    Curveball: CU
+    Changeup: CH
+    Splitter: CH
+    Knuckleball: EXC     # casi no gira: la descomposición Magnus de F2 no aplica
+    Other: EXC
+    Undefined: EXC
+  sweeper: [Sweeper]     # bandera es_sweeper
+
+# ---------------------------------------------------------------------------
+# ADR-004 — PitchCall homologado (la cruda se conserva en PitchCall).
+# `Undefined` se excluye de modelos y de la cadena de conteos.
+# ---------------------------------------------------------------------------
+pitch_call_h:
+  orden: [BallCalled, BallinDirt, BallIntentional, Foul, HitByPitch, InPlay, StrikeCalled,
+          StrikeSwinging, Undefined]
+  mapa:
+    BallCalled: BallCalled
+    BallinDirt: BallinDirt
+    BallIntentional: BallIntentional
+    FoulBall: Foul
+    FoulBallFieldable: Foul
+    FoulBallNotFieldable: Foul
+    HitByPitch: HitByPitch
+    InPlay: InPlay
+    StrikeCalled: StrikeCalled
+    StrikeSwinging: StrikeSwinging
+    Undefined: Undefined
+  contacto: [Foul, InPlay]   # I6′: is_contact <=> pitch_call_h en este conjunto
+  excluir: [Undefined]
+
+# ---------------------------------------------------------------------------
+# ADR-007 — evento terminal por prioridad.
+#   (1) KorBB      (2) pitch_call_h = HitByPitch      (3) InPlay + play_result
+#   Cualquier otro valor inventariado => no terminal (evento_terminal nulo).
+# ---------------------------------------------------------------------------
+evento_terminal:
+  orden: [K, BB, HBP, 1B, 2B, 3B, HR, OUT_BIP, ROE, SAC]
+  korbb:
+    Strikeout: K
+    Walk: BB
+  pitch_call_h:
+    HitByPitch: HBP
+  en_juego:                # pitch_call_h = InPlay
+    Single: 1B
+    Double: 2B
+    Triple: 3B
+    HomeRun: HR
+    Out: OUT_BIP
+    FieldersChoice: OUT_BIP
+    Error: ROE             # para valorar al lanzador (N5) un error cuenta como out
+    Sacrifice: SAC
+  # Resultados de bola en juego: si aparecen sin pitch_call_h = InPlay son una
+  # incoherencia que se REPORTA (no falla): ver `incoherencias` en el reporte.
+  resultados_bip: [Single, Double, Triple, HomeRun, Out, FieldersChoice, Error, Sacrifice]
+
+# ---------------------------------------------------------------------------
+# ADR-006 — Outs fuera de {0,1,2} se excluyen de modelos y cadena (se cuentan en I10).
+# ---------------------------------------------------------------------------
+outs_validos: [0, 1, 2]
+
+# ADR-012 — una media entrada con >= este número de outs es inconsistente (se excluye de A y de B).
+outs_inconsistente: 4
+
+# ---------------------------------------------------------------------------
+# ADR-011 — el árbol de desenlaces se define desde pitch_call_h (partición exacta por construcción).
+# Las banderas is_* del organizador solo son verificación cruzada (tabla de discrepancias).
+# Las filas con pitch_call_h = Undefined quedan en nulo: no pertenecen a ninguna clase.
+# ---------------------------------------------------------------------------
+desenlace:
+  es_swing: [StrikeSwinging, Foul, InPlay]
+  es_whiff: [StrikeSwinging]
+  es_contacto: [Foul, InPlay]
+  es_foul: [Foul]
+  es_bip: [InPlay]
+  # (columna derivada, bandera del organizador con la que se contrasta)
+  contraste:
+    es_swing: is_swing
+    es_whiff: is_whiff
+    es_contacto: is_contact
+    es_bip: is_ball_in_play
+
+# ---------------------------------------------------------------------------
+# ADR-013 — excluir_cadena: solo lo que invalida la transición del conteo.
+# (excluir_modelo suma además pitcher_anon_id nulo.) La mano o el ID no afectan al conteo.
+# ---------------------------------------------------------------------------
+exclusion_cadena:
+  # pitch_call_h = InPlay con estos play_result: bola en juego sin resultado (7 filas reales).
+  inplay_sin_resultado: [NeutralPlay]

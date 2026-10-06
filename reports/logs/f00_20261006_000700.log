@@ -1,0 +1,40 @@
+{
+  "filas_entrada": 635002,
+  "filas_salida": 635002,
+  "gates": {
+    "G0.1": false,
+    "G0.2": false,
+    "G0.3": false,
+    "G0.4": true,
+    "G0.5": true,
+    "G0.6": true
+  },
+  "exclusiones": {
+    "por_motivo": {
+      "ADR-002:EXC": {
+        "n": 62,
+        "pct": 0.0098
+      },
+      "ADR-003:lanzador": {
+        "n": 0,
+        "pct": 0.0
+      },
+      "ADR-003:bateador": {
+        "n": 1163,
+        "pct": 0.1831
+      },
+      "ADR-004:Undefined": {
+        "n": 841,
+        "pct": 0.1324
+      },
+      "ADR-006:Outs": {
+        "n": 8,
+        "pct": 0.0013
+      }
+    },
+    "total": 2074,
+    "pct_total": 0.3266
+  },
+  "sin_regla": 0,
+  "segundos": 3.0
+}

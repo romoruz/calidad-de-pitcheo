@@ -290,3 +290,33 @@ def perfilar_parquet(parquet: str | Path, dicc: list[ColSpec], max_unicos: int =
         perfil["columnas"][spec.nombre] = info
     perfil["faltantes"] = [c.nombre for c in dicc if c.nombre not in cols_reales]
     return perfil
+
+
+# --------------------------------------------------------------------------
+# Datos limpios de F0: directorio particionado por year (data/interim/pitches.parquet)
+# --------------------------------------------------------------------------
+def escribir_particionado(df: pl.DataFrame, ruta: str | Path, col: str = "year") -> dict:
+    """Escribe `ruta/year=YYYY/part-0.parquet` (la columna `year` se conserva en cada archivo).
+
+    Reemplaza el directorio entero: nunca quedan particiones de una corrida anterior.
+    Devuelve las filas por partición (agregado, sin filas por lanzamiento).
+    """
+    import shutil
+    ruta = Path(ruta)
+    if ruta.exists():
+        shutil.rmtree(ruta) if ruta.is_dir() else ruta.unlink()
+    filas: dict = {}
+    for (valor,), parte in df.partition_by(col, as_dict=True, maintain_order=True).items():
+        destino = ruta / f"{col}={valor}"
+        destino.mkdir(parents=True, exist_ok=True)
+        parte.write_parquet(destino / "part-0.parquet", compression="zstd")
+        filas[str(valor)] = parte.height
+    return filas
+
+
+def leer_pitches(ruta: str | Path) -> pl.LazyFrame:
+    """Lectura perezosa de los datos limpios de F0 (directorio particionado o un solo parquet)."""
+    ruta = Path(ruta)
+    if ruta.is_dir():
+        return pl.scan_parquet(sorted(ruta.glob("*/*.parquet")))
+    return pl.scan_parquet(ruta)

@@ -1,0 +1,2600 @@
+{
+  "gates": {
+    "G0.1": {
+      "ok": true,
+      "detalle": "I1 100.0000 % · I2 100.0000 % (mín. 99.9%) · I6′ 99.7491 % (mín. 99.5%) · tabla de discrepancias is_* × pitch_call_h: producida"
+    },
+    "G0.2": {
+      "ok": true,
+      "detalle": "ADR-010 enmendado: permutación {'X': 'y', 'Y': 'z', 'Z': 'x'} · c2 R² por pares 1.000000 y conjunta 1.000000 (mín. 0.9999) · c1 con t_s R² mín. 1.000000 (mín. 0.999) → **equivalentes**; la trayectoria canónica sigue siendo la de los 9P"
+    },
+    "G0.3": {
+      "ok": true,
+      "detalle": "diagnóstico de las 4,763 medias entradas de 2 outs producido y clasificado (no finales: 4,449): turno incompleto 9.328 % vs out faltante (sin turno incompleto) 90.672 %"
+    },
+    "G0.4": {
+      "ok": true,
+      "detalle": "I9 100.0000 % de 2,117 juegos con cubeta"
+    },
+    "G0.5": {
+      "ok": true,
+      "detalle": "valores sin regla: 0"
+    },
+    "G0.6": {
+      "ok": true,
+      "detalle": "excluir_modelo 0.803 % (máx. 3%) · excluir_cadena 0.135 % (máx. 0.5%)"
+    },
+    "G0.7": {
+      "ok": true,
+      "detalle": "ADR-014 con y_p = 1.4167 ft y signo -1: |error| mediana/p99 PlateLocSide 0.0017/0.0091 ft · PlateLocHeight 0.0013/0.0318 ft (máx. 0.05/0.3) · |ZoneTime − (t_p − t_s)| mediana 0.00003 s (máx. 0.005) · config vigente coincide"
+    },
+    "G0.8′": {
+      "ok": true,
+      "detalle": "Prop. 17: W(Γ=1) 0.0042 · **W(Γ=2) 0.0084** vs 3.92·SE_ref = 0.0093 y 1·SE_ref = 0.0024 (κ̄ 0.1846, n Extreme Altitude 43,723 / No Altitude 68,142) · r̂ Extreme Altitude 0.9863 % / No Altitude 0.9209 % · **perdida_ignorable = false**"
+    },
+    "G0.9": {
+      "ok": true,
+      "detalle": "θ̂ global = 0.0737 IC95 [0.059, 0.090] → **U** (U si sup ≤ 0.25 · L si inf ≥ 0.5 · mezcla en otro caso); se reporta siempre, no falla"
+    }
+  },
+  "segundos": 8.0,
+  "salida": {
+    "ruta": "data/interim/pitches.parquet",
+    "filas_por_year": {
+      "2024": 243254,
+      "2025": 256144,
+      "2026": 135604
+    }
+  },
+  "filas_entrada": 635002,
+  "conversiones": {
+    "year": {
+      "de": "Int32",
+      "a": "Int64"
+    },
+    "EffectiveVelo": {
+      "de": "String",
+      "a": "Float64"
+    },
+    "is_swing": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "is_whiff": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "is_contact": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "is_called_strike": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "is_swinging_strike": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "is_ball_in_play": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "is_batted": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "is_hit": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "single": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "double": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "triple": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "home_run": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "base_on_balls": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "strikeout": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "is_hit_by_pitch": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "RunsScored": {
+      "de": "Float64",
+      "a": "Int64"
+    },
+    "OutsOnPlay": {
+      "de": "Float64",
+      "a": "Int64"
+    },
+    "Inning": {
+      "de": "Float64",
+      "a": "Int64"
+    },
+    "Outs": {
+      "de": "Float64",
+      "a": "Int64"
+    },
+    "Balls": {
+      "de": "Float64",
+      "a": "Int64"
+    },
+    "Strikes": {
+      "de": "Float64",
+      "a": "Int64"
+    },
+    "in_strike_zone": {
+      "de": "Int32",
+      "a": "Boolean"
+    },
+    "outside_strike_zone": {
+      "de": "Float64",
+      "a": "Boolean"
+    },
+    "swung_outside_strike_zone": {
+      "de": "Float64",
+      "a": "Boolean"
+    }
+  },
+  "sin_regla": [],
+  "ADR-002": {
+    "familias": {
+      "FF": 217618,
+      "SL": 139717,
+      "SI": 110899,
+      "CH": 86214,
+      "CU": 54024,
+      "FC": 26468,
+      "EXC": 62
+    },
+    "exc": 62,
+    "sweepers": 588
+  },
+  "ADR-004": {
+    "foul_unificados": 108797,
+    "undefined_excluidos": 841,
+    "pct_undefined": 0.1324
+  },
+  "ADR-011": {
+    "es_swing": 296657,
+    "es_whiff": 71914,
+    "es_contacto": 224743,
+    "es_foul": 108797,
+    "es_bip": 115946
+  },
+  "ADR-003": {
+    "lanzador": {
+      "filas_mano_indefinida": 1421,
+      "pct_mano_indefinida": 0.2238,
+      "imputadas_por_moda": 0,
+      "imputadas_por_relside": 1421,
+      "descartadas": 0,
+      "pct_descartadas": 0.0,
+      "relside": {
+        "derecha_es_signo_positivo": true,
+        "concordancia": 0.991548,
+        "filas_base": 633581,
+        "umbral": 0.99,
+        "regla_activa": true
+      }
+    },
+    "bateador": {
+      "switch": 54,
+      "switch_resueltos_opuesta": 54,
+      "filas_indefinidas": 1216,
+      "pct_indefinidas": 0.1915,
+      "indefinidas_imputadas": 53,
+      "descartadas": 1163,
+      "pct_descartadas": 0.1831
+    }
+  },
+  "ADR-005": {
+    "filas_nulas_crudas": 3020,
+    "pct_nulas_crudas": 0.4756,
+    "imputadas_por_juego": 0,
+    "filas_sin_cubeta": 3020,
+    "pct_sin_cubeta": 0.4756,
+    "juegos_total": 2127,
+    "juegos_con_cubeta": 2117,
+    "juegos_sin_cubeta": 10,
+    "juegos_con_mas_de_una_cubeta": 0
+  },
+  "ADR-007": {
+    "eventos": {
+      "NO_TERMINAL": 470328,
+      "OUT_BIP": 70560,
+      "K": 30648,
+      "1B": 28579,
+      "BB": 15829,
+      "2B": 7800,
+      "HR": 4616,
+      "HBP": 2258,
+      "SAC": 1932,
+      "ROE": 1747,
+      "3B": 705
+    }
+  },
+  "ADR-006": {
+    "outs_invalidos": 8,
+    "pct": 0.0013,
+    "outs_nulos": 0
+  },
+  "exclusiones": {
+    "modelo": {
+      "por_motivo": {
+        "ADR-002:EXC": {
+          "n": 62,
+          "pct": 0.0098
+        },
+        "ADR-003:lanzador": {
+          "n": 0,
+          "pct": 0.0
+        },
+        "ADR-003:bateador": {
+          "n": 1163,
+          "pct": 0.1831
+        },
+        "ADR-004:Undefined": {
+          "n": 841,
+          "pct": 0.1324
+        },
+        "ADR-006:Outs": {
+          "n": 8,
+          "pct": 0.0013
+        },
+        "ADR-013:pitcher_id_nulo": {
+          "n": 3272,
+          "pct": 0.5153
+        }
+      },
+      "total": 5102,
+      "pct_total": 0.8035
+    },
+    "cadena": {
+      "por_motivo": {
+        "ADR-004:Undefined": {
+          "n": 841,
+          "pct": 0.1324
+        },
+        "ADR-006:Outs": {
+          "n": 8,
+          "pct": 0.0013
+        },
+        "ADR-013:InPlay_sin_resultado": {
+          "n": 7,
+          "pct": 0.0011
+        }
+      },
+      "total": 856,
+      "pct_total": 0.1348
+    }
+  },
+  "ADR-012": {
+    "medias_entradas": 37023,
+    "finales": 2127,
+    "no_finales": 34896,
+    "A": 31883,
+    "pct_A": 86.1167,
+    "B_no_finales": 32097,
+    "pct_B_no_finales": 91.979,
+    "inconsistentes": 101,
+    "distribucion_outs": {
+      "0": 75,
+      "1": 201,
+      "2": 4763,
+      "3": 31883,
+      "4": 84,
+      "5": 8,
+      "6": 7,
+      "8": 1,
+      "9": 1
+    }
+  },
+  "tabla_evento": [
+    {
+      "play_result": "BallCalled",
+      "pitch_call_h": "BallCalled",
+      "KorBB": "Undefined",
+      "evento_terminal": null,
+      "n": 210743
+    },
+    {
+      "play_result": "NeutralPlay",
+      "pitch_call_h": "Foul",
+      "KorBB": "Undefined",
+      "evento_terminal": null,
+      "n": 106877
+    },
+    {
+      "play_result": "NeutralPlay",
+      "pitch_call_h": "StrikeCalled",
+      "KorBB": "Undefined",
+      "evento_terminal": null,
+      "n": 91484
+    },
+    {
+      "play_result": "Out",
+      "pitch_call_h": "InPlay",
+      "KorBB": "Undefined",
+      "evento_terminal": "OUT_BIP",
+      "n": 66920
+    },
+    {
+      "play_result": "StrikeSwinging",
+      "pitch_call_h": "StrikeSwinging",
+      "KorBB": "Undefined",
+      "evento_terminal": null,
+      "n": 47593
+    },
+    {
+      "play_result": "Single",
+      "pitch_call_h": "InPlay",
+      "KorBB": "Undefined",
+      "evento_terminal": "1B",
+      "n": 28579
+    },
+    {
+      "play_result": "Strikeout",
+      "pitch_call_h": "StrikeSwinging",
+      "KorBB": "Strikeout",
+      "evento_terminal": "K",
+      "n": 24320
+    },
+    {
+      "play_result": "Walk",
+      "pitch_call_h": "BallCalled",
+      "KorBB": "Walk",
+      "evento_terminal": "BB",
+      "n": 15317
+    },
+    {
+      "play_result": "BallinDirt",
+      "pitch_call_h": "BallinDirt",
+      "KorBB": "Undefined",
+      "evento_terminal": null,
+      "n": 10864
+    },
+    {
+      "play_result": "Double",
+      "pitch_call_h": "InPlay",
+      "KorBB": "Undefined",
+      "evento_terminal": "2B",
+      "n": 7800
+    },
+    {
+      "play_result": "Strikeout",
+      "pitch_call_h": "StrikeCalled",
+      "KorBB": "Strikeout",
+      "evento_terminal": "K",
+      "n": 6325
+    },
+    {
+      "play_result": "HomeRun",
+      "pitch_call_h": "InPlay",
+      "KorBB": "Undefined",
+      "evento_terminal": "HR",
+      "n": 4616
+    },
+    {
+      "play_result": "FieldersChoice",
+      "pitch_call_h": "InPlay",
+      "KorBB": "Undefined",
+      "evento_terminal": "OUT_BIP",
+      "n": 3640
+    },
+    {
+      "play_result": "HitByPitch",
+      "pitch_call_h": "HitByPitch",
+      "KorBB": "Undefined",
+      "evento_terminal": "HBP",
+      "n": 2258
+    },
+    {
+      "play_result": "Sacrifice",
+      "pitch_call_h": "InPlay",
+      "KorBB": "Undefined",
+      "evento_terminal": "SAC",
+      "n": 1932
+    },
+    {
+      "play_result": "FoulBallFieldable",
+      "pitch_call_h": "Foul",
+      "KorBB": "Undefined",
+      "evento_terminal": null,
+      "n": 1917
+    },
+    {
+      "play_result": "Error",
+      "pitch_call_h": "InPlay",
+      "KorBB": "Undefined",
+      "evento_terminal": "ROE",
+      "n": 1747
+    },
+    {
+      "play_result": "NeutralPlay",
+      "pitch_call_h": "Undefined",
+      "KorBB": "Undefined",
+      "evento_terminal": null,
+      "n": 841
+    },
+    {
+      "play_result": "Triple",
+      "pitch_call_h": "InPlay",
+      "KorBB": "Undefined",
+      "evento_terminal": "3B",
+      "n": 705
+    },
+    {
+      "play_result": "Walk",
+      "pitch_call_h": "BallinDirt",
+      "KorBB": "Walk",
+      "evento_terminal": "BB",
+      "n": 489
+    },
+    {
+      "play_result": "Walk",
+      "pitch_call_h": "HitByPitch",
+      "KorBB": "Walk",
+      "evento_terminal": "BB",
+      "n": 22
+    },
+    {
+      "play_result": "NeutralPlay",
+      "pitch_call_h": "InPlay",
+      "KorBB": "Undefined",
+      "evento_terminal": null,
+      "n": 7
+    },
+    {
+      "play_result": "Strikeout",
+      "pitch_call_h": "Foul",
+      "KorBB": "Strikeout",
+      "evento_terminal": "K",
+      "n": 3
+    },
+    {
+      "play_result": "Out",
+      "pitch_call_h": "StrikeSwinging",
+      "KorBB": "Undefined",
+      "evento_terminal": null,
+      "n": 1
+    },
+    {
+      "play_result": "Out",
+      "pitch_call_h": "BallCalled",
+      "KorBB": "Undefined",
+      "evento_terminal": null,
+      "n": 1
+    },
+    {
+      "play_result": "Walk",
+      "pitch_call_h": "StrikeCalled",
+      "KorBB": "Walk",
+      "evento_terminal": "BB",
+      "n": 1
+    }
+  ],
+  "incoherencias": [
+    {
+      "regla": "resultado de bola en juego sin pitch_call_h=InPlay",
+      "n": 2,
+      "pct": 0.0003
+    },
+    {
+      "regla": "pitch_call_h=InPlay con play_result sin regla de bola en juego (-> no terminal)",
+      "n": 7,
+      "pct": 0.0011
+    },
+    {
+      "regla": "play_result=Strikeout con KorBB distinto de Strikeout",
+      "n": 0,
+      "pct": 0.0
+    },
+    {
+      "regla": "play_result=Walk con KorBB distinto de Walk",
+      "n": 0,
+      "pct": 0.0
+    },
+    {
+      "regla": "play_result=HitByPitch con pitch_call_h distinto de HitByPitch",
+      "n": 0,
+      "pct": 0.0
+    },
+    {
+      "regla": "KorBB terminal con pitch_call_h=Undefined",
+      "n": 0,
+      "pct": 0.0
+    }
+  ],
+  "ids_nulos": {
+    "pitcher_anon_id": 3272,
+    "batter_anon_id": 2020,
+    "catcher_anon_id": 2325,
+    "game_anon_id": 0
+  },
+  "filas_salida": 635002,
+  "identidades": {
+    "I1": {
+      "cumplimiento": 1.0,
+      "n": 635002,
+      "tolerancia_mph": 0.05
+    },
+    "I2": {
+      "cumplimiento": 1.0,
+      "n": 635002
+    },
+    "I3": {
+      "cumplimiento": 0.0,
+      "n": 635002,
+      "por_eje": {
+        "X": {
+          "cumplimiento": 0.0,
+          "n": 635002,
+          "razon_mediana_2c2_sobre_a0": -1.8680406327426706
+        },
+        "Y": {
+          "cumplimiento": 0.0,
+          "n": 635002,
+          "razon_mediana_2c2_sobre_a0": -0.9992210020100252
+        },
+        "Z": {
+          "cumplimiento": 0.0033511705474943386,
+          "n": 635002,
+          "razon_mediana_2c2_sobre_a0": 0.17488019083085288
+        }
+      },
+      "tolerancia_relativa": 0.01,
+      "piso": 1.0,
+      "sustituida_por": "G0.2 (ADR-010 enmendado)"
+    },
+    "I4": {
+      "cumplimiento": 1.0,
+      "n": 634300,
+      "pendiente_origen": 1.000002053488462,
+      "pendiente": 1.000002037455311,
+      "intercepto_in": 6.036817478482098e-07,
+      "correlacion": 0.9999999999554539,
+      "rango": [
+        0.95,
+        1.05
+      ]
+    },
+    "I5": {
+      "cumplimiento": 1.0,
+      "n": 634300,
+      "R": 0.9992873633347968,
+      "espejo": false,
+      "desfase_grados": 180.0010999155166,
+      "minimo": 0.99,
+      "tilt_no_parseables": 0
+    },
+    "I6p": {
+      "cumplimiento": 0.9974911733771077,
+      "n": 634161,
+      "suma": 0.999290401018038,
+      "contacto_equivale_a_foul_o_inplay": 0.9974911733771077,
+      "whiff_implica_strike_swinging": 1.0
+    },
+    "I7": {
+      "cumplimiento": 0.861167382437944,
+      "n": 37023,
+      "sin_ultima_media_entrada": 0.8658872077028886,
+      "n_sin_ultima": 34896,
+      "B_no_finales": 0.9197902338376891,
+      "inconsistentes": 101,
+      "distribucion_outs": {
+        "0": 75,
+        "1": 201,
+        "2": 4763,
+        "3": 31883,
+        "4": 84,
+        "5": 8,
+        "6": 7,
+        "8": 1,
+        "9": 1
+      }
+    },
+    "I8": {
+      "cumplimiento": 0.875,
+      "n": 8,
+      "tipos": {
+        "Changeup": {
+          "evaluado": true,
+          "media_derecho": 11.5838864450345,
+          "media_zurdo": -11.761881602802527,
+          "signo_opuesto": true
+        },
+        "Curveball": {
+          "evaluado": true,
+          "media_derecho": -7.9291901372918705,
+          "media_zurdo": 7.9604249085951535,
+          "signo_opuesto": true
+        },
+        "Cutter": {
+          "evaluado": true,
+          "media_derecho": -0.38601430378161783,
+          "media_zurdo": -1.1254073653901526,
+          "signo_opuesto": false,
+          "mediana_abs_derecho_in": 2.0677149999999997,
+          "mediana_abs_zurdo_in": 2.2376,
+          "no_informativo": false
+        },
+        "Four-Seam": {
+          "evaluado": true,
+          "media_derecho": 8.329586578556281,
+          "media_zurdo": -8.047659213093711,
+          "signo_opuesto": true
+        },
+        "Knuckleball": {
+          "evaluado": false
+        },
+        "OneSeamFastBall": {
+          "evaluado": false
+        },
+        "Other": {
+          "evaluado": false
+        },
+        "Sinker": {
+          "evaluado": true,
+          "media_derecho": 14.019297297792576,
+          "media_zurdo": -12.945971838197266,
+          "signo_opuesto": true
+        },
+        "Slider": {
+          "evaluado": true,
+          "media_derecho": -3.9220815387958536,
+          "media_zurdo": 4.857442486855425,
+          "signo_opuesto": true
+        },
+        "Splitter": {
+          "evaluado": true,
+          "media_derecho": 5.8916306683767985,
+          "media_zurdo": -8.835250373443984,
+          "signo_opuesto": true
+        },
+        "Sweeper": {
+          "evaluado": true,
+          "media_derecho": -10.14233011682243,
+          "media_zurdo": 10.816884967741935,
+          "signo_opuesto": true
+        },
+        "TwoSeamFastBall": {
+          "evaluado": false
+        }
+      },
+      "mediana_min_in": 2.0,
+      "fallas": [
+        "Cutter"
+      ],
+      "fallas_no_informativas": []
+    },
+    "I9": {
+      "cumplimiento": 1.0,
+      "n": 2117,
+      "juegos_incoherentes": 0
+    },
+    "I10": {
+      "cumplimiento": 0.9999874016144831,
+      "n": 635002,
+      "violaciones": 8,
+      "valores_invalidos": {
+        "3.0": 8
+      }
+    }
+  },
+  "alcance": {
+    "totales": {
+      "filas": 635002,
+      "juegos": 2127,
+      "lanzadores": 1134,
+      "bateadores": 864,
+      "years": [
+        2024,
+        2025,
+        2026
+      ]
+    },
+    "year_x_cubeta": [
+      {
+        "year": 2024,
+        "cubeta": "Extreme Altitude",
+        "juegos": 223,
+        "lanzadores": 464,
+        "lanzamientos": 66619
+      },
+      {
+        "year": 2024,
+        "cubeta": "Medium Altitude",
+        "juegos": 204,
+        "lanzadores": 434,
+        "lanzamientos": 60934
+      },
+      {
+        "year": 2024,
+        "cubeta": "No Altitude",
+        "juegos": 406,
+        "lanzadores": 483,
+        "lanzamientos": 115701
+      },
+      {
+        "year": 2025,
+        "cubeta": "(sin cubeta)",
+        "juegos": 3,
+        "lanzadores": 53,
+        "lanzamientos": 947
+      },
+      {
+        "year": 2025,
+        "cubeta": "Extreme Altitude",
+        "juegos": 237,
+        "lanzadores": 495,
+        "lanzamientos": 72720
+      },
+      {
+        "year": 2025,
+        "cubeta": "Medium Altitude",
+        "juegos": 213,
+        "lanzadores": 451,
+        "lanzamientos": 65981
+      },
+      {
+        "year": 2025,
+        "cubeta": "No Altitude",
+        "juegos": 386,
+        "lanzadores": 507,
+        "lanzamientos": 116496
+      },
+      {
+        "year": 2026,
+        "cubeta": "(sin cubeta)",
+        "juegos": 7,
+        "lanzadores": 53,
+        "lanzamientos": 2073
+      },
+      {
+        "year": 2026,
+        "cubeta": "Extreme Altitude",
+        "juegos": 144,
+        "lanzadores": 400,
+        "lanzamientos": 43928
+      },
+      {
+        "year": 2026,
+        "cubeta": "Medium Altitude",
+        "juegos": 92,
+        "lanzadores": 283,
+        "lanzamientos": 27925
+      },
+      {
+        "year": 2026,
+        "cubeta": "No Altitude",
+        "juegos": 212,
+        "lanzadores": 421,
+        "lanzamientos": 61678
+      }
+    ],
+    "lanzadores_por_n_cubetas": {
+      "1": 185,
+      "2": 200,
+      "3": 665
+    },
+    "lanzadores_con_30_lanzamientos_en_2_o_mas_cubetas": 765
+  },
+  "extras": {
+    "polinomios": {
+      "n": 635002,
+      "matriz": {
+        "c2": {
+          "X": {
+            "x": {
+              "pendiente": -0.059124141910128006,
+              "intercepto": 11.583750409584795,
+              "r2": 0.08262623984431168
+            },
+            "y": {
+              "pendiente": 0.5000000148970987,
+              "intercepto": 6.816236464146641e-09,
+              "r2": 0.9999999999963364
+            },
+            "z": {
+              "pendiente": 0.1560692673605777,
+              "intercepto": 15.494319506729992,
+              "r2": 0.38025502293730534
+            }
+          },
+          "Y": {
+            "x": {
+              "pendiente": -0.10837500937195967,
+              "intercepto": -12.259933608325253,
+              "r2": 0.07113222151972229
+            },
+            "y": {
+              "pendiente": 0.6091126332085895,
+              "intercepto": -26.25117773661413,
+              "r2": 0.3802550301798661
+            },
+            "z": {
+              "pendiente": 0.5000000154250339,
+              "intercepto": 8.495321779378173e-09,
+              "r2": 0.9999999999990627
+            }
+          },
+          "Z": {
+            "x": {
+              "pendiente": 0.5000000151392338,
+              "intercepto": 2.868026705016291e-09,
+              "r2": 0.9999999999993769
+            },
+            "y": {
+              "pendiente": -0.349376089577502,
+              "intercepto": 6.57516769999521,
+              "r2": 0.08262624222966361
+            },
+            "z": {
+              "pendiente": -0.1640881648932135,
+              "intercepto": -5.561454780450908,
+              "r2": 0.07113222104878701
+            }
+          }
+        },
+        "c1": {
+          "X": {
+            "x": {
+              "pendiente": -0.27835386885738644,
+              "intercepto": -127.03545740036947,
+              "r2": 0.03447662388407001
+            },
+            "y": {
+              "pendiente": 1.0009656669437001,
+              "intercepto": -0.7325065869642913,
+              "r2": 0.9997005256057516
+            },
+            "z": {
+              "pendiente": 1.260249399514236,
+              "intercepto": -123.63323634616937,
+              "r2": 0.1968042148161784
+            }
+          },
+          "Y": {
+            "x": {
+              "pendiente": -0.051956377947242775,
+              "intercepto": -2.2625073886556812,
+              "r2": 0.008374504482097174
+            },
+            "y": {
+              "pendiente": 0.1947218688043428,
+              "intercepto": 22.313691091515825,
+              "r2": 0.2637619792197117
+            },
+            "z": {
+              "pendiente": 1.0698743896712533,
+              "intercepto": 1.1283567746938203,
+              "r2": 0.9888676229548248
+            }
+          },
+          "Z": {
+            "x": {
+              "pendiente": 1.036789861869206,
+              "intercepto": 0.007747454034079837,
+              "r2": 0.9979584486617138
+            },
+            "y": {
+              "pendiente": -0.13692058572461652,
+              "intercepto": -14.546266105095299,
+              "r2": 0.03902741823977514
+            },
+            "z": {
+              "pendiente": -0.17332721787913938,
+              "intercepto": 2.26203720574554,
+              "r2": 0.0077670427843176465
+            }
+          }
+        },
+        "c0": {
+          "X": {
+            "x": {
+              "pendiente": 0.023834019298771342,
+              "intercepto": 54.661628259560516,
+              "r2": 0.004456607131234166
+            },
+            "y": {
+              "pendiente": -2764.1819293486824,
+              "intercepto": 138263.7388387745,
+              "r2": 2.434041704272765e-05
+            },
+            "z": {
+              "pendiente": 0.02945744392879697,
+              "intercepto": 54.4753037510086,
+              "r2": 0.0005650951556530006
+            }
+          },
+          "Y": {
+            "x": {
+              "pendiente": 0.03596116682921673,
+              "intercepto": 5.798405128158316,
+              "r2": 0.013268695486411805
+            },
+            "y": {
+              "pendiente": 179.8637283707456,
+              "intercepto": -8987.417085150582,
+              "r2": 1.347822963499612e-07
+            },
+            "z": {
+              "pendiente": 1.0591385630823535,
+              "intercepto": -0.23718060263845242,
+              "r2": 0.9554059174295716
+            }
+          },
+          "Z": {
+            "x": {
+              "pendiente": 1.1107131454852146,
+              "intercepto": -0.007474192652143108,
+              "r2": 0.9969842540909922
+            },
+            "y": {
+              "pendiente": 3691.0232710920295,
+              "intercepto": -184552.06894487268,
+              "r2": 4.470571373301288e-06
+            },
+            "z": {
+              "pendiente": 0.4653693079566591,
+              "intercepto": -3.5445470127790863,
+              "r2": 0.014527859715986392
+            }
+          }
+        }
+      },
+      "rotacion": {
+        "c2": {
+          "X": {
+            "intercepto": -8.04180101886809e-08,
+            "coef_xyz": [
+              1.0186039879385393e-09,
+              0.5000000173221607,
+              -1.4063997983990481e-09
+            ],
+            "r2": 0.9999999999963337
+          },
+          "Y": {
+            "intercepto": -8.905985147236016e-08,
+            "coef_xyz": [
+              -1.253919494817339e-10,
+              3.1030872168470728e-09,
+              0.50000001441529
+            ],
+            "r2": 0.9999999999990611
+          },
+          "Z": {
+            "intercepto": -4.0800153645387854e-08,
+            "coef_xyz": [
+              0.5000000152537669,
+              1.549482147618007e-09,
+              -3.1690889207888103e-10
+            ],
+            "r2": 0.999999999999375
+          }
+        },
+        "c1": {
+          "X": {
+            "intercepto": -0.6961237321528716,
+            "coef_xyz": [
+              0.0005859649535075953,
+              1.0013099824719873,
+              -0.0017344449007001496
+            ],
+            "r2": 0.9997009729653888
+          },
+          "Y": {
+            "intercepto": 5.337351434195498,
+            "coef_xyz": [
+              0.0031430666820809238,
+              0.03433780037125512,
+              1.0270944685735475
+            ],
+            "r2": 0.9953327495938751
+          },
+          "Z": {
+            "intercepto": -1.0875069417451895,
+            "coef_xyz": [
+              1.0344591978498532,
+              -0.008739638563125362,
+              0.002360724640432819
+            ],
+            "r2": 0.9981004081136622
+          }
+        },
+        "c0": {
+          "X": {
+            "intercepto": 140841.607405059,
+            "coef_xyz": [
+              0.023160506833315758,
+              -2815.7411960786308,
+              0.020012475243144697
+            ],
+            "r2": 0.004739372902904049
+          },
+          "Y": {
+            "intercepto": -46189.22280070915,
+            "coef_xyz": [
+              0.0001456314369856932,
+              923.7797210552792,
+              1.0590824106381742
+            ],
+            "r2": 0.9554096908758137
+          },
+          "Z": {
+            "intercepto": -27714.19473271575,
+            "coef_xyz": [
+              1.1102708178809884,
+              554.2822565218853,
+              0.013061367310259628
+            ],
+            "r2": 0.9969956376008473
+          }
+        }
+      },
+      "r2_exigidos": {
+        "c2": 0.9999,
+        "c1_con_ts": 0.999
+      },
+      "permutacion": {
+        "X": "y",
+        "Y": "z",
+        "Z": "x"
+      },
+      "signos": {
+        "X": 1,
+        "Y": 1,
+        "Z": 1
+      },
+      "escala_2c2_sobre_a0": {
+        "X": 1.0000000297941973,
+        "Y": 1.0000000308500678,
+        "Z": 1.0000000302784675
+      },
+      "r2_c2_pares_min": 0.9999999999963364,
+      "r2_c2_conjunta_min": 0.9999999999963337,
+      "r2_c1_con_ts_min": 0.9999999999953892,
+      "c1_con_ts": {
+        "X": {
+          "r2": 1.0,
+          "pendiente": 1.0,
+          "intercepto": 0.0,
+          "referencia": true
+        },
+        "Y": {
+          "r2": 0.9999999999953892,
+          "pendiente": 0.999999996285424,
+          "intercepto": -8.963747966106439e-09,
+          "referencia": false
+        },
+        "Z": {
+          "r2": 0.9999999999993199,
+          "pendiente": 1.0000000006658485,
+          "intercepto": 1.932147775107751e-10,
+          "referencia": false
+        }
+      },
+      "c1_sin_ts": {
+        "X": {
+          "pendiente": 1.0009656669437001,
+          "intercepto": -0.7325065869642913,
+          "r2": 0.9997005256057516
+        },
+        "Y": {
+          "pendiente": 1.0698743896712533,
+          "intercepto": 1.1283567746938203,
+          "r2": 0.9888676229548248
+        },
+        "Z": {
+          "pendiente": 1.036789861869206,
+          "intercepto": 0.007747454034079837,
+          "r2": 0.9979584486617138
+        }
+      },
+      "t_s": {
+        "n": 635002,
+        "mediana_s": -0.03629986622422196,
+        "rango_intercuartil_s": 0.00750394662178723,
+        "p1_s": -0.051313822553958034,
+        "p99_s": -0.024761770904527813
+      },
+      "t_s_mediana_por_eje": {
+        "X": -0.03629986622422196,
+        "Y": -0.03629987651773537,
+        "Z": -0.03608483356976589
+      },
+      "existe": true,
+      "decision": "equivalentes"
+    },
+    "calibracion_9p": {
+      "n": 635002,
+      "combinaciones": [
+        {
+          "y_plano_ft": 1.4166667,
+          "signo": 1,
+          "error_side_ft": {
+            "mediana": 1.223585414972286,
+            "p99": 4.822086274221762,
+            "n": 635002
+          },
+          "error_height_ft": {
+            "mediana": 0.001267545593518049,
+            "p99": 0.03180157974237769,
+            "n": 635002
+          }
+        },
+        {
+          "y_plano_ft": 1.4166667,
+          "signo": -1,
+          "error_side_ft": {
+            "mediana": 0.0016756750043378649,
+            "p99": 0.009140877755620233,
+            "n": 635002
+          },
+          "error_height_ft": {
+            "mediana": 0.001267545593518049,
+            "p99": 0.03180157974237769,
+            "n": 635002
+          }
+        },
+        {
+          "y_plano_ft": 0.0,
+          "signo": 1,
+          "error_side_ft": {
+            "mediana": 1.2447651479129465,
+            "p99": 4.904339755560325,
+            "n": 635002
+          },
+          "error_height_ft": {
+            "mediana": 0.15507101005571344,
+            "p99": 0.3306831888035841,
+            "n": 635002
+          }
+        },
+        {
+          "y_plano_ft": 0.0,
+          "signo": -1,
+          "error_side_ft": {
+            "mediana": 0.03587603170059395,
+            "p99": 0.14439548885905687,
+            "n": 635002
+          },
+          "error_height_ft": {
+            "mediana": 0.15507101005571344,
+            "p99": 0.3306831888035841,
+            "n": 635002
+          }
+        }
+      ],
+      "elegida": {
+        "y_plano_ft": 1.4166667,
+        "signo": -1,
+        "error_side_ft": {
+          "mediana": 0.0016756750043378649,
+          "p99": 0.009140877755620233,
+          "n": 635002
+        },
+        "error_height_ft": {
+          "mediana": 0.001267545593518049,
+          "p99": 0.03180157974237769,
+          "n": 635002
+        }
+      },
+      "zonetime": {
+        "mediana": 3.306704584388198e-05,
+        "p99": 0.00011289587739205839,
+        "n": 635002
+      },
+      "zonetime_cruda": {
+        "mediana": 0.03626225772067607,
+        "p99": 0.05127974942756725,
+        "n": 635002
+      }
+    },
+    "discrepancias_flags": {
+      "es_swing": {
+        "bandera": "is_swing",
+        "n": 634161,
+        "discrepantes": 1141,
+        "pct_discrepantes": 0.1799,
+        "tabla": [
+          {
+            "derivada": "es_swing",
+            "derivada_valor": false,
+            "bandera": "is_swing",
+            "bandera_valor": false,
+            "pitch_call_h": "BallCalled",
+            "n": 225598
+          },
+          {
+            "derivada": "es_swing",
+            "derivada_valor": true,
+            "bandera": "is_swing",
+            "bandera_valor": true,
+            "pitch_call_h": "InPlay",
+            "n": 115946
+          },
+          {
+            "derivada": "es_swing",
+            "derivada_valor": true,
+            "bandera": "is_swing",
+            "bandera_valor": true,
+            "pitch_call_h": "Foul",
+            "n": 108797
+          },
+          {
+            "derivada": "es_swing",
+            "derivada_valor": false,
+            "bandera": "is_swing",
+            "bandera_valor": false,
+            "pitch_call_h": "StrikeCalled",
+            "n": 97407
+          },
+          {
+            "derivada": "es_swing",
+            "derivada_valor": true,
+            "bandera": "is_swing",
+            "bandera_valor": true,
+            "pitch_call_h": "StrikeSwinging",
+            "n": 71914
+          },
+          {
+            "derivada": "es_swing",
+            "derivada_valor": false,
+            "bandera": "is_swing",
+            "bandera_valor": false,
+            "pitch_call_h": "BallinDirt",
+            "n": 11308
+          },
+          {
+            "derivada": "es_swing",
+            "derivada_valor": false,
+            "bandera": "is_swing",
+            "bandera_valor": false,
+            "pitch_call_h": "HitByPitch",
+            "n": 2050
+          },
+          {
+            "derivada": "es_swing",
+            "derivada_valor": false,
+            "bandera": "is_swing",
+            "bandera_valor": true,
+            "pitch_call_h": "BallCalled",
+            "n": 463
+          },
+          {
+            "derivada": "es_swing",
+            "derivada_valor": false,
+            "bandera": "is_swing",
+            "bandera_valor": true,
+            "pitch_call_h": "StrikeCalled",
+            "n": 403
+          },
+          {
+            "derivada": "es_swing",
+            "derivada_valor": false,
+            "bandera": "is_swing",
+            "bandera_valor": true,
+            "pitch_call_h": "HitByPitch",
+            "n": 230
+          },
+          {
+            "derivada": "es_swing",
+            "derivada_valor": false,
+            "bandera": "is_swing",
+            "bandera_valor": true,
+            "pitch_call_h": "BallinDirt",
+            "n": 45
+          }
+        ]
+      },
+      "es_whiff": {
+        "bandera": "is_whiff",
+        "n": 634161,
+        "discrepantes": 0,
+        "pct_discrepantes": 0.0,
+        "tabla": [
+          {
+            "derivada": "es_whiff",
+            "derivada_valor": false,
+            "bandera": "is_whiff",
+            "bandera_valor": false,
+            "pitch_call_h": "BallCalled",
+            "n": 226061
+          },
+          {
+            "derivada": "es_whiff",
+            "derivada_valor": false,
+            "bandera": "is_whiff",
+            "bandera_valor": false,
+            "pitch_call_h": "InPlay",
+            "n": 115946
+          },
+          {
+            "derivada": "es_whiff",
+            "derivada_valor": false,
+            "bandera": "is_whiff",
+            "bandera_valor": false,
+            "pitch_call_h": "Foul",
+            "n": 108797
+          },
+          {
+            "derivada": "es_whiff",
+            "derivada_valor": false,
+            "bandera": "is_whiff",
+            "bandera_valor": false,
+            "pitch_call_h": "StrikeCalled",
+            "n": 97810
+          },
+          {
+            "derivada": "es_whiff",
+            "derivada_valor": true,
+            "bandera": "is_whiff",
+            "bandera_valor": true,
+            "pitch_call_h": "StrikeSwinging",
+            "n": 71914
+          },
+          {
+            "derivada": "es_whiff",
+            "derivada_valor": false,
+            "bandera": "is_whiff",
+            "bandera_valor": false,
+            "pitch_call_h": "BallinDirt",
+            "n": 11353
+          },
+          {
+            "derivada": "es_whiff",
+            "derivada_valor": false,
+            "bandera": "is_whiff",
+            "bandera_valor": false,
+            "pitch_call_h": "HitByPitch",
+            "n": 2280
+          }
+        ]
+      },
+      "es_contacto": {
+        "bandera": "is_contact",
+        "n": 634161,
+        "discrepantes": 1591,
+        "pct_discrepantes": 0.2509,
+        "tabla": [
+          {
+            "derivada": "es_contacto",
+            "derivada_valor": false,
+            "bandera": "is_contact",
+            "bandera_valor": false,
+            "pitch_call_h": "BallCalled",
+            "n": 225598
+          },
+          {
+            "derivada": "es_contacto",
+            "derivada_valor": true,
+            "bandera": "is_contact",
+            "bandera_valor": true,
+            "pitch_call_h": "InPlay",
+            "n": 115946
+          },
+          {
+            "derivada": "es_contacto",
+            "derivada_valor": true,
+            "bandera": "is_contact",
+            "bandera_valor": true,
+            "pitch_call_h": "Foul",
+            "n": 108797
+          },
+          {
+            "derivada": "es_contacto",
+            "derivada_valor": false,
+            "bandera": "is_contact",
+            "bandera_valor": false,
+            "pitch_call_h": "StrikeCalled",
+            "n": 97407
+          },
+          {
+            "derivada": "es_contacto",
+            "derivada_valor": false,
+            "bandera": "is_contact",
+            "bandera_valor": false,
+            "pitch_call_h": "StrikeSwinging",
+            "n": 71464
+          },
+          {
+            "derivada": "es_contacto",
+            "derivada_valor": false,
+            "bandera": "is_contact",
+            "bandera_valor": false,
+            "pitch_call_h": "BallinDirt",
+            "n": 11308
+          },
+          {
+            "derivada": "es_contacto",
+            "derivada_valor": false,
+            "bandera": "is_contact",
+            "bandera_valor": false,
+            "pitch_call_h": "HitByPitch",
+            "n": 2050
+          },
+          {
+            "derivada": "es_contacto",
+            "derivada_valor": false,
+            "bandera": "is_contact",
+            "bandera_valor": true,
+            "pitch_call_h": "BallCalled",
+            "n": 463
+          },
+          {
+            "derivada": "es_contacto",
+            "derivada_valor": false,
+            "bandera": "is_contact",
+            "bandera_valor": true,
+            "pitch_call_h": "StrikeSwinging",
+            "n": 450
+          },
+          {
+            "derivada": "es_contacto",
+            "derivada_valor": false,
+            "bandera": "is_contact",
+            "bandera_valor": true,
+            "pitch_call_h": "StrikeCalled",
+            "n": 403
+          },
+          {
+            "derivada": "es_contacto",
+            "derivada_valor": false,
+            "bandera": "is_contact",
+            "bandera_valor": true,
+            "pitch_call_h": "HitByPitch",
+            "n": 230
+          },
+          {
+            "derivada": "es_contacto",
+            "derivada_valor": false,
+            "bandera": "is_contact",
+            "bandera_valor": true,
+            "pitch_call_h": "BallinDirt",
+            "n": 45
+          }
+        ]
+      },
+      "es_bip": {
+        "bandera": "is_ball_in_play",
+        "n": 634161,
+        "discrepantes": 2,
+        "pct_discrepantes": 0.0003,
+        "tabla": [
+          {
+            "derivada": "es_bip",
+            "derivada_valor": false,
+            "bandera": "is_ball_in_play",
+            "bandera_valor": false,
+            "pitch_call_h": "BallCalled",
+            "n": 226060
+          },
+          {
+            "derivada": "es_bip",
+            "derivada_valor": true,
+            "bandera": "is_ball_in_play",
+            "bandera_valor": true,
+            "pitch_call_h": "InPlay",
+            "n": 115946
+          },
+          {
+            "derivada": "es_bip",
+            "derivada_valor": false,
+            "bandera": "is_ball_in_play",
+            "bandera_valor": false,
+            "pitch_call_h": "Foul",
+            "n": 108797
+          },
+          {
+            "derivada": "es_bip",
+            "derivada_valor": false,
+            "bandera": "is_ball_in_play",
+            "bandera_valor": false,
+            "pitch_call_h": "StrikeCalled",
+            "n": 97810
+          },
+          {
+            "derivada": "es_bip",
+            "derivada_valor": false,
+            "bandera": "is_ball_in_play",
+            "bandera_valor": false,
+            "pitch_call_h": "StrikeSwinging",
+            "n": 71913
+          },
+          {
+            "derivada": "es_bip",
+            "derivada_valor": false,
+            "bandera": "is_ball_in_play",
+            "bandera_valor": false,
+            "pitch_call_h": "BallinDirt",
+            "n": 11353
+          },
+          {
+            "derivada": "es_bip",
+            "derivada_valor": false,
+            "bandera": "is_ball_in_play",
+            "bandera_valor": false,
+            "pitch_call_h": "HitByPitch",
+            "n": 2280
+          },
+          {
+            "derivada": "es_bip",
+            "derivada_valor": false,
+            "bandera": "is_ball_in_play",
+            "bandera_valor": true,
+            "pitch_call_h": "StrikeSwinging",
+            "n": 1
+          },
+          {
+            "derivada": "es_bip",
+            "derivada_valor": false,
+            "bandera": "is_ball_in_play",
+            "bandera_valor": true,
+            "pitch_call_h": "BallCalled",
+            "n": 1
+          }
+        ]
+      },
+      "es_hbp": {
+        "bandera": "is_hit_by_pitch",
+        "n": 634161,
+        "discrepantes": 2280,
+        "pct_discrepantes": 0.3595,
+        "tabla": [
+          {
+            "derivada": "es_hbp",
+            "derivada_valor": false,
+            "bandera": "is_hit_by_pitch",
+            "bandera_valor": false,
+            "pitch_call_h": "BallCalled",
+            "n": 226061
+          },
+          {
+            "derivada": "es_hbp",
+            "derivada_valor": false,
+            "bandera": "is_hit_by_pitch",
+            "bandera_valor": false,
+            "pitch_call_h": "InPlay",
+            "n": 115946
+          },
+          {
+            "derivada": "es_hbp",
+            "derivada_valor": false,
+            "bandera": "is_hit_by_pitch",
+            "bandera_valor": false,
+            "pitch_call_h": "Foul",
+            "n": 108797
+          },
+          {
+            "derivada": "es_hbp",
+            "derivada_valor": false,
+            "bandera": "is_hit_by_pitch",
+            "bandera_valor": false,
+            "pitch_call_h": "StrikeCalled",
+            "n": 97810
+          },
+          {
+            "derivada": "es_hbp",
+            "derivada_valor": false,
+            "bandera": "is_hit_by_pitch",
+            "bandera_valor": false,
+            "pitch_call_h": "StrikeSwinging",
+            "n": 71914
+          },
+          {
+            "derivada": "es_hbp",
+            "derivada_valor": false,
+            "bandera": "is_hit_by_pitch",
+            "bandera_valor": false,
+            "pitch_call_h": "BallinDirt",
+            "n": 11353
+          },
+          {
+            "derivada": "es_hbp",
+            "derivada_valor": true,
+            "bandera": "is_hit_by_pitch",
+            "bandera_valor": false,
+            "pitch_call_h": "HitByPitch",
+            "n": 2280
+          }
+        ]
+      }
+    },
+    "dos_outs": {
+      "dos_outs": {
+        "n": 4763,
+        "pct_ultima_del_juego": 6.592,
+        "lanzamientos_por_media_entrada": {
+          "media": 15.107705227797606,
+          "mediana": 14.0,
+          "p10": 8.0,
+          "p90": 23.0
+        },
+        "pct_con_turno_incompleto": 9.469,
+        "turnos_incompletos_media": 0.09888725593113584,
+        "ponches_por_out_registrado": 0.1867520470291833,
+        "eventos_terminales_por_media_entrada": {
+          "K": 0.374,
+          "OUT_BIP": 1.579,
+          "SAC": 0.029,
+          "BB": 0.542,
+          "HBP": 0.081,
+          "ROE": 0.057
+        },
+        "outs_implicados_por_eventos_menos_OutsOnPlay": {
+          "-2": 3,
+          "-1": 129,
+          "0": 4585,
+          "1": 46
+        }
+      },
+      "tres_outs": {
+        "n": 31883,
+        "pct_ultima_del_juego": 5.228,
+        "lanzamientos_por_media_entrada": {
+          "media": 17.4830787567042,
+          "mediana": 16.0,
+          "p10": 10.0,
+          "p90": 27.0
+        },
+        "pct_con_turno_incompleto": 2.948,
+        "turnos_incompletos_media": 0.03004736066242198,
+        "ponches_por_out_registrado": 0.29964767012723603,
+        "eventos_terminales_por_media_entrada": {
+          "K": 0.899,
+          "OUT_BIP": 1.967,
+          "SAC": 0.055,
+          "BB": 0.41,
+          "HBP": 0.057,
+          "ROE": 0.046
+        },
+        "outs_implicados_por_eventos_menos_OutsOnPlay": {
+          "-3": 5,
+          "-2": 116,
+          "-1": 2467,
+          "0": 29118,
+          "1": 173,
+          "2": 3,
+          "3": 1
+        }
+      },
+      "clasificacion_no_finales": {
+        "n": 4449,
+        "turno_incompleto": 415,
+        "out_faltante": 4034,
+        "pct_turno_incompleto": 9.328,
+        "pct_out_faltante": 90.672
+      },
+      "outs_on_play_x_evento_terminal": [
+        {
+          "evento": "1B",
+          "OutsOnPlay": 0,
+          "n": 27675
+        },
+        {
+          "evento": "1B",
+          "OutsOnPlay": 1,
+          "n": 890
+        },
+        {
+          "evento": "1B",
+          "OutsOnPlay": 2,
+          "n": 13
+        },
+        {
+          "evento": "1B",
+          "OutsOnPlay": 3,
+          "n": 1
+        },
+        {
+          "evento": "2B",
+          "OutsOnPlay": 0,
+          "n": 7645
+        },
+        {
+          "evento": "2B",
+          "OutsOnPlay": 1,
+          "n": 151
+        },
+        {
+          "evento": "2B",
+          "OutsOnPlay": 2,
+          "n": 4
+        },
+        {
+          "evento": "3B",
+          "OutsOnPlay": 0,
+          "n": 699
+        },
+        {
+          "evento": "3B",
+          "OutsOnPlay": 1,
+          "n": 6
+        },
+        {
+          "evento": "BB",
+          "OutsOnPlay": 0,
+          "n": 15793
+        },
+        {
+          "evento": "BB",
+          "OutsOnPlay": 1,
+          "n": 29
+        },
+        {
+          "evento": "BB",
+          "OutsOnPlay": 2,
+          "n": 3
+        },
+        {
+          "evento": "BB",
+          "OutsOnPlay": 3,
+          "n": 4
+        },
+        {
+          "evento": "HBP",
+          "OutsOnPlay": 0,
+          "n": 2256
+        },
+        {
+          "evento": "HBP",
+          "OutsOnPlay": 1,
+          "n": 2
+        },
+        {
+          "evento": "HR",
+          "OutsOnPlay": 0,
+          "n": 4608
+        },
+        {
+          "evento": "HR",
+          "OutsOnPlay": 1,
+          "n": 6
+        },
+        {
+          "evento": "HR",
+          "OutsOnPlay": 2,
+          "n": 1
+        },
+        {
+          "evento": "HR",
+          "OutsOnPlay": 3,
+          "n": 1
+        },
+        {
+          "evento": "K",
+          "OutsOnPlay": 1,
+          "n": 30648
+        },
+        {
+          "evento": "NO_TERMINAL",
+          "OutsOnPlay": 0,
+          "n": 468839
+        },
+        {
+          "evento": "NO_TERMINAL",
+          "OutsOnPlay": 1,
+          "n": 1467
+        },
+        {
+          "evento": "NO_TERMINAL",
+          "OutsOnPlay": 2,
+          "n": 17
+        },
+        {
+          "evento": "NO_TERMINAL",
+          "OutsOnPlay": 3,
+          "n": 5
+        },
+        {
+          "evento": "OUT_BIP",
+          "OutsOnPlay": 0,
+          "n": 162
+        },
+        {
+          "evento": "OUT_BIP",
+          "OutsOnPlay": 1,
+          "n": 70179
+        },
+        {
+          "evento": "OUT_BIP",
+          "OutsOnPlay": 2,
+          "n": 217
+        },
+        {
+          "evento": "OUT_BIP",
+          "OutsOnPlay": 3,
+          "n": 2
+        },
+        {
+          "evento": "ROE",
+          "OutsOnPlay": 0,
+          "n": 1697
+        },
+        {
+          "evento": "ROE",
+          "OutsOnPlay": 1,
+          "n": 49
+        },
+        {
+          "evento": "ROE",
+          "OutsOnPlay": 2,
+          "n": 1
+        },
+        {
+          "evento": "SAC",
+          "OutsOnPlay": 0,
+          "n": 107
+        },
+        {
+          "evento": "SAC",
+          "OutsOnPlay": 1,
+          "n": 1817
+        },
+        {
+          "evento": "SAC",
+          "OutsOnPlay": 2,
+          "n": 8
+        }
+      ]
+    },
+    "mecanismo_outs": {
+      "T": {
+        "pasos": [
+          {
+            "filtro": "todas las medias entradas",
+            "excluye": null,
+            "excluye_solo_este": null,
+            "quedan": 37023
+          },
+          {
+            "filtro": "no es la final del juego",
+            "excluye": 2127,
+            "excluye_solo_este": 2127,
+            "quedan": 34896
+          },
+          {
+            "filtro": "Inning ≤ 9",
+            "excluye": 358,
+            "excluye_solo_este": 509,
+            "quedan": 34538
+          },
+          {
+            "filtro": "consistente (outs < 4)",
+            "excluye": 95,
+            "excluye_solo_este": 101,
+            "quedan": 34443
+          },
+          {
+            "filtro": "sin turno incompleto",
+            "excluye": 1376,
+            "excluye_solo_este": 1523,
+            "quedan": 33067
+          }
+        ],
+        "medias_entradas": 33067,
+        "P": 3998,
+        "Z": 9424,
+        "PZ": 84
+      },
+      "prop16": {
+        "por_cubeta": [
+          {
+            "cubeta": "(sin cubeta)",
+            "medias_entradas": 133,
+            "P": 19,
+            "Z": 28,
+            "PZ": 0,
+            "turnos": 621,
+            "m_tilde": 4.669172932330827,
+            "ponches": 105,
+            "f": 0.21052631578947367,
+            "p0": 0.0,
+            "r_hat": 0.0,
+            "tasa_P": 0.14285714285714285,
+            "theta_hat": 0.0,
+            "ic95": {
+              "f": [
+                0.1602977099236641,
+                0.2647058823529412
+              ],
+              "r_hat": [
+                0.0,
+                0.0
+              ],
+              "tasa_P": [
+                0.088,
+                0.19117647058823528
+              ],
+              "theta_hat": [
+                0.0,
+                0.0
+              ]
+            }
+          },
+          {
+            "cubeta": "Extreme Altitude",
+            "medias_entradas": 9366,
+            "P": 1387,
+            "Z": 2332,
+            "PZ": 23,
+            "turnos": 43723,
+            "m_tilde": 4.6682682041426435,
+            "ponches": 7216,
+            "f": 0.24898569293188128,
+            "p0": 0.0024556907964979713,
+            "r_hat": 0.00986277873070326,
+            "tasa_P": 0.14808883194533418,
+            "theta_hat": 0.06660042220026441,
+            "ic95": {
+              "f": [
+                0.2401317942672374,
+                0.25924202231417665
+              ],
+              "r_hat": [
+                0.005797498169316617,
+                0.014669087024565885
+              ],
+              "tasa_P": [
+                0.14045580982623704,
+                0.15572189008016254
+              ],
+              "theta_hat": [
+                0.03926649168773387,
+                0.0979551770293925
+              ]
+            }
+          },
+          {
+            "cubeta": "Medium Altitude",
+            "medias_entradas": 7844,
+            "P": 965,
+            "Z": 2069,
+            "PZ": 15,
+            "turnos": 35931,
+            "m_tilde": 4.580698623151453,
+            "ponches": 6393,
+            "f": 0.2637684854665987,
+            "p0": 0.0019122896481387048,
+            "r_hat": 0.007249879168680522,
+            "tasa_P": 0.12302396736359,
+            "theta_hat": 0.05893062404054924,
+            "ic95": {
+              "f": [
+                0.25320932518638517,
+                0.27417917706503675
+              ],
+              "r_hat": [
+                0.0034260413308978906,
+                0.011488888155252197
+              ],
+              "tasa_P": [
+                0.1157139977885506,
+                0.13078078432572735
+              ],
+              "theta_hat": [
+                0.028603600068582802,
+                0.09112935517327062
+              ]
+            }
+          },
+          {
+            "cubeta": "No Altitude",
+            "medias_entradas": 15724,
+            "P": 1627,
+            "Z": 4995,
+            "PZ": 46,
+            "turnos": 68142,
+            "m_tilde": 4.333630119562453,
+            "ponches": 13690,
+            "f": 0.3176672602391249,
+            "p0": 0.0029254642584584075,
+            "r_hat": 0.009209209209209208,
+            "tasa_P": 0.10347239888069193,
+            "theta_hat": 0.08900160147855292,
+            "ic95": {
+              "f": [
+                0.31067277119522263,
+                0.3257239036954808
+              ],
+              "r_hat": [
+                0.006585479025155033,
+                0.01215927870960018
+              ],
+              "tasa_P": [
+                0.09890151629951492,
+                0.10839541905616788
+              ],
+              "theta_hat": [
+                0.06396162748757499,
+                0.11581848035801533
+              ]
+            }
+          }
+        ],
+        "global": {
+          "cubeta": "global",
+          "medias_entradas": 33067,
+          "P": 3998,
+          "Z": 9424,
+          "PZ": 84,
+          "turnos": 148417,
+          "m_tilde": 4.488372093023256,
+          "ponches": 27404,
+          "f": 0.2849971270450903,
+          "p0": 0.002540296972812774,
+          "r_hat": 0.008913412563667233,
+          "tasa_P": 0.12090603925363656,
+          "theta_hat": 0.073721814217805,
+          "ic95": {
+            "f": [
+              0.28041420908810855,
+              0.2903703383020255
+            ],
+            "r_hat": [
+              0.007101106040712389,
+              0.010892962960128632
+            ],
+            "tasa_P": [
+              0.11716865376412589,
+              0.12455377418466472
+            ],
+            "theta_hat": [
+              0.05883384516714321,
+              0.09012397158621648
+            ]
+          }
+        },
+        "juegos": 2123,
+        "bootstrap": {
+          "n": 1000,
+          "seed": 2026,
+          "unidad": "juego, dentro de cada cubeta"
+        }
+      },
+      "prop17": {
+        "evaluable": true,
+        "cubeta_extrema": "Extreme Altitude",
+        "cubeta_base": "No Altitude",
+        "kappa_bar": 0.18464192107373145,
+        "SE_ref": 0.002377519257572935,
+        "n_extrema": 43723,
+        "n_base": 68142,
+        "W": {
+          "1": 0.004228823610869279,
+          "2": 0.008439801854972149
+        },
+        "m_tilde": {
+          "Extreme Altitude": 4.6682682041426435,
+          "No Altitude": 4.333630119562453
+        },
+        "r_hat": {
+          "Extreme Altitude": 0.00986277873070326,
+          "No Altitude": 0.009209209209209208
+        }
+      },
+      "G08p": {
+        "ok": true,
+        "perdida_ignorable": false,
+        "W": 0.008439801854972149,
+        "SE_ref": 0.002377519257572935,
+        "W_sobre_SE_ref": 3.5498353286054263,
+        "umbral_ic": 3.92,
+        "umbral_ignorable": 1.0,
+        "regla": "W(Γ=2) ≤ 3.92·SE_ref; ignorable si W(Γ=2) ≤ SE_ref"
+      },
+      "G09": {
+        "mecanismo": "U",
+        "theta_global": 0.073721814217805,
+        "ic95": [
+          0.05883384516714321,
+          0.09012397158621648
+        ],
+        "regla": "U si IC95 sup ≤ 0.25 · L si IC95 inf ≥ 0.50 · mezcla en otro caso"
+      },
+      "mecanismo_outs": "U",
+      "perdida_ignorable": false,
+      "corroboraciones": {
+        "a_rodados": {
+          "definicion": "hit_type == GroundBall",
+          "P": {
+            "n": 4873,
+            "k": 3547,
+            "pct": 72.789,
+            "ic95_wilson_pct": [
+              71.522,
+              74.02
+            ]
+          },
+          "T_menos_P": {
+            "n": 35321,
+            "k": 15902,
+            "pct": 45.021,
+            "ic95_wilson_pct": [
+              44.503,
+              45.541
+            ]
+          }
+        },
+        "b_outs_previo": {
+          "P": {
+            "n": 3998,
+            "pct_min_outs_mayor_0": 2.401,
+            "pct_out_con_estado_2": 39.57,
+            "pct_hueco_en_outs": 36.018
+          },
+          "T_menos_P": {
+            "n": 29069,
+            "pct_min_outs_mayor_0": 0.083,
+            "pct_out_con_estado_2": 98.191,
+            "pct_hueco_en_outs": 0.378
+          }
+        },
+        "c_logit": {
+          "base": "No Altitude",
+          "n": 32934,
+          "sin_N_h": {
+            "Extreme Altitude": {
+              "OR": 1.509999795867741,
+              "ic95": [
+                1.394966852306617,
+                1.6345186839030692
+              ]
+            },
+            "Medium Altitude": {
+              "OR": 1.211010921240419,
+              "ic95": [
+                1.11009452801459,
+                1.3211014146574493
+              ]
+            },
+            "convergio": true
+          },
+          "con_N_h": {
+            "Extreme Altitude": {
+              "OR": 1.425882304602911,
+              "ic95": [
+                1.314173215775984,
+                1.5470870370609358
+              ]
+            },
+            "Medium Altitude": {
+              "OR": 1.1458026810881918,
+              "ic95": [
+                1.0469525131684239,
+                1.2539859902678199
+              ]
+            },
+            "convergio": true
+          }
+        },
+        "d_dobles": {
+          "por_evento": [
+            {
+              "evento": "1B",
+              "OutsOnPlay": 2,
+              "n": 13
+            },
+            {
+              "evento": "1B",
+              "OutsOnPlay": 3,
+              "n": 1
+            },
+            {
+              "evento": "2B",
+              "OutsOnPlay": 2,
+              "n": 4
+            },
+            {
+              "evento": "BB",
+              "OutsOnPlay": 2,
+              "n": 3
+            },
+            {
+              "evento": "BB",
+              "OutsOnPlay": 3,
+              "n": 4
+            },
+            {
+              "evento": "HR",
+              "OutsOnPlay": 2,
+              "n": 1
+            },
+            {
+              "evento": "HR",
+              "OutsOnPlay": 3,
+              "n": 1
+            },
+            {
+              "evento": "NO_TERMINAL",
+              "OutsOnPlay": 2,
+              "n": 17
+            },
+            {
+              "evento": "NO_TERMINAL",
+              "OutsOnPlay": 3,
+              "n": 5
+            },
+            {
+              "evento": "OUT_BIP",
+              "OutsOnPlay": 2,
+              "n": 217
+            },
+            {
+              "evento": "OUT_BIP",
+              "OutsOnPlay": 3,
+              "n": 2
+            },
+            {
+              "evento": "ROE",
+              "OutsOnPlay": 2,
+              "n": 1
+            },
+            {
+              "evento": "SAC",
+              "OutsOnPlay": 2,
+              "n": 8
+            }
+          ],
+          "jugadas_con_2_o_mas_outs": 277,
+          "juegos": 2127,
+          "tasa_mlb_ref_por_juego": 1.63,
+          "dobles_matanzas_esperadas_ref": 3467.0099999999998,
+          "fraccion_registrada": 0.07989593338352068
+        },
+        "e_poisson": {
+          "juegos": 2123,
+          "lambda": 1.8831841733396137,
+          "varianza": 1.8770168119642905,
+          "dispersion_phi": 0.9967250354677812,
+          "P_ge1": {
+            "observado": 0.8464437117286858,
+            "poisson": 0.8478949948576662
+          },
+          "P_gt2": {
+            "observado": 0.2943947244465379,
+            "poisson": 0.29174198234695115
+          },
+          "histograma": [
+            {
+              "k": 0,
+              "juegos": 326,
+              "esperados_poisson": 322.91892591717465
+            },
+            {
+              "k": 1,
+              "juegos": 612,
+              "esperados_poisson": 608.1158105590506
+            },
+            {
+              "k": 2,
+              "juegos": 560,
+              "esperados_poisson": 572.5970350011974
+            },
+            {
+              "k": 3,
+              "juegos": 344,
+              "esperados_poisson": 359.43522467181464
+            },
+            {
+              "k": 4,
+              "juegos": 200,
+              "esperados_poisson": 169.22068161068233
+            },
+            {
+              "k": 5,
+              "juegos": 59,
+              "esperados_poisson": 63.734741882195785
+            },
+            {
+              "k": 6,
+              "juegos": 17,
+              "esperados_poisson": 20.004042867406078
+            },
+            {
+              "k": 7,
+              "juegos": 4,
+              "esperados_poisson": 5.381613847243761
+            },
+            {
+              "k": 8,
+              "juegos": 0,
+              "esperados_poisson": 1.2668212530193441
+            },
+            {
+              "k": 9,
+              "juegos": 1,
+              "esperados_poisson": 0.26507308157069903
+            }
+          ]
+        }
+      },
+      "informativas": {
+        "out_faltante_por_cubeta": [
+          {
+            "cubeta": "(sin cubeta)",
+            "medias_entradas": 153,
+            "dos_outs": 22,
+            "turno_incompleto": 1,
+            "out_faltante": 21,
+            "tasa_dos_outs": 0.1437908496732026,
+            "tasa_out_faltante": 0.13725490196078433,
+            "ic95_wilson": [
+              0.09155625124127831,
+              0.200723348048706
+            ]
+          },
+          {
+            "cubeta": "Extreme Altitude",
+            "medias_entradas": 9799,
+            "dos_outs": 1476,
+            "turno_incompleto": 78,
+            "out_faltante": 1398,
+            "tasa_dos_outs": 0.1506276150627615,
+            "tasa_out_faltante": 0.1426676191448107,
+            "ic95_wilson": [
+              0.1358828690760715,
+              0.14973243659203195
+            ]
+          },
+          {
+            "cubeta": "Medium Altitude",
+            "medias_entradas": 8332,
+            "dos_outs": 1091,
+            "turno_incompleto": 115,
+            "out_faltante": 976,
+            "tasa_dos_outs": 0.13094095055208835,
+            "tasa_out_faltante": 0.1171387421987518,
+            "ic95_wilson": [
+              0.11040929518903082,
+              0.12422107494660133
+            ]
+          },
+          {
+            "cubeta": "No Altitude",
+            "medias_entradas": 16612,
+            "dos_outs": 1860,
+            "turno_incompleto": 221,
+            "out_faltante": 1639,
+            "tasa_dos_outs": 0.11196725258849025,
+            "tasa_out_faltante": 0.0986636166626535,
+            "ic95_wilson": [
+              0.09422108768182964,
+              0.1032917244287528
+            ]
+          }
+        ],
+        "out_faltante_por_cubeta_anio": [
+          {
+            "cubeta": "(sin cubeta)",
+            "year": 2025,
+            "medias_entradas": 53,
+            "dos_outs": 6,
+            "turno_incompleto": 0,
+            "out_faltante": 6,
+            "tasa_dos_outs": 0.11320754716981132,
+            "tasa_out_faltante": 0.11320754716981132,
+            "ic95_wilson": [
+              0.052929589110686695,
+              0.22576770301339144
+            ]
+          },
+          {
+            "cubeta": "(sin cubeta)",
+            "year": 2026,
+            "medias_entradas": 100,
+            "dos_outs": 16,
+            "turno_incompleto": 1,
+            "out_faltante": 15,
+            "tasa_dos_outs": 0.16,
+            "tasa_out_faltante": 0.15,
+            "ic95_wilson": [
+              0.09305903191162297,
+              0.23283733332157835
+            ]
+          },
+          {
+            "cubeta": "Extreme Altitude",
+            "year": 2024,
+            "medias_entradas": 3642,
+            "dos_outs": 558,
+            "turno_incompleto": 35,
+            "out_faltante": 523,
+            "tasa_dos_outs": 0.15321252059308071,
+            "tasa_out_faltante": 0.14360241625480505,
+            "ic95_wilson": [
+              0.13258825875644584,
+              0.15536764146697588
+            ]
+          },
+          {
+            "cubeta": "Extreme Altitude",
+            "year": 2025,
+            "medias_entradas": 3836,
+            "dos_outs": 574,
+            "turno_incompleto": 20,
+            "out_faltante": 554,
+            "tasa_dos_outs": 0.14963503649635038,
+            "tasa_out_faltante": 0.14442127215849843,
+            "ic95_wilson": [
+              0.13365285511627253,
+              0.15590117232069253
+            ]
+          },
+          {
+            "cubeta": "Extreme Altitude",
+            "year": 2026,
+            "medias_entradas": 2321,
+            "dos_outs": 344,
+            "turno_incompleto": 23,
+            "out_faltante": 321,
+            "tasa_dos_outs": 0.14821197759586385,
+            "tasa_out_faltante": 0.13830245583800085,
+            "ic95_wilson": [
+              0.12485436802659508,
+              0.15294589156958552
+            ]
+          },
+          {
+            "cubeta": "Medium Altitude",
+            "year": 2024,
+            "medias_entradas": 3334,
+            "dos_outs": 478,
+            "turno_incompleto": 67,
+            "out_faltante": 411,
+            "tasa_dos_outs": 0.14337132573485303,
+            "tasa_out_faltante": 0.1232753449310138,
+            "ic95_wilson": [
+              0.11254746985316318,
+              0.13487038244995395
+            ]
+          },
+          {
+            "cubeta": "Medium Altitude",
+            "year": 2025,
+            "medias_entradas": 3503,
+            "dos_outs": 436,
+            "turno_incompleto": 34,
+            "out_faltante": 402,
+            "tasa_dos_outs": 0.12446474450471025,
+            "tasa_out_faltante": 0.11475877819012276,
+            "ic95_wilson": [
+              0.10462310169051686,
+              0.12573848635497686
+            ]
+          },
+          {
+            "cubeta": "Medium Altitude",
+            "year": 2026,
+            "medias_entradas": 1495,
+            "dos_outs": 177,
+            "turno_incompleto": 14,
+            "out_faltante": 163,
+            "tasa_dos_outs": 0.11839464882943143,
+            "tasa_out_faltante": 0.10903010033444815,
+            "ic95_wilson": [
+              0.09422126192302793,
+              0.1258430864377328
+            ]
+          },
+          {
+            "cubeta": "No Altitude",
+            "year": 2024,
+            "medias_entradas": 6619,
+            "dos_outs": 757,
+            "turno_incompleto": 102,
+            "out_faltante": 655,
+            "tasa_dos_outs": 0.11436772926423931,
+            "tasa_out_faltante": 0.09895754645716875,
+            "ic95_wilson": [
+              0.09199472080849438,
+              0.10638562396677548
+            ]
+          },
+          {
+            "cubeta": "No Altitude",
+            "year": 2025,
+            "medias_entradas": 6426,
+            "dos_outs": 753,
+            "turno_incompleto": 76,
+            "out_faltante": 677,
+            "tasa_dos_outs": 0.11718020541549953,
+            "tasa_out_faltante": 0.10535325241207594,
+            "ic95_wilson": [
+              0.09808111383921143,
+              0.11309696557101852
+            ]
+          },
+          {
+            "cubeta": "No Altitude",
+            "year": 2026,
+            "medias_entradas": 3567,
+            "dos_outs": 350,
+            "turno_incompleto": 43,
+            "out_faltante": 307,
+            "tasa_dos_outs": 0.09812167087188113,
+            "tasa_out_faltante": 0.08606672273619288,
+            "ic95_wilson": [
+              0.07730216327545388,
+              0.09572192157894012
+            ]
+          }
+        ],
+        "rango_pp": 4.400400248215719,
+        "deficits_todas_las_de_2_outs": {
+          "n_dos": 4763,
+          "n_tres": 31883,
+          "deficit": {
+            "K": {
+              "estimado": 0.5254389163233415,
+              "ic95": [
+                0.5064121854002873,
+                0.5418974209905313
+              ]
+            },
+            "OUT_BIP": {
+              "estimado": 0.38748707030203056,
+              "ic95": [
+                0.3704525452402542,
+                0.4069793409768364
+              ]
+            },
+            "SAC": {
+              "estimado": 0.0263443532442577,
+              "ic95": [
+                0.021245793681046808,
+                0.0316464771676049
+              ]
+            }
+          }
+        },
+        "deficits_sin_turno_incompleto": {
+          "n_dos": 4312,
+          "n_tres": 31883,
+          "deficit": {
+            "K": {
+              "estimado": 0.5380895780997044,
+              "ic95": [
+                0.5193350546979021,
+                0.5555733832847337
+              ]
+            },
+            "OUT_BIP": {
+              "estimado": 0.36310160752989673,
+              "ic95": [
+                0.3442738623001645,
+                0.3830482827053716
+              ]
+            },
+            "SAC": {
+              "estimado": 0.027742246014634795,
+              "ic95": [
+                0.022299358916765304,
+                0.03322685297013308
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}
