@@ -6,11 +6,11 @@
     },
     "G0.2": {
       "ok": true,
-      "detalle": "matriz 3×3 producida · ningún mapeo con R² ≥ 0.99 (mejor R² mín. 0.988868) → ADR-010: polinomios NO canónicos · la trayectoria canónica es la de los 9P"
+      "detalle": "ADR-010 enmendado: permutación {'X': 'y', 'Y': 'z', 'Z': 'x'} · c2 R² por pares 1.000000 y conjunta 1.000000 (mín. 0.9999) · c1 con t_s R² mín. 1.000000 (mín. 0.999) → **equivalentes**; la trayectoria canónica sigue siendo la de los 9P"
     },
     "G0.3": {
-      "ok": false,
-      "detalle": "criterio B 91.9790 % de 34,896 medias entradas no finales (mín. 95%) · diagnóstico de las de 2 outs: producido (4,763 medias entradas)"
+      "ok": true,
+      "detalle": "diagnóstico de las 4,763 medias entradas de 2 outs producido y clasificado (no finales: 4,449): turno incompleto 9.328 % vs turno final perdido 90.672 %"
     },
     "G0.4": {
       "ok": true,
@@ -23,9 +23,17 @@
     "G0.6": {
       "ok": true,
       "detalle": "excluir_modelo 0.803 % (máx. 3%) · excluir_cadena 0.135 % (máx. 0.5%)"
+    },
+    "G0.7": {
+      "ok": true,
+      "detalle": "ADR-014 con y_p = 1.4167 ft y signo -1: |error| mediana/p99 PlateLocSide 0.0017/0.0091 ft · PlateLocHeight 0.0013/0.0318 ft (máx. 0.05/0.3) · |ZoneTime − (t_p − t_s)| mediana 0.00003 s (máx. 0.005) · config vigente coincide"
+    },
+    "G0.8": {
+      "ok": false,
+      "detalle": "tasa de turno final perdido por cubeta (todos los años): Extreme Altitude 14.27 %, Medium Altitude 11.71 %, No Altitude 9.87 % · máx − mín = 4.400 pp (máx. 3.0 pp) → **DISCREPANCIA: la pérdida de datos se confunde con la altitud; no se sigue a F1**"
     }
   },
-  "segundos": 4.6,
+  "segundos": 6.6,
   "salida": {
     "ruta": "data/interim/pitches.parquet",
     "filas_por_year": {
@@ -465,17 +473,17 @@
       "n": 1
     },
     {
-      "play_result": "Walk",
-      "pitch_call_h": "StrikeCalled",
-      "KorBB": "Walk",
-      "evento_terminal": "BB",
-      "n": 1
-    },
-    {
       "play_result": "Out",
       "pitch_call_h": "BallCalled",
       "KorBB": "Undefined",
       "evento_terminal": null,
+      "n": 1
+    },
+    {
+      "play_result": "Walk",
+      "pitch_call_h": "StrikeCalled",
+      "KorBB": "Walk",
+      "evento_terminal": "BB",
       "n": 1
     }
   ],
@@ -622,7 +630,7 @@
         },
         "Four-Seam": {
           "evaluado": true,
-          "media_derecho": 8.32958657855628,
+          "media_derecho": 8.329586578556277,
           "media_zurdo": -8.047659213093702,
           "signo_opuesto": true
         },
@@ -940,26 +948,6 @@
           }
         }
       },
-      "r2_min_exigido": 0.99,
-      "permutacion": {
-        "X": "y",
-        "Y": "z",
-        "Z": "x"
-      },
-      "signos": {
-        "X": 1,
-        "Y": 1,
-        "Z": 1
-      },
-      "escala_2c2_sobre_a0": {
-        "X": 1.0000000297941973,
-        "Y": 1.0000000308500678,
-        "Z": 1.0000000302784675
-      },
-      "r2_min_permutacion": 0.9888676229548248,
-      "existe": false,
-      "decision": "no_canonicos",
-      "t_s": null,
       "rotacion": {
         "c2": {
           "X": {
@@ -1048,6 +1036,164 @@
             "r2": 0.9969956376008473
           }
         }
+      },
+      "r2_exigidos": {
+        "c2": 0.9999,
+        "c1_con_ts": 0.999
+      },
+      "permutacion": {
+        "X": "y",
+        "Y": "z",
+        "Z": "x"
+      },
+      "signos": {
+        "X": 1,
+        "Y": 1,
+        "Z": 1
+      },
+      "escala_2c2_sobre_a0": {
+        "X": 1.0000000297941973,
+        "Y": 1.0000000308500678,
+        "Z": 1.0000000302784675
+      },
+      "r2_c2_pares_min": 0.9999999999963364,
+      "r2_c2_conjunta_min": 0.9999999999963337,
+      "r2_c1_con_ts_min": 0.9999999999953892,
+      "c1_con_ts": {
+        "X": {
+          "r2": 1.0,
+          "pendiente": 1.0,
+          "intercepto": 0.0,
+          "referencia": true
+        },
+        "Y": {
+          "r2": 0.9999999999953892,
+          "pendiente": 0.999999996285424,
+          "intercepto": -8.963747966106439e-09,
+          "referencia": false
+        },
+        "Z": {
+          "r2": 0.9999999999993199,
+          "pendiente": 1.0000000006658485,
+          "intercepto": 1.932147775107751e-10,
+          "referencia": false
+        }
+      },
+      "c1_sin_ts": {
+        "X": {
+          "pendiente": 1.0009656669437001,
+          "intercepto": -0.7325065869642913,
+          "r2": 0.9997005256057516
+        },
+        "Y": {
+          "pendiente": 1.0698743896712533,
+          "intercepto": 1.1283567746938203,
+          "r2": 0.9888676229548248
+        },
+        "Z": {
+          "pendiente": 1.036789861869206,
+          "intercepto": 0.007747454034079837,
+          "r2": 0.9979584486617138
+        }
+      },
+      "t_s": {
+        "n": 635002,
+        "mediana_s": -0.03629986622422196,
+        "rango_intercuartil_s": 0.00750394662178723,
+        "p1_s": -0.051313822553958034,
+        "p99_s": -0.024761770904527813
+      },
+      "t_s_mediana_por_eje": {
+        "X": -0.03629986622422196,
+        "Y": -0.03629987651773537,
+        "Z": -0.03608483356976589
+      },
+      "existe": true,
+      "decision": "equivalentes"
+    },
+    "calibracion_9p": {
+      "n": 635002,
+      "combinaciones": [
+        {
+          "y_plano_ft": 1.4166667,
+          "signo": 1,
+          "error_side_ft": {
+            "mediana": 1.223585414972286,
+            "p99": 4.822086274221762,
+            "n": 635002
+          },
+          "error_height_ft": {
+            "mediana": 0.001267545593518049,
+            "p99": 0.03180157974237769,
+            "n": 635002
+          }
+        },
+        {
+          "y_plano_ft": 1.4166667,
+          "signo": -1,
+          "error_side_ft": {
+            "mediana": 0.0016756750043378649,
+            "p99": 0.009140877755620233,
+            "n": 635002
+          },
+          "error_height_ft": {
+            "mediana": 0.001267545593518049,
+            "p99": 0.03180157974237769,
+            "n": 635002
+          }
+        },
+        {
+          "y_plano_ft": 0.0,
+          "signo": 1,
+          "error_side_ft": {
+            "mediana": 1.2447651479129465,
+            "p99": 4.904339755560325,
+            "n": 635002
+          },
+          "error_height_ft": {
+            "mediana": 0.15507101005571344,
+            "p99": 0.3306831888035841,
+            "n": 635002
+          }
+        },
+        {
+          "y_plano_ft": 0.0,
+          "signo": -1,
+          "error_side_ft": {
+            "mediana": 0.03587603170059395,
+            "p99": 0.14439548885905687,
+            "n": 635002
+          },
+          "error_height_ft": {
+            "mediana": 0.15507101005571344,
+            "p99": 0.3306831888035841,
+            "n": 635002
+          }
+        }
+      ],
+      "elegida": {
+        "y_plano_ft": 1.4166667,
+        "signo": -1,
+        "error_side_ft": {
+          "mediana": 0.0016756750043378649,
+          "p99": 0.009140877755620233,
+          "n": 635002
+        },
+        "error_height_ft": {
+          "mediana": 0.001267545593518049,
+          "p99": 0.03180157974237769,
+          "n": 635002
+        }
+      },
+      "zonetime": {
+        "mediana": 3.306704584388198e-05,
+        "p99": 0.00011289587739205839,
+        "n": 635002
+      },
+      "zonetime_cruda": {
+        "mediana": 0.03626225772067607,
+        "p99": 0.05127974942756725,
+        "n": 635002
       }
     },
     "discrepancias_flags": {
@@ -1382,7 +1528,7 @@
             "derivada_valor": false,
             "bandera": "is_ball_in_play",
             "bandera_valor": true,
-            "pitch_call_h": "BallCalled",
+            "pitch_call_h": "StrikeSwinging",
             "n": 1
           },
           {
@@ -1390,7 +1536,7 @@
             "derivada_valor": false,
             "bandera": "is_ball_in_play",
             "bandera_valor": true,
-            "pitch_call_h": "StrikeSwinging",
+            "pitch_call_h": "BallCalled",
             "n": 1
           }
         ]
@@ -1472,6 +1618,7 @@
         },
         "pct_con_turno_incompleto": 9.469,
         "turnos_incompletos_media": 0.09888725593113584,
+        "ponches_por_out_registrado": 0.1867520470291833,
         "eventos_terminales_por_media_entrada": {
           "K": 0.374,
           "OUT_BIP": 1.579,
@@ -1498,6 +1645,7 @@
         },
         "pct_con_turno_incompleto": 2.948,
         "turnos_incompletos_media": 0.03004736066242198,
+        "ponches_por_out_registrado": 0.29964767012723603,
         "eventos_terminales_por_media_entrada": {
           "K": 0.899,
           "OUT_BIP": 1.967,
@@ -1515,6 +1663,13 @@
           "2": 3,
           "3": 1
         }
+      },
+      "clasificacion_no_finales": {
+        "n": 4449,
+        "turno_incompleto": 415,
+        "turno_final_perdido": 4034,
+        "pct_turno_incompleto": 9.328,
+        "pct_turno_final_perdido": 90.672
       },
       "outs_on_play_x_evento_terminal": [
         {
@@ -1689,19 +1844,300 @@
         }
       ]
     },
-    "verificacion_9p": {
-      "n": 635002,
-      "error_plato_x_ft": {
-        "mediana": 1.289709289626388,
-        "p99": 5.089944824599164
+    "perdida_turnos": {
+      "por_cubeta": [
+        {
+          "cubeta": "(sin cubeta)",
+          "medias_entradas": 153,
+          "dos_outs": 22,
+          "turno_incompleto": 1,
+          "turno_final_perdido": 21,
+          "tasa_dos_outs": 0.1437908496732026,
+          "tasa_turno_final_perdido": 0.13725490196078433,
+          "ic95_wilson": [
+            0.09155625124127831,
+            0.200723348048706
+          ]
+        },
+        {
+          "cubeta": "Extreme Altitude",
+          "medias_entradas": 9799,
+          "dos_outs": 1476,
+          "turno_incompleto": 78,
+          "turno_final_perdido": 1398,
+          "tasa_dos_outs": 0.1506276150627615,
+          "tasa_turno_final_perdido": 0.1426676191448107,
+          "ic95_wilson": [
+            0.1358828690760715,
+            0.14973243659203195
+          ]
+        },
+        {
+          "cubeta": "Medium Altitude",
+          "medias_entradas": 8332,
+          "dos_outs": 1091,
+          "turno_incompleto": 115,
+          "turno_final_perdido": 976,
+          "tasa_dos_outs": 0.13094095055208835,
+          "tasa_turno_final_perdido": 0.1171387421987518,
+          "ic95_wilson": [
+            0.11040929518903082,
+            0.12422107494660133
+          ]
+        },
+        {
+          "cubeta": "No Altitude",
+          "medias_entradas": 16612,
+          "dos_outs": 1860,
+          "turno_incompleto": 221,
+          "turno_final_perdido": 1639,
+          "tasa_dos_outs": 0.11196725258849025,
+          "tasa_turno_final_perdido": 0.0986636166626535,
+          "ic95_wilson": [
+            0.09422108768182964,
+            0.1032917244287528
+          ]
+        }
+      ],
+      "por_cubeta_anio": [
+        {
+          "cubeta": "(sin cubeta)",
+          "year": 2025,
+          "medias_entradas": 53,
+          "dos_outs": 6,
+          "turno_incompleto": 0,
+          "turno_final_perdido": 6,
+          "tasa_dos_outs": 0.11320754716981132,
+          "tasa_turno_final_perdido": 0.11320754716981132,
+          "ic95_wilson": [
+            0.052929589110686695,
+            0.22576770301339144
+          ]
+        },
+        {
+          "cubeta": "(sin cubeta)",
+          "year": 2026,
+          "medias_entradas": 100,
+          "dos_outs": 16,
+          "turno_incompleto": 1,
+          "turno_final_perdido": 15,
+          "tasa_dos_outs": 0.16,
+          "tasa_turno_final_perdido": 0.15,
+          "ic95_wilson": [
+            0.09305903191162297,
+            0.23283733332157835
+          ]
+        },
+        {
+          "cubeta": "Extreme Altitude",
+          "year": 2024,
+          "medias_entradas": 3642,
+          "dos_outs": 558,
+          "turno_incompleto": 35,
+          "turno_final_perdido": 523,
+          "tasa_dos_outs": 0.15321252059308071,
+          "tasa_turno_final_perdido": 0.14360241625480505,
+          "ic95_wilson": [
+            0.13258825875644584,
+            0.15536764146697588
+          ]
+        },
+        {
+          "cubeta": "Extreme Altitude",
+          "year": 2025,
+          "medias_entradas": 3836,
+          "dos_outs": 574,
+          "turno_incompleto": 20,
+          "turno_final_perdido": 554,
+          "tasa_dos_outs": 0.14963503649635038,
+          "tasa_turno_final_perdido": 0.14442127215849843,
+          "ic95_wilson": [
+            0.13365285511627253,
+            0.15590117232069253
+          ]
+        },
+        {
+          "cubeta": "Extreme Altitude",
+          "year": 2026,
+          "medias_entradas": 2321,
+          "dos_outs": 344,
+          "turno_incompleto": 23,
+          "turno_final_perdido": 321,
+          "tasa_dos_outs": 0.14821197759586385,
+          "tasa_turno_final_perdido": 0.13830245583800085,
+          "ic95_wilson": [
+            0.12485436802659508,
+            0.15294589156958552
+          ]
+        },
+        {
+          "cubeta": "Medium Altitude",
+          "year": 2024,
+          "medias_entradas": 3334,
+          "dos_outs": 478,
+          "turno_incompleto": 67,
+          "turno_final_perdido": 411,
+          "tasa_dos_outs": 0.14337132573485303,
+          "tasa_turno_final_perdido": 0.1232753449310138,
+          "ic95_wilson": [
+            0.11254746985316318,
+            0.13487038244995395
+          ]
+        },
+        {
+          "cubeta": "Medium Altitude",
+          "year": 2025,
+          "medias_entradas": 3503,
+          "dos_outs": 436,
+          "turno_incompleto": 34,
+          "turno_final_perdido": 402,
+          "tasa_dos_outs": 0.12446474450471025,
+          "tasa_turno_final_perdido": 0.11475877819012276,
+          "ic95_wilson": [
+            0.10462310169051686,
+            0.12573848635497686
+          ]
+        },
+        {
+          "cubeta": "Medium Altitude",
+          "year": 2026,
+          "medias_entradas": 1495,
+          "dos_outs": 177,
+          "turno_incompleto": 14,
+          "turno_final_perdido": 163,
+          "tasa_dos_outs": 0.11839464882943143,
+          "tasa_turno_final_perdido": 0.10903010033444815,
+          "ic95_wilson": [
+            0.09422126192302793,
+            0.1258430864377328
+          ]
+        },
+        {
+          "cubeta": "No Altitude",
+          "year": 2024,
+          "medias_entradas": 6619,
+          "dos_outs": 757,
+          "turno_incompleto": 102,
+          "turno_final_perdido": 655,
+          "tasa_dos_outs": 0.11436772926423931,
+          "tasa_turno_final_perdido": 0.09895754645716875,
+          "ic95_wilson": [
+            0.09199472080849438,
+            0.10638562396677548
+          ]
+        },
+        {
+          "cubeta": "No Altitude",
+          "year": 2025,
+          "medias_entradas": 6426,
+          "dos_outs": 753,
+          "turno_incompleto": 76,
+          "turno_final_perdido": 677,
+          "tasa_dos_outs": 0.11718020541549953,
+          "tasa_turno_final_perdido": 0.10535325241207594,
+          "ic95_wilson": [
+            0.09808111383921143,
+            0.11309696557101852
+          ]
+        },
+        {
+          "cubeta": "No Altitude",
+          "year": 2026,
+          "medias_entradas": 3567,
+          "dos_outs": 350,
+          "turno_incompleto": 43,
+          "turno_final_perdido": 307,
+          "tasa_dos_outs": 0.09812167087188113,
+          "tasa_turno_final_perdido": 0.08606672273619288,
+          "ic95_wilson": [
+            0.07730216327545388,
+            0.09572192157894012
+          ]
+        }
+      ],
+      "cubetas_comparadas": [
+        "Extreme Altitude",
+        "Medium Altitude",
+        "No Altitude"
+      ],
+      "rango_pp": 4.400400248215719,
+      "medias_entradas_no_finales": 34896,
+      "con_cubeta": 34743,
+      "turnos_finales_perdidos_M": 4034,
+      "por_juego": {
+        "juegos": 2126,
+        "tasa_media": 0.11560064190738194,
+        "dispersion_pearson_phi": 1.1048988524808956,
+        "pct_juegos_con_al_menos_una": 84.66603951081844,
+        "pct_juegos_con_mas_de_dos": 29.868297271872063
       },
-      "error_plato_z_ft": {
-        "mediana": 0.4716866093420078,
-        "p99": 1.0554168292666994
+      "todas_las_de_2_outs": {
+        "n_dos": 4763,
+        "n_tres": 31883,
+        "deficit": {
+          "K": {
+            "estimado": 0.5254389163233415,
+            "ic95": [
+              0.5064121854002873,
+              0.5418974209905313
+            ]
+          },
+          "OUT_BIP": {
+            "estimado": 0.38748707030203056,
+            "ic95": [
+              0.3704525452402542,
+              0.4069793409768364
+            ]
+          },
+          "SAC": {
+            "estimado": 0.0263443532442577,
+            "ic95": [
+              0.021245793681046808,
+              0.0316464771676049
+            ]
+          }
+        },
+        "pi_k": {
+          "estimado": 0.5594118051212734,
+          "ic95": [
+            0.5394757497321805,
+            0.576774601650834
+          ]
+        }
       },
-      "error_y_en_zonetime_ft": {
-        "mediana": 4.2740071303760905,
-        "p99": 5.3907996842617685
+      "solo_turno_final_perdido": {
+        "n_dos": 4312,
+        "n_tres": 31883,
+        "deficit": {
+          "K": {
+            "estimado": 0.5380895780997044,
+            "ic95": [
+              0.5222237703722744,
+              0.556651316026064
+            ]
+          },
+          "OUT_BIP": {
+            "estimado": 0.36310160752989673,
+            "ic95": [
+              0.34522387851203634,
+              0.38014254267414543
+            ]
+          },
+          "SAC": {
+            "estimado": 0.027742246014634795,
+            "ic95": [
+              0.021976704984429097,
+              0.03309462179727513
+            ]
+          }
+        },
+        "pi_k": {
+          "estimado": 0.5792552617546255,
+          "ic95": [
+            0.5624600669546966,
+            0.5987706877418892
+          ]
+        }
       }
     }
   }

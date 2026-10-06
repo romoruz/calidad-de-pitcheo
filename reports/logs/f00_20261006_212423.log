@@ -1,0 +1,66 @@
+{
+  "filas_entrada": 635002,
+  "filas_salida": 635002,
+  "gates": {
+    "G0.1": true,
+    "G0.2": true,
+    "G0.3": true,
+    "G0.4": true,
+    "G0.5": true,
+    "G0.6": true,
+    "G0.7": true,
+    "G0.8": false
+  },
+  "exclusiones": {
+    "modelo": {
+      "por_motivo": {
+        "ADR-002:EXC": {
+          "n": 62,
+          "pct": 0.0098
+        },
+        "ADR-003:lanzador": {
+          "n": 0,
+          "pct": 0.0
+        },
+        "ADR-003:bateador": {
+          "n": 1163,
+          "pct": 0.1831
+        },
+        "ADR-004:Undefined": {
+          "n": 841,
+          "pct": 0.1324
+        },
+        "ADR-006:Outs": {
+          "n": 8,
+          "pct": 0.0013
+        },
+        "ADR-013:pitcher_id_nulo": {
+          "n": 3272,
+          "pct": 0.5153
+        }
+      },
+      "total": 5102,
+      "pct_total": 0.8035
+    },
+    "cadena": {
+      "por_motivo": {
+        "ADR-004:Undefined": {
+          "n": 841,
+          "pct": 0.1324
+        },
+        "ADR-006:Outs": {
+          "n": 8,
+          "pct": 0.0013
+        },
+        "ADR-013:InPlay_sin_resultado": {
+          "n": 7,
+          "pct": 0.0011
+        }
+      },
+      "total": 856,
+      "pct_total": 0.1348
+    }
+  },
+  "sin_regla": 0,
+  "segundos": 6.6
+}
