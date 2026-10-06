@@ -1,7 +1,6 @@
-"""F0 de punta a punta sobre el sintético: compuertas G0.1-G0.8, parquet particionado, reporte y fallos esperados."""
+"""F0 de punta a punta sobre el sintético: compuertas G0.1-G0.9, parquet particionado, reporte y fallos esperados."""
 from __future__ import annotations
 
-import copy
 import json
 
 import polars as pl
@@ -14,12 +13,8 @@ from pitcheo.io import leer_pitches
 from pitcheo.sintetico import escribir_tres_formatos, generar
 
 CFG = Config.load()
-# Con ~100 medias entradas por cubeta un sintético chico tiene ruido de muestreo de varios puntos porcentuales (el dato real,
-# ~11 000 por cubeta, no). Los e2e de código usan un tope de G0.8 explícitamente relajado; el tope REAL (3 pp) se prueba con
-# tablas hechas a mano (test_qa) y con un efecto sembrado grande (más abajo, con CFG a secas).
-CFG_E2E = copy.deepcopy(CFG)
-CFG_E2E["f00"]["gates"]["g08_rango_pp"] = 8.0
-GATES = ["G0.1", "G0.2", "G0.3", "G0.4", "G0.5", "G0.6", "G0.7", "G0.8"]
+GATES = ["G0.1", "G0.2", "G0.3", "G0.4", "G0.5", "G0.6", "G0.7", "G0.8′", "G0.9"]
+CFG_E2E = CFG
 
 
 def _correr(tmp_path, parquet, cfg=CFG_E2E):
@@ -37,7 +32,6 @@ def crudo(tmp_path_factory):
 def _cfg_archivo(tmp_path, **mods):
     """Config temporal (YAML) con cambios puntuales (`seccion__clave=valor`); devuelve su ruta."""
     c = yaml.safe_load(DEFAULT.read_text(encoding="utf-8"))
-    c["f00"]["gates"]["g08_rango_pp"] = 8.0
     for k, v in mods.items():
         seccion, clave = k.split("__")
         c[seccion][clave] = v
@@ -72,13 +66,18 @@ def test_f0_reporte_trae_bloque_tabla_de_eventos_y_sin_filas(tmp_path, crudo):
     md = (tmp_path / "reports" / "FASE_00.md").read_text(encoding="utf-8")
     for txt in ("Bloque para el orquestador — F00", "play_result × pitch_call_h × KorBB", "ADR-003",
                 "excluir_modelo", "excluir_cadena", "ADR-010 (enmienda v2.5)", "ADR-014 — marco temporal único",
-                "ADR-011 — banderas is_*", "ADR-012 / ADR-015", "OutsOnPlay × evento_terminal",
-                "Tasa de turno final perdido por cubeta (G0.8)", "t_s por lanzamiento", "ponches por out registrado",
-                "Nota de identificación", "G0.6", "G0.7", "G0.8"):
+                "ADR-011 — banderas is_*", "ADR-012 / ADR-016", "OutsOnPlay × evento_terminal",
+                "out faltante (sin turno incompleto)", "Out faltante (sin turno incompleto) por cubeta",
+                "t_s por lanzamiento", "ponches por out registrado", "Prop. 16 por cubeta y global",
+                "Prop. 17 — cota del sesgo", "Corroboraciones", "(a) Rodados", "(b) Columna `Outs`", "(c) Logit",
+                "(d) Jugadas", "(e) |P| por juego", "sustituida por G0.2 (ADR-010)", "G0.6", "G0.7", "G0.8′", "G0.9",
+                "W(Γ=2)", "perdida_ignorable"):
         assert txt in md, txt
+    assert "π̂_K" not in md and "turno final perdido" not in md      # π̂_K retirado; "out faltante" sustituye al nombre viejo
     assert "pitch_00" not in md and "pitcher_0" not in md          # ni ids ni filas por lanzamiento
     js = json.loads((tmp_path / "reports" / "fase_00.json").read_text(encoding="utf-8"))
     assert js["sin_regla"] == [] and (tmp_path / "figuras" / "alcance.png").exists()
+    assert (tmp_path / "figuras" / "P_por_juego_vs_poisson.png").exists()                       # corroboración (e)
     assert list((tmp_path / "reports" / "logs").glob("f00_*.log"))
 
 
@@ -161,7 +160,7 @@ def test_v24_g01_i6p_admite_el_0_25_pct_pero_no_un_1_pct(tmp_path, crudo):
 
 
 # --------------------------------------------------------------------------
-# v2.5 — G0.2 (ADR-010 enmendado), G0.3, G0.7 (ADR-014) y G0.8 (ADR-015)
+# v2.5 — G0.2 (ADR-010 enmendado), G0.3 y G0.7 (ADR-014)
 # --------------------------------------------------------------------------
 def test_v25_g02_y_g07_pasan_con_la_convencion_real(tmp_path, crudo):
     res = _correr(tmp_path, crudo)
@@ -209,47 +208,112 @@ def test_v25_g03_ya_no_depende_del_criterio_b(tmp_path, crudo):
     assert res["gates"]["G0.3"]["ok"] and "turno incompleto" in res["gates"]["G0.3"]["detalle"]
 
 
-def test_v25_g08_con_el_tope_real_detecta_una_perdida_distinta_por_cubeta(tmp_path):
-    """Efecto sembrado grande (el doble en Extreme): la compuerta falla con el tope REAL de 3 pp y lo dice."""
-    p = tmp_path / "cubeta.parquet"
-    generar(20, 3, p_perdida_cubeta={"Extreme Altitude": 2.0}).write_parquet(p)
-    res = _correr(tmp_path, p, CFG)                              # CFG a secas: g08_rango_pp = 3
-    g = res["gates"]["G0.8"]
-    assert not g["ok"] and "DISCREPANCIA" in g["detalle"] and "no se sigue a F1" in g["detalle"]
-    assert not res["ok"]
-    assert (tmp_path / "reports" / "FASE_00.md").exists()
-
-
-def test_v25_g08_pasa_con_perdida_uniforme(tmp_path, crudo):
+# --------------------------------------------------------------------------
+# v2.6 — G0.8′ (Prop. 17) y G0.9 (Prop. 16, mecanismo)
+# --------------------------------------------------------------------------
+def test_v26_g08p_y_g09_con_el_sintetico_sin_perdida(tmp_path, crudo):
+    """ℓ = 0: todo el out faltante es U. G0.9 → U, G0.8′ pasa y la pérdida es ignorable; el cambio por cubeta que
+    habría tumbado el G0.8 de v2.5 ya no es compuerta."""
     res = _correr(tmp_path, crudo)
-    assert res["gates"]["G0.8"]["ok"] and "máx − mín" in res["gates"]["G0.8"]["detalle"]
+    g8, g9 = res["gates"]["G0.8′"], res["gates"]["G0.9"]
+    assert g8["ok"] and "perdida_ignorable = true" in g8["detalle"] and "W(Γ=2)" in g8["detalle"]
+    assert g9["ok"] and "**U**" in g9["detalle"]
+    assert res["mecanismo_outs"] == "U" and res["perdida_ignorable"] is True
+    js = json.loads((tmp_path / "reports" / "fase_00.json").read_text(encoding="utf-8"))
+    mo = js["extras"]["mecanismo_outs"]
+    assert mo["G09"]["mecanismo"] == "U" and mo["prop17"]["W"]["2"] == pytest.approx(0.0, abs=0.01)
+    assert "G0.8" not in js["gates"] and "perdida_turnos" not in js["extras"]
 
 
+def test_v26_g08p_falla_con_una_perdida_muy_distinta_por_cubeta_y_lo_dice(tmp_path):
+    """ℓ = (0, 10, 50) %: el ancho del conjunto identificado supera 3.92·SE_ref → discrepancia, no se sigue a F1."""
+    p = tmp_path / "cubeta.parquet"
+    generar(40, 3, perdida_cubeta={"No Altitude": 0.0, "Medium Altitude": 0.1, "Extreme Altitude": 0.5}).write_parquet(p)
+    res = _correr(tmp_path, p)
+    g = res["gates"]["G0.8′"]
+    assert not g["ok"] and "DISCREPANCIA" in g["detalle"] and "no se sigue a F1" in g["detalle"]
+    assert not res["ok"] and res["perdida_ignorable"] is False
+    assert (tmp_path / "reports" / "FASE_00.md").exists()               # el reporte se escribe antes de fallar
+
+
+def test_v26_g09_se_reporta_siempre_y_no_falla_aunque_la_perdida_domine(tmp_path):
+    p = tmp_path / "perdida.parquet"
+    todas = {"No Altitude": 0.6, "Medium Altitude": 0.6, "Extreme Altitude": 0.6}
+    generar(30, 5, perdida_cubeta=todas).write_parquet(p)
+    res = _correr(tmp_path, p)
+    assert res["gates"]["G0.9"]["ok"] and "**L**" in res["gates"]["G0.9"]["detalle"] and res["mecanismo_outs"] == "L"
+
+
+def test_v26_g09_g08p_no_evaluadas_si_hay_valores_sin_regla(tmp_path, crudo):
+    sucio = pl.read_parquet(crudo).with_columns(
+        pl.when(pl.int_range(pl.len()) < 3).then(pl.lit("Nuevo", dtype=pl.Utf8))
+        .otherwise(pl.col("AutoPitchType").cast(pl.Utf8)).cast(pl.Categorical).alias("AutoPitchType"))
+    p = tmp_path / "sucio.parquet"
+    sucio.write_parquet(p)
+    res = _correr(tmp_path, p)
+    assert not res["gates"]["G0.8′"]["ok"] and not res["gates"]["G0.9"]["ok"] and res["mecanismo_outs"] is None
+    assert "no evaluada" in res["gates"]["G0.9"]["detalle"]
+
+
+def test_v26_el_reporte_no_trae_filas_por_lanzamiento_ni_tablas_por_lanzador(tmp_path, crudo):
+    _correr(tmp_path, crudo)
+    md = (tmp_path / "reports" / "FASE_00.md").read_text(encoding="utf-8")
+    js = (tmp_path / "reports" / "fase_00.json").read_text(encoding="utf-8")
+    log = next((tmp_path / "reports" / "logs").glob("f00_*.log")).read_text(encoding="utf-8")
+    for txt in (md, js, log):
+        assert "pitch_0" not in txt and "pitcher_0" not in txt and "batter_0" not in txt and "catcher_0" not in txt
+
 # --------------------------------------------------------------------------
-# ADR-014 — dejar en config el y_p y el signo elegidos (--aplicar)
+# --aplicar: dejar en config lo que midió F0 (ADR-014: y_p y signo; ADR-016: mecanismo_outs y perdida_ignorable)
 # --------------------------------------------------------------------------
-def test_aplicar_calibracion_reescribe_solo_esas_dos_lineas(tmp_path):
+def test_aplicar_config_reescribe_solo_las_cuatro_lineas(tmp_path):
     cfg = tmp_path / "default.yaml"
     cfg.write_text(DEFAULT.read_text(encoding="utf-8"), encoding="utf-8")
     antes = cfg.read_text(encoding="utf-8")
-    r = fase00.aplicar_calibracion(cfg, {"y_plano_ft": 0.0, "signo": 1})
+    c0 = yaml.safe_load(antes)
+    assert c0["qa"]["mecanismo_outs"] == "mezcla" and c0["qa"]["perdida_ignorable"] is False   # valores de partida conservadores
+    r = fase00.aplicar_config(cfg, {"y_plano_ft": 0.0, "signo": 1}, "U", True)
     despues = cfg.read_text(encoding="utf-8")
-    assert r["cambio"] and "y_plato_ft: 0.0000000" in despues and "signo_plateloc_x: 1" in despues
+    assert r["cambio"] and set(r) == {"cambio", "y_plato_ft", "signo_plateloc_x", "mecanismo_outs", "perdida_ignorable"}
     dif = [(a, b) for a, b in zip(antes.splitlines(), despues.splitlines(), strict=True) if a != b]
-    assert len(dif) == 2                                          # solo cambian esas dos líneas (comentarios intactos)
-    assert yaml.safe_load(despues)["fisica"]["signo_plateloc_x"] == 1
-    assert fase00.aplicar_calibracion(cfg, {"y_plano_ft": 0.0, "signo": 1}) == {"cambio": False}
+    assert len(dif) == 4                                          # solo cambian esas cuatro líneas (comentarios intactos)
+    c = yaml.safe_load(despues)
+    assert (c["fisica"]["signo_plateloc_x"], c["qa"]["mecanismo_outs"], c["qa"]["perdida_ignorable"]) == (1, "U", True)
+    assert fase00.aplicar_config(cfg, {"y_plano_ft": 0.0, "signo": 1}, "U", True) == {"cambio": False}   # idempotente
 
 
-def test_cli_aplicar_escribe_la_calibracion_elegida_en_la_config_usada(tmp_path):
+def test_aplicar_config_acepta_cada_mecanismo_y_ignora_valores_invalidos(tmp_path):
+    cfg = tmp_path / "default.yaml"
+    cfg.write_text(DEFAULT.read_text(encoding="utf-8"), encoding="utf-8")
+    for mec in ("L", "mezcla", "U"):
+        fase00.aplicar_config(cfg, None, mec, False)
+        assert yaml.safe_load(cfg.read_text(encoding="utf-8"))["qa"]["mecanismo_outs"] == mec
+    assert fase00.aplicar_config(cfg, None, "otro", None) == {"cambio": False}
+    assert yaml.safe_load(cfg.read_text(encoding="utf-8"))["qa"]["mecanismo_outs"] == "U"
+
+
+def test_cli_aplicar_escribe_lo_medido_en_la_config_usada(tmp_path):
     parquet = tmp_path / "raw.parquet"
-    generar(12, 8).write_parquet(parquet)                         # verdad sembrada: signo -1, y_p = 17/12
+    generar(12, 8).write_parquet(parquet)                         # verdad sembrada: signo -1, y_p = 17/12, mecanismo U
     cfg = _cfg_archivo(tmp_path, rutas__raw_parquet=str(parquet), rutas__pitches=str(tmp_path / "p.parquet"),
                        rutas__reportes=str(tmp_path / "rep"), rutas__logs=str(tmp_path / "rep" / "logs"),
-                       rutas__figuras=str(tmp_path / "fig"), fisica__signo_plateloc_x=1)   # config equivocada a propósito
+                       rutas__figuras=str(tmp_path / "fig"), fisica__signo_plateloc_x=1,   # config equivocada a propósito
+                       qa__mecanismo_outs="L", qa__perdida_ignorable=False)
     cli.main(["--config", str(cfg), "f00", "--aplicar"])
     c = yaml.safe_load(cfg.read_text(encoding="utf-8"))
     assert c["fisica"]["signo_plateloc_x"] == -1 and c["fisica"]["y_plato_ft"] == pytest.approx(17 / 12)
+    assert c["qa"]["mecanismo_outs"] == "U" and c["qa"]["perdida_ignorable"] is True
+
+
+def test_cli_sin_aplicar_no_toca_la_config(tmp_path):
+    parquet = tmp_path / "raw.parquet"
+    generar(12, 8).write_parquet(parquet)
+    cfg = _cfg_archivo(tmp_path, rutas__raw_parquet=str(parquet), rutas__pitches=str(tmp_path / "p.parquet"),
+                       rutas__reportes=str(tmp_path / "rep"), rutas__logs=str(tmp_path / "rep" / "logs"),
+                       rutas__figuras=str(tmp_path / "fig"), qa__mecanismo_outs="L")
+    antes = cfg.read_text(encoding="utf-8")
+    cli.main(["--config", str(cfg), "f00"])
+    assert cfg.read_text(encoding="utf-8") == antes
 
 
 def test_cli_aplicar_con_sintetico_no_toca_la_config(tmp_path):

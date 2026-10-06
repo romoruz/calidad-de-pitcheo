@@ -142,6 +142,27 @@ def test_i8_detecta_signo_de_horzbreak_sin_invertir(df):
     assert r["cumplimiento"] < 1.0 and r["n"] > 0
 
 
+def test_i8_marca_no_informativa_la_falla_de_un_tipo_que_casi_no_rompe(df):
+    """v2.6: para cada tipo que falla se reporta la mediana de |HorzBreak| por mano; si es < 2 in, no es informativo."""
+    mal = _con(df, HorzBreak=pl.col("HorzBreak").abs())          # todos los tipos pierden el signo opuesto
+    r = qa.i8_signo_horzbreak(mal, Q["i8_min_filas"], Q["i8_mediana_min_in"])
+    falla = [t for t, v in r["tipos"].items() if v.get("evaluado") and not v["signo_opuesto"]]
+    assert falla and set(r["fallas"]) == set(falla)
+    for t in falla:
+        v = r["tipos"][t]
+        assert v["mediana_abs_derecho_in"] > 0 and v["mediana_abs_zurdo_in"] > 0
+        assert v["no_informativo"] == (min(v["mediana_abs_derecho_in"], v["mediana_abs_zurdo_in"]) < 2.0)
+    # Con el piso en 1000 in toda falla es no informativa; con 0 in, ninguna.
+    assert set(qa.i8_signo_horzbreak(mal, Q["i8_min_filas"], 1000.0)["fallas_no_informativas"]) == set(falla)
+    assert qa.i8_signo_horzbreak(mal, Q["i8_min_filas"], 0.0)["fallas_no_informativas"] == []
+    ok = qa.i8_signo_horzbreak(df, Q["i8_min_filas"])               # sin fallas: nada que marcar
+    assert ok["fallas"] == [] and ok["fallas_no_informativas"] == []
+
+
+def test_i3_se_marca_sustituida_por_g02(df):
+    assert "G0.2" in qa.i3_polinomio(df)["sustituida_por"]
+
+
 def test_i9_detecta_juego_con_dos_cubetas(df):
     g = df["game_anon_id"][0]
     en_g = pl.col("game_anon_id") == g
@@ -278,12 +299,12 @@ def test_adr011_ignora_undefined(df):
 # --------------------------------------------------------------------------
 # ADR-012 — diagnóstico de las medias entradas de 2 outs
 # --------------------------------------------------------------------------
-def test_adr012_dos_outs_son_sobre_todo_turno_final_perdido_y_una_minoria_turno_incompleto(df):
-    r = qa.diagnostico_dos_outs(df)
+def test_adr012_dos_outs_son_sobre_todo_out_faltante_y_una_minoria_turno_incompleto(sin_perdida):
+    r = qa.diagnostico_dos_outs(sin_perdida[0])
     d2, d3, cla = r["dos_outs"], r["tres_outs"], r["clasificacion_no_finales"]
     assert d2["n"] > 0 and d3["n"] > d2["n"]
-    assert 3 < cla["pct_turno_incompleto"] < 30 and cla["pct_turno_final_perdido"] > 70    # real: 9.5 % / 90 %
-    assert cla["turno_incompleto"] + cla["turno_final_perdido"] == cla["n"]
+    assert 3 < cla["pct_turno_incompleto"] < 30 and cla["pct_out_faltante"] > 70    # real: 9.5 % / 90 %
+    assert cla["turno_incompleto"] + cla["out_faltante"] == cla["n"]
     assert d3["pct_con_turno_incompleto"] < 15                        # solo ruido (ids nulos)
     assert set(d2["eventos_terminales_por_media_entrada"]) == {"K", "OUT_BIP", "SAC", "BB", "HBP", "ROE"}
     assert d2["outs_implicados_por_eventos_menos_OutsOnPlay"].get("0", 0) > 0.5 * d2["n"]
@@ -323,7 +344,7 @@ def test_adr014_sin_equivalencia_no_hay_t_s_y_zonetime_no_se_verifica():
 
 
 # --------------------------------------------------------------------------
-# ADR-015 — clasificación de las medias entradas de 2 outs, tasa por cubeta y π̂_K
+# ADR-016 — conjunto T, Prop. 16 (r̂, θ̂), Prop. 17 (W, SE_ref) y las reglas G0.8′ / G0.9
 # --------------------------------------------------------------------------
 def test_wilson_valores_conocidos():
     lo, hi = qa.wilson(50, 100)
@@ -345,113 +366,299 @@ def _entrada(game, year, cub, inning, mitad, turnos, extra_incompleto=0):
         o = int(ev in ("K", "OUT_BIP", "SAC"))
         filas.append({"game_anon_id": game, "year": year, "altitude_category_h": cub, "Inning": inning,
                       "Top/Bottom": mitad, "batter_anon_id": f"{game}_{inning}{mitad}_b{i}", "Outs": outs,
-                      "OutsOnPlay": o, "evento_terminal": ev})
+                      "OutsOnPlay": o, "evento_terminal": ev, "hit_type": None, "Angle": None})
         outs += o
     for j in range(extra_incompleto):
         filas.append({"game_anon_id": game, "year": year, "altitude_category_h": cub, "Inning": inning,
                       "Top/Bottom": mitad, "batter_anon_id": f"{game}_{inning}{mitad}_x{j}", "Outs": outs,
-                      "OutsOnPlay": 0, "evento_terminal": None})
+                      "OutsOnPlay": 0, "evento_terminal": None, "hit_type": None, "Angle": None})
     return filas
 
 
 @pytest.fixture(scope="module")
 def mini():
-    """Dos juegos (cubetas distintas), 4 medias entradas cada uno; la 4.ª es la final de cada juego."""
+    """Tres juegos hechos a mano. Cada media entrada se anota con su (P, Z): P = 2 outs registrados, Z = nadie en base.
+
+    g1 No Altitude 2024:  1T 3K (no P, Z) · 1B 2K (P, Z) · 2T 1B+3K (no P, no Z) · 2B 1B+2K (P, no Z) · 3T 3K (no P, Z)
+                          · 3B 3K = final del juego.
+    g2 Extreme 2024:      1T 1B+3K (no P, no Z) · 1B 1B+2K (P, no Z) · 2T BB+2K (P, no Z) · 2B 3K (no P, Z)
+                          · 3T 2K (P, Z) · 3B 3K = final.
+    g3 No Altitude 2025:  1T 3K · 1B 1B+3K · 2T (con turno incompleto) · 10T 2K (extra inning, corredor colocado: no entra
+                          en T) · 10B 3K = final.
+    """
     f = []
-    # g1 · No Altitude · 2024
-    f += _entrada("g1", 2024, "No Altitude", 1, "Top", ["K", "K", "K"])                       # 3 outs
-    f += _entrada("g1", 2024, "No Altitude", 1, "Bottom", ["K", "OUT_BIP"], extra_incompleto=1)   # 2 outs, turno incompleto
-    f += _entrada("g1", 2024, "No Altitude", 2, "Top", ["K", "K"])                            # 2 outs, turno final perdido
-    f += _entrada("g1", 2024, "No Altitude", 2, "Bottom", ["K", "K", "K"])                    # 3 outs (final)
-    # g2 · Extreme Altitude · 2024
-    f += _entrada("g2", 2024, "Extreme Altitude", 1, "Top", ["OUT_BIP", "OUT_BIP", "OUT_BIP"])
-    f += _entrada("g2", 2024, "Extreme Altitude", 1, "Bottom", ["K", "K"])                    # perdido
-    f += _entrada("g2", 2024, "Extreme Altitude", 2, "Top", ["OUT_BIP", "OUT_BIP"])           # perdido
-    f += _entrada("g2", 2024, "Extreme Altitude", 2, "Bottom", ["OUT_BIP", "OUT_BIP", "OUT_BIP"])   # final
-    return pl.DataFrame(f, schema_overrides={"evento_terminal": pl.Utf8})
+    f += _entrada("g1", 2024, "No Altitude", 1, "Top", ["K", "K", "K"])
+    f += _entrada("g1", 2024, "No Altitude", 1, "Bottom", ["K", "K"])
+    f += _entrada("g1", 2024, "No Altitude", 2, "Top", ["1B", "K", "K", "K"])
+    f += _entrada("g1", 2024, "No Altitude", 2, "Bottom", ["1B", "K", "K"])
+    f += _entrada("g1", 2024, "No Altitude", 3, "Top", ["K", "K", "K"])
+    f += _entrada("g1", 2024, "No Altitude", 3, "Bottom", ["K", "K", "K"])
+    f += _entrada("g2", 2024, "Extreme Altitude", 1, "Top", ["1B", "K", "K", "K"])
+    f += _entrada("g2", 2024, "Extreme Altitude", 1, "Bottom", ["1B", "K", "K"])
+    f += _entrada("g2", 2024, "Extreme Altitude", 2, "Top", ["BB", "K", "K"])
+    f += _entrada("g2", 2024, "Extreme Altitude", 2, "Bottom", ["K", "K", "K"])
+    f += _entrada("g2", 2024, "Extreme Altitude", 3, "Top", ["K", "K"])
+    f += _entrada("g2", 2024, "Extreme Altitude", 3, "Bottom", ["K", "K", "K"])
+    f += _entrada("g3", 2025, "No Altitude", 1, "Top", ["K", "K", "K"])
+    f += _entrada("g3", 2025, "No Altitude", 1, "Bottom", ["1B", "K", "K", "K"])
+    f += _entrada("g3", 2025, "No Altitude", 2, "Top", ["K", "K"], extra_incompleto=1)
+    f += _entrada("g3", 2025, "No Altitude", 10, "Top", ["K", "K"])
+    f += _entrada("g3", 2025, "No Altitude", 10, "Bottom", ["K", "K", "K"])
+    return pl.DataFrame(f, schema_overrides={"evento_terminal": pl.Utf8, "hit_type": pl.Utf8, "Angle": pl.Float64})
 
 
-def test_adr015_clasificacion_incompleto_vs_perdido_a_mano(mini):
+def test_adr012_clasificacion_incompleto_vs_out_faltante_a_mano(mini):
     r = qa.diagnostico_dos_outs(mini)
-    cla = r["clasificacion_no_finales"]
-    assert cla == {"n": 4, "turno_incompleto": 1, "turno_final_perdido": 3,
-                   "pct_turno_incompleto": 25.0, "pct_turno_final_perdido": 75.0}
-    assert r["dos_outs"]["n"] == 4 and r["tres_outs"]["n"] == 4
-    assert r["dos_outs"]["pct_con_turno_incompleto"] == 25.0
+    # No finales de 2 outs: g1 1B, 2B · g2 1B, 2T, 3T · g3 2T (turno incompleto) · g3 10T.
+    assert r["clasificacion_no_finales"] == {"n": 7, "turno_incompleto": 1, "out_faltante": 6,
+                                             "pct_turno_incompleto": pytest.approx(100 / 7, abs=1e-2),
+                                             "pct_out_faltante": pytest.approx(600 / 7, abs=1e-2)}
 
 
-def test_adr015_tasas_por_cubeta_a_mano_con_wilson(mini):
-    pt = qa.analisis_perdida_turnos(mini, 4, 20, 1)
-    por = {r["cubeta"]: r for r in pt["por_cubeta"]}
-    assert por["No Altitude"]["medias_entradas"] == 3 and por["No Altitude"]["turno_final_perdido"] == 1
-    assert por["No Altitude"]["tasa_turno_final_perdido"] == pytest.approx(1 / 3)
-    assert por["Extreme Altitude"]["tasa_turno_final_perdido"] == pytest.approx(2 / 3)
-    assert por["Extreme Altitude"]["ic95_wilson"] == pytest.approx(list(qa.wilson(2, 3)))
-    assert pt["rango_pp"] == pytest.approx(100 / 3)                       # 66.7 − 33.3
-    assert pt["turnos_finales_perdidos_M"] == 3 and pt["medias_entradas_no_finales"] == 6
-    ca = {(r["cubeta"], r["year"]): r["medias_entradas"] for r in pt["por_cubeta_anio"]}
-    assert ca == {("No Altitude", 2024): 3, ("Extreme Altitude", 2024): 3}
+def test_adr016_conjunto_T_a_mano_con_lo_que_excluye_cada_filtro(mini):
+    T, pasos = qa.conjunto_T(mini)
+    por = {p["filtro"]: p for p in pasos}
+    assert por["todas las medias entradas"]["quedan"] == 17
+    assert por["no es la final del juego"]["excluye"] == 3                      # 3B de g1, 3B de g2, 10B de g3
+    assert por["Inning ≤ 9"]["excluye"] == 1 and por["Inning ≤ 9"]["excluye_solo_este"] == 2   # 10T (y 10B, ya final)
+    assert por["consistente (outs < 4)"]["excluye"] == 0
+    assert por["sin turno incompleto"]["excluye"] == 1                          # g3 2T
+    assert T.height == 12 and T["Inning"].max() <= 9
+    assert int(T["P"].sum()) == 5 and int(T["Z"].sum()) == 6 and int(T["PZ"].sum()) == 2
 
 
-def test_adr015_deficits_y_pi_k_a_mano(mini):
-    """3 outs: K = (3+3+0+0)/4 = 1.5, OUT_BIP = 1.5.  2 outs: K = (1+2+2+0)/4 = 1.25, OUT_BIP = 0.75."""
-    d = qa.analisis_perdida_turnos(mini, 4, 50, 1)["todas_las_de_2_outs"]
-    assert d["deficit"]["K"]["estimado"] == pytest.approx(0.25)
-    assert d["deficit"]["OUT_BIP"]["estimado"] == pytest.approx(0.75)
-    assert d["deficit"]["SAC"]["estimado"] == pytest.approx(0.0)
-    assert d["pi_k"]["estimado"] == pytest.approx(0.25)
-    lo, hi = d["pi_k"]["ic95"]
-    assert lo <= 0.25 <= hi and (d["n_dos"], d["n_tres"]) == (4, 4)
+def test_adr016_extra_innings_con_corredor_colocado_no_entran_en_T(mini):
+    """El 10T de g3 tiene 2 outs y nadie en base (P y Z): si entrara, inflaría r̂. El filtro Inning ≤ 9 lo deja fuera."""
+    t_todas = qa._medias_con_eventos(mini)
+    extra = t_todas.filter((pl.col("Inning") == 10) & (pl.col("outs") == 2))
+    assert extra.height == 1 and sum(int(extra[f"ev_{e}"].sum()) for e in qa._EV_BASE) == 0   # nadie llegó a base
+    T, _ = qa.conjunto_T(mini)
+    assert T.filter(pl.col("Inning") > 9).height == 0
+    p16 = qa.prop16(T, 50, 1)
+    assert p16["global"]["PZ"] == 2                                              # sin el 10T serían 3
 
 
-def test_adr015_el_bootstrap_es_reproducible_con_la_misma_semilla(mini):
-    a = qa.analisis_perdida_turnos(mini, 4, 100, 7)["todas_las_de_2_outs"]["pi_k"]["ic95"]
-    b = qa.analisis_perdida_turnos(mini, 4, 100, 7)["todas_las_de_2_outs"]["pi_k"]["ic95"]
-    assert a == b
+def test_adr016_prop16_a_mano(mini):
+    """No: nT 7, Z 4, P 2, PZ 1 → f 4/7, p⁰ 1/7, r̂ 1/4, θ̂ (1/4)/(2/7).  Extreme: nT 5, Z 2, P 3, PZ 1 → r̂ 1/2."""
+    T, _ = qa.conjunto_T(mini)
+    p = qa.prop16(T, 200, 3)
+    por = {r["cubeta"]: r for r in p["por_cubeta"]}
+    no, ex, gl = por["No Altitude"], por["Extreme Altitude"], p["global"]
+    assert (no["medias_entradas"], no["Z"], no["P"], no["PZ"]) == (7, 4, 2, 1)
+    assert no["f"] == pytest.approx(4 / 7) and no["p0"] == pytest.approx(1 / 7) and no["r_hat"] == pytest.approx(1 / 4)
+    assert no["theta_hat"] == pytest.approx((1 / 4) / (2 / 7))
+    assert ex["r_hat"] == pytest.approx(1 / 2) and ex["theta_hat"] == pytest.approx((1 / 2) / (3 / 5))
+    assert gl["medias_entradas"] == 12 and gl["r_hat"] == pytest.approx(2 / 6)
+    assert gl["theta_hat"] == pytest.approx((2 / 6) / (5 / 12))
+    assert p["juegos"] == 3 and p["bootstrap"]["n"] == 200
+    for r in p["por_cubeta"] + [gl]:
+        assert set(r["ic95"]) == {"f", "tasa_P", "r_hat", "theta_hat"}
 
 
-def test_adr015_los_finales_no_cuentan_en_las_tasas(mini):
-    pt = qa.analisis_perdida_turnos(mini, 4, 20, 1)
-    assert sum(r["medias_entradas"] for r in pt["por_cubeta"]) == 6      # 8 medias entradas − 2 finales
+def test_adr016_el_bootstrap_de_juegos_es_reproducible_y_depende_de_la_semilla():
+    d0, _v = generar(30, 4, con_verdad=True, perdida_cubeta={"No Altitude": 0.1, "Medium Altitude": 0.1,
+                                                            "Extreme Altitude": 0.1})
+    T, _ = qa.conjunto_T(_limpio(d0))
+    a, b = qa.prop16(T, 300, 7)["global"]["ic95"], qa.prop16(T, 300, 7)["global"]["ic95"]
+    assert a == b                                                # mismo dato y misma semilla: el mismo intervalo
+    assert qa.prop16(T, 300, 8)["global"]["ic95"]["r_hat"] != a["r_hat"]
+    lo, hi = a["r_hat"]
+    assert 0 < lo <= hi < 1
 
 
-def test_adr015_dispersion_por_juego_a_mano(mini):
-    pj = qa.analisis_perdida_turnos(mini, 4, 20, 1)["por_juego"]
-    assert pj["juegos"] == 2 and pj["tasa_media"] == pytest.approx(0.5)          # 3 perdidas de 6
-    assert pj["pct_juegos_con_al_menos_una"] == 100.0 and pj["pct_juegos_con_mas_de_dos"] == 0.0
+def test_adr016_prop17_a_mano(mini):
+    """m̃_No = 22/7, m̃_Ext = 3; κ̄ = K/turnos = 31/37; W(Γ) = Σ Γr̂/(m̃ + Γr̂); SE_ref = √(κ̄(1−κ̄)(1/n_Ext + 1/n_No))."""
+    T, _ = qa.conjunto_T(mini)
+    p16 = qa.prop16(T, 20, 1)
+    por = {r["cubeta"]: r for r in p16["por_cubeta"]}
+    assert por["No Altitude"]["turnos"] == 22 and por["Extreme Altitude"]["turnos"] == 15
+    assert por["No Altitude"]["m_tilde"] == pytest.approx(22 / 7) and por["Extreme Altitude"]["m_tilde"] == pytest.approx(3)
+    assert p16["global"]["turnos"] == 37 and p16["global"]["ponches"] == 31
+    kappa = 31 / 37
+    p = qa.prop17(p16["por_cubeta"], kappa, "Extreme Altitude", "No Altitude")
+    for g in (1, 2):
+        esperado = g * 0.5 / (3 + g * 0.5) + g * 0.25 / (22 / 7 + g * 0.25)
+        assert p["W"][str(g)] == pytest.approx(esperado)
+    assert p["SE_ref"] == pytest.approx(np.sqrt(kappa * (1 - kappa) * (1 / 15 + 1 / 22)))
+    assert p["kappa_bar"] == pytest.approx(kappa)            # una sola cifra, global: no por cubeta
+    assert p["W"]["2"] > p["W"]["1"] > 0                      # el parámetro de sensibilidad agranda el ancho
+
+
+def test_adr016_prop17_sin_la_cubeta_del_contraste_no_es_evaluable(mini):
+    T, _ = qa.conjunto_T(mini)
+    p16 = qa.prop16(T, 20, 1)
+    p = qa.prop17(p16["por_cubeta"], 0.2, "Extreme Altitude", "Otra Cubeta")
+    assert p["evaluable"] is False
+    assert qa.regla_g08p(p) == {"ok": False, "perdida_ignorable": False, "motivo": "contraste Extreme − No no evaluable"}
+
+
+def _filas_con_w(w_obj: float, m: float = 4.0, n: int = 10_000) -> list[dict]:
+    """Dos cubetas con la misma r̂ elegida para que W(Γ=2) valga `w_obj`: W = 2·2r/(m + 2r)  →  r = W·m / (4 − 2W)."""
+    r = w_obj * m / (4 - 2 * w_obj)
+    return [{"cubeta": c, "r_hat": r, "m_tilde": m, "turnos": n} for c in ("Extreme Altitude", "No Altitude")]
+
+
+def test_adr016_g08p_a_ambos_lados_de_3_92_se_ref_y_de_se_ref():
+    kappa = 0.2
+    se = float(np.sqrt(kappa * (1 - kappa) * (2 / 10_000)))
+
+    def regla(w):
+        p = qa.prop17(_filas_con_w(w), kappa, "Extreme Altitude", "No Altitude")
+        assert p["SE_ref"] == pytest.approx(se) and p["W"]["2"] == pytest.approx(w)
+        return qa.regla_g08p(p)
+
+    r = regla(0.99 * se)
+    assert r["ok"] and r["perdida_ignorable"]                              # W ≤ SE_ref  → ignorable
+    r = regla(1.01 * se)
+    assert r["ok"] and not r["perdida_ignorable"]                          # pasa, pero hay que usar Imbens–Manski
+    r = regla(0.99 * 3.92 * se)
+    assert r["ok"] and not r["perdida_ignorable"]
+    r = regla(1.01 * 3.92 * se)
+    assert not r["ok"] and not r["perdida_ignorable"]                      # falla: discrepancia, no se sigue a F1
+    assert r["umbral_ic"] == 3.92 and r["umbral_ignorable"] == 1.0
+
+
+def test_adr016_g09_reglas_de_decision_con_los_umbrales_fijados():
+    assert qa.regla_g09([0.0, 0.20]) == "U" and qa.regla_g09([0.10, 0.25]) == "U"       # sup ≤ 0.25 (incluido)
+    assert qa.regla_g09([0.10, 0.2501]) == "mezcla"
+    assert qa.regla_g09([0.50, 0.90]) == "L" and qa.regla_g09([0.4999, 0.90]) == "mezcla"   # inf ≥ 0.50 (incluido)
+    assert qa.regla_g09([0.30, 0.45]) == "mezcla"
+    assert qa.regla_g09(None) == "mezcla"                                    # sin dato no se asume U: ruta conservadora
+    g = CFG["f00"]["gates"]
+    assert (g["g08_k_ic"], g["g08_k_ignorable"], g["g09_u_max"], g["g09_l_min"]) == (3.92, 1.0, 0.25, 0.50)
+
+
+def test_adr016_las_tasas_informativas_a_mano_con_wilson(mini):
+    inf = qa.mecanismo_outs(mini, {"bootstrap_n": 20}, {}, 4, 1)["informativas"]
+    por = {r["cubeta"]: r for r in inf["out_faltante_por_cubeta"]}
+    # No finales (sin las 3 finales): No = g1 5 + g3 4 = 9 (out faltante: g1 1B, 2B, g3 10T = 3); Extreme = 5 (3).
+    assert por["No Altitude"]["medias_entradas"] == 9 and por["No Altitude"]["out_faltante"] == 3
+    assert por["Extreme Altitude"]["medias_entradas"] == 5 and por["Extreme Altitude"]["out_faltante"] == 3
+    assert por["Extreme Altitude"]["ic95_wilson"] == pytest.approx(list(qa.wilson(3, 5)))
+    assert inf["rango_pp"] == pytest.approx(100 * (3 / 5 - 3 / 9))
+
+
+def test_adr016_no_hay_pi_k_ni_turno_final_perdido_en_los_resultados(mini):
+    mo = qa.mecanismo_outs(mini, {"bootstrap_n": 20}, {}, 4, 1)
+    txt = repr(mo) + repr(qa.diagnostico_dos_outs(mini))
+    assert "pi_k" not in txt and "turno_final_perdido" not in txt
+    assert set(mo["informativas"]["deficits_todas_las_de_2_outs"]["deficit"]) == {"K", "OUT_BIP", "SAC"}
+
+
+def test_adr016_los_deficits_son_informativos_y_a_mano(mini):
+    d = qa.mecanismo_outs(mini, {"bootstrap_n": 30}, {}, 4, 1)["informativas"]["deficits_todas_las_de_2_outs"]
+    assert (d["n_dos"], d["n_tres"]) == (7, 10)
+    # Mismo criterio que el reporte: media por media entrada de las de 3 outs − media de las de 2 outs.
+    t = qa._medias_con_eventos(mini)
+    for e in ("K", "OUT_BIP", "SAC"):
+        esperado = t.filter(pl.col("outs") == 3)[f"ev_{e}"].mean() - t.filter(pl.col("outs") == 2)[f"ev_{e}"].mean()
+        assert d["deficit"][e]["estimado"] == pytest.approx(esperado)
+
+
+# --------------------------------------------------------------------------
+# ADR-016 sobre el simulador base-out: (i) ℓ = 0, (ii) ℓ = (0, 3, 6) %, (iii) extra innings
+# --------------------------------------------------------------------------
+def _limpio(d0):
+    d, rep = limpiar(d0, leer_diccionario(CFG.ruta("diccionario")), CAT, CFG["f00"])
+    assert d is not None and rep["sin_regla"] == []
+    return d
 
 
 @pytest.fixture(scope="module")
-def regimenes():
-    """Dos sintéticos con la MISMA mecánica de pérdida pero verdades de π_K muy distintas."""
-    from pitcheo.io import leer_diccionario
-    from pitcheo.limpieza import limpiar
-    dic, out = leer_diccionario(CFG.ruta("diccionario")), {}
-    for nombre, p in (("mcar", {"K": 0.12, "OUT_BIP": 0.12}), ("mnar", {"K": 0.30, "OUT_BIP": 0.015})):
-        d0, v = generar(30, 8, con_verdad=True, p_perdida_tipo=p)
-        d, _ = limpiar(d0, dic, CAT, CFG["f00"])
-        out[nombre] = (qa.analisis_perdida_turnos(d, 4, 300, 1), v)
-    return out
+def sin_perdida():
+    """(i) Todo el out faltante es U (doble matanza no contada): ℓ = 0 en las tres cubetas."""
+    d0, v = generar(300, 11, con_verdad=True)
+    d = _limpio(d0)
+    return d, v, qa.mecanismo_outs(d, Q, CFG["f00"]["gates"], 4, CFG["seed"])
 
 
-def test_adr015_pi_k_es_insensible_a_la_perdida_selectiva_de_ponches(regimenes):
-    """Hallazgo (D01): el estimador de déficits de §1.3 mide los ponches entre los terceros outs REGISTRADOS."""
-    (pt_a, v_a), (pt_b, v_b) = regimenes["mcar"], regimenes["mnar"]
-    est_a = pt_a["todas_las_de_2_outs"]["pi_k"]["estimado"]
-    est_b = pt_b["todas_las_de_2_outs"]["pi_k"]["estimado"]
-    assert v_b["pi_k"] - v_a["pi_k"] > 0.35                    # las verdades sembradas difieren mucho...
-    assert abs(est_b - est_a) < 0.2                            # ...y el estimador casi no se entera
-    assert est_b < v_b["pi_k"] - 0.25                          # y subestima claramente cuando el ponche se pierde más
-    assert 0.15 < est_a < 0.5 and 0.15 < est_b < 0.5           # ≈ fracción de ponches entre los outs
+def test_adr016_i_sin_perdida_theta_es_casi_cero_y_la_tasa_de_P_difiere_por_cubeta(sin_perdida):
+    """Reproduce la falla real de v2.5: con ℓ = 0 la tasa de out faltante igual difiere > 3 pp entre cubetas."""
+    _d, v, mo = sin_perdida
+    assert mo["prop16"]["global"]["theta_hat"] <= 0.05
+    assert mo["prop16"]["global"]["ic95"]["theta_hat"][1] <= 0.05
+    assert mo["informativas"]["rango_pp"] > 3.0                                  # el antiguo G0.8 habría fallado
+    assert mo["G09"]["mecanismo"] == "U" and mo["mecanismo_outs"] == "U"
+    assert mo["G08p"]["ok"] and mo["perdida_ignorable"] is True                  # G0.8′ pasa: no falta ningún lanzamiento
+    assert sum(v["perdidos"].values()) == 0
+    por = {r["cubeta"]: r for r in mo["informativas"]["out_faltante_por_cubeta"]}
+    assert por["Extreme Altitude"]["tasa_out_faltante"] > por["No Altitude"]["tasa_out_faltante"]   # más tráfico, más dobles matanzas
 
 
-def test_adr015_g08_la_perdida_uniforme_pasa_y_una_diferencia_por_cubeta_se_detecta(regimenes):
-    pt, _ = regimenes["mcar"]
-    assert pt["rango_pp"] < CFG["f00"]["gates"]["g08_rango_pp"]
-    from pitcheo.io import leer_diccionario
-    from pitcheo.limpieza import limpiar
-    d0, _ = generar(30, 8, con_verdad=True, p_perdida_cubeta={"Extreme Altitude": 2.0})
-    d, _ = limpiar(d0, leer_diccionario(CFG.ruta("diccionario")), CAT, CFG["f00"])
-    con = qa.analisis_perdida_turnos(d, 4, 20, 1)
-    por = {r["cubeta"]: r["tasa_turno_final_perdido"] for r in con["por_cubeta"]}
-    assert con["rango_pp"] > 3 and por["Extreme Altitude"] > 1.5 * por["No Altitude"]
+def test_adr016_simulador_dobles_matanzas_mal_contadas_calibradas(sin_perdida):
+    d, v, _ = sin_perdida
+    por_juego = v["dobles_matanzas"] / d["game_anon_id"].n_unique()
+    assert 1.4 <= por_juego <= 2.4                                                # calibrado a ≈ 1.6–2.0 por juego
+    assert 0.85 <= v["dobles_matanzas_como_1_out"] / v["dobles_matanzas"] <= 0.99   # OutsOnPlay = 1 en ~93 %
+    k = d.filter(pl.col("evento_terminal") == "K")["OutsOnPlay"]
+    assert (k == 1).all()                                                        # el out del ponche es siempre 1
+
+
+def test_adr016_ii_la_perdida_sembrada_se_recupera_con_r_hat():
+    """ℓ = (0, 3, 6) % por cubeta → r̂_b recupera ℓ_b con ±1 pp (300 juegos: sobran medias entradas con Z = 1)."""
+    ell = {"No Altitude": 0.0, "Medium Altitude": 0.03, "Extreme Altitude": 0.06}
+    d0, v = generar(300, 11, con_verdad=True, perdida_cubeta=ell)
+    d = _limpio(d0)
+    mo = qa.mecanismo_outs(d, Q, CFG["f00"]["gates"], 4, CFG["seed"])
+    por = {r["cubeta"]: r for r in mo["prop16"]["por_cubeta"]}
+    for cub, l_b in ell.items():
+        assert abs(por[cub]["r_hat"] - l_b) <= 0.01, (cub, por[cub]["r_hat"], l_b)
+    assert por["Extreme Altitude"]["r_hat"] > por["Medium Altitude"]["r_hat"] > por["No Altitude"]["r_hat"]
+    assert sum(v["perdidos"].values()) > 0
+    assert mo["prop17"]["W"]["2"] > 0                                            # la pérdida distinta por cubeta ensancha W
+
+
+def test_adr016_iii_extra_innings_con_corredor_colocado_no_entran_en_T():
+    d0 = generar(120, 5, p_extra=0.6, p_pickoff_fantasma=1.0)
+    d = _limpio(d0)
+    t_todas = qa._medias_con_eventos(d)
+    extras = t_todas.filter((pl.col("Inning") > 9) & ~pl.col("final") & (pl.col("outs") == 2))
+    assert extras.height > 0                                    # el corredor puesto out sin lanzamiento deja 2 outs y Z = 1
+    T, pasos = qa.conjunto_T(d)
+    assert T.filter(pl.col("Inning") > 9).height == 0 and T["PZ"].sum() == 0
+    assert {p["filtro"]: p for p in pasos}["Inning ≤ 9"]["excluye"] > 0
+    assert qa.prop16(T, 30, 1)["global"]["r_hat"] == 0.0         # con ℓ = 0 y sin extras, r̂ = 0
+
+
+# --------------------------------------------------------------------------
+# Corroboraciones (a)-(e) y el paquete completo de correr_extras
+# --------------------------------------------------------------------------
+def test_adr016_corroboraciones_informativas_sobre_el_simulador(sin_perdida):
+    _d, _v, mo = sin_perdida
+    c = mo["corroboraciones"]
+    # (a) U = doble matanza = rodado: P tiene muchos más rodados que T∖P.
+    assert c["a_rodados"]["definicion"] == "hit_type == GroundBall"
+    assert c["a_rodados"]["P"]["pct"] > c["a_rodados"]["T_menos_P"]["pct"] + 20
+    # (b) U no quita lanzamientos: Outs previo nunca arranca > 0 y la mayoría no tiene huecos.
+    assert c["b_outs_previo"]["P"]["pct_min_outs_mayor_0"] == 0.0 and c["b_outs_previo"]["T_menos_P"]["pct_hueco_en_outs"] < 5
+    # (c) logit: ORs por cubeta con IC, Extreme > 1 contra No Altitude.
+    lg = c["c_logit"]
+    assert lg["base"] == "No Altitude" and lg["sin_N_h"]["Extreme Altitude"]["OR"] > 1.0
+    assert lg["sin_N_h"]["Extreme Altitude"]["ic95"][0] < lg["sin_N_h"]["Extreme Altitude"]["OR"] < \
+        lg["sin_N_h"]["Extreme Altitude"]["ic95"][1]
+    assert lg["sin_N_h"]["convergio"] is True
+    # (d) jugadas con OutsOnPlay >= 2: solo ~7 % de las dobles matanzas; la fracción registrada es pequeña.
+    assert c["d_dobles"]["tasa_mlb_ref_por_juego"] == 1.63 and 0 < c["d_dobles"]["fraccion_registrada"] < 0.2
+    assert {f["evento"] for f in c["d_dobles"]["por_evento"]} == {"OUT_BIP"}
+    # (e) |P| por juego: un evento de juego a tasa constante → dispersión de Pearson ≈ 1.
+    e = c["e_poisson"]
+    assert 0.7 < e["dispersion_phi"] < 1.4 and sum(h["juegos"] for h in e["histograma"]) == e["juegos"]
+
+
+def test_adr016_corroboracion_a_cae_a_angulo_si_no_hay_rodados(mini):
+    d = mini.with_columns(pl.lit(None, dtype=pl.Utf8).alias("hit_type"), pl.lit(5.0).alias("Angle"),
+                          pl.lit("OUT_BIP").alias("evento_terminal"))
+    T, _ = qa.conjunto_T(d)
+    r = qa.corr_a_rodados(d, T)
+    assert r["definicion"] == "Angle < 10°"
+    assert r["P"]["pct"] == 100.0 and r["T_menos_P"]["pct"] == 100.0
+
+
+def test_adr016_correr_extras_trae_el_paquete_de_adr016_y_no_pi_k(sin_perdida):
+    d, _v, _mo = sin_perdida
+    ex = qa.correr_extras(d, CAT, Q, CFG["f00"]["gates"], CFG["fisica"], seed=CFG["seed"])
+    assert "perdida_turnos" not in ex
+    mo = ex["mecanismo_outs"]
+    assert mo["mecanismo_outs"] in {"U", "L", "mezcla"} and isinstance(mo["perdida_ignorable"], bool)
+    assert set(mo["T"]) >= {"pasos", "medias_entradas", "P", "Z", "PZ"}
+    assert "pi_k" not in repr(ex)

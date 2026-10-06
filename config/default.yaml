@@ -33,7 +33,8 @@ f00:
   umbral_moda: 0.95            # participación mínima de la moda del lanzador / bateador
   umbral_relside: 0.99         # concordancia mínima signo(RelSide) <-> mano, aprendida de los datos
   umbral_lado_ambos: 0.05      # bateador que muestra ambos lados >= 5 % cada uno -> opuesta al lanzador
-  # Compuertas (ROADMAP §4-F0): v2.4 (ADR-010 a 013) enmendadas en v2.5 (ADR-010 enmienda, 014, 015).
+  # Compuertas (ROADMAP §4-F0): v2.4 (ADR-010 a 013), v2.5 (ADR-010 enmienda, 014) y v2.6 (ADR-016: G0.8′ y G0.9).
+  # Reglas y umbrales de v2.6 FIJADOS por el orquestador (§1.4) antes de la corrida: no se ajustan.
   gates:
     g01_identidades_min: 0.999   # I1, I2
     g01_i6p_min: 0.995           # I6' (ADR-011: el árbol ya no depende de las banderas) + tabla de discrepancias
@@ -45,7 +46,10 @@ f00:
     g07_mediana_ft: 0.05         # ADR-014: |error| mediano en PlateLocSide y PlateLocHeight
     g07_p99_ft: 0.3              # ... y p99
     g07_zonetime_s: 0.005        # ... y mediana de |ZoneTime - (t_p - t_s)|
-    g08_rango_pp: 3.0            # ADR-015: máx - mín de la tasa de turno final perdido entre cubetas (puntos %)
+    g08_k_ic: 3.92               # G0.8′ (Prop. 17): W(Γ=2) <= 3.92·SE_ref (ancho del IC95 muestral, Imbens-Manski)
+    g08_k_ignorable: 1.0         # ... y si además W(Γ=2) <= 1·SE_ref -> qa.perdida_ignorable = true
+    g09_u_max: 0.25              # G0.9: U dominante si el IC95 superior de θ̂ <= 0.25
+    g09_l_min: 0.50              # ... L dominante si el IC95 inferior >= 0.50; mezcla en otro caso (se reporta, no falla)
 
 # QA por identidades (ROADMAP §4-F0). Las tolerancias del ROADMAP no se tocan.
 qa:
@@ -57,7 +61,16 @@ qa:
   i8_min_filas: 50               # filas mínimas por mano y tipo para evaluar I8
   i7_outs_por_media_entrada: 3
   poli_piso: 1.0                 # ft/s^2 (ft/s en c1): piso del denominador al estimar t_s
-  bootstrap_n: 1000              # remuestreos de medias entradas para el IC de pi_K (ADR-015)
+  i8_mediana_min_in: 2.0         # I8: si la mediana de |HorzBreak| de una mano es menor, la falla es "no informativa"
+  bootstrap_n: 1000              # remuestreos de juegos (dentro de cada cubeta) para los IC de la Prop. 16 (ADR-016)
+  cubeta_extrema: Extreme Altitude   # contraste de la Prop. 17: Extreme − No
+  cubeta_base: No Altitude
+  gammas: [1, 2]                 # sensibilidad Γ de la Prop. 16 (W(Γ)); la regla G0.8′ usa Γ = 2
+  dobles_matanzas_por_juego_ref: 1.63   # MLB 2023 (132 por equipo en 162 juegos): solo referencia en la corroboración (d)
+  # Los escribe `pitcheo f00 --aplicar` con lo que midió F0 (ADR-016); los leen F4, F6 y F8. Valores de partida
+  # CONSERVADORES hasta la corrida real: mezcla (ω por cubeta con π ∈ {0,1}) y pérdida no ignorable (Imbens-Manski).
+  mecanismo_outs: mezcla          # U | L | mezcla  (G0.9)
+  perdida_ignorable: false        # G0.8′: true si W(Γ=2) <= SE_ref
 
 # Generador sintético (src/pitcheo/sintetico.py). NO son los datos reales: reproduce
 # el ESQUEMA y los casos sucios de reports/FASE_00_0.md y cumple las identidades I1-I10.

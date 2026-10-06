@@ -235,6 +235,10 @@ de **control de calidad de datos**, no hipótesis; F1 aún no ocurre.
 
 ## ADR-015 — Los outs que faltan son turnos finales perdidos, y no al azar
 
+> **Estado: reemplazada en lo esencial por ADR-016 (ROADMAP §1.4).** G0.8 se sustituye por G0.8′, el estimador `π̂_K` se
+> retira y «turno final perdido» pasa a llamarse «out faltante (sin turno incompleto)». Se conserva el texto original como
+> historia de la decisión.
+
 - **Contexto.** De las 4 763 medias entradas con 2 outs, solo el 9.5 % deja un turno incompleto (lo que dejaría un robo o un
   pickoff con 2 outs). El 90 % restante pierde **el último turno completo**: todos sus lanzamientos faltan. Comparadas con
   las de 3 outs tienen 0.525 ponches menos por media entrada y solo 0.388 outs en juego menos; si los turnos perdidos fueran
@@ -253,3 +257,54 @@ de **control de calidad de datos**, no hipótesis; F1 aún no ocurre.
   el estimador de déficits devuelve ≈ 0.34, 0.30 y 0.30. Mide los ponches entre los terceros outs **registrados** y es
   insensible a la pérdida selectiva, así que `π̂_K` solo debe leerse como una estimación gruesa; el reporte añade los
   **ponches por out registrado** (2 vs 3 outs) y la dispersión por juego para contrastar la hipótesis.
+
+## ADR-016 — Outs no contabilizados: `OutsOnPlay` no es un registro fiel de los outs
+
+- **Contexto (ROADMAP §1.4, hallazgo 4).** En la tercera corrida real G0.8 falló: la tasa de medias entradas no finales con 2
+  outs registrados y sin turno incompleto es 9.87 / 11.71 / 14.27 % (No / Medium / Extreme), con rango 4.40 pp estable en los tres
+  años. La clasificación «turno final perdido» suponía que `OutsOnPlay` cuenta todos los outs. El dato lo contradice: solo ~280
+  jugadas tienen `OutsOnPlay ≥ 2` (a tasa MLB se esperarían ≈ 3 470 dobles matanzas, luego ~92 % se registra como 1 out),
+  `OutsOnPlay = 1` en el 100 % de los 30 648 ponches (el campo se asigna, no se registra), los conteos de medias entradas con 2
+  outs por juego siguen una Poisson (φ = 1.10: un evento de juego a tasa constante, no una falla de sensor concentrada), su
+  composición encaja con la doble matanza (K ≈ 0.37, OUT_BIP ≈ 1.6 y más BB, porque exige corredores) y el gradiente por cubeta
+  tiene explicación física (más corredores en altura, más oportunidades de doble matanza).
+- **Decisión.** Una media entrada no final con 2 outs registrados y todos sus turnos terminados se llama **«out faltante (sin
+  turno incompleto)»** y se descompone en dos mecanismos con la **Prop. 16**: **U** (out no contabilizado: están todos los
+  lanzamientos, pero un out real no está en `OutsOnPlay`) y **L** (turno perdido: faltan todos los lanzamientos de un turno que
+  terminó en out). U no sesga ningún outcome por lanzamiento; L sí.
+  - **Conjunto T:** medias entradas no finales, `Inning` ≤ 9, consistentes (outs registrados ≤ 3) y sin turno incompleto; el
+    reporte dice cuántas excluye cada filtro (en cascada y aplicado solo). `O_h = Σ OutsOnPlay`, `P = {O_h = 2}`, `N_h` = turnos
+    con evento 1B, 2B, 3B, BB, HBP o ROE y `Z = 1[N_h = 0]`.
+  - **Prop. 16** (supuestos S1: un U exige corredor, luego `P(Z=1 | U) = 0`; S2: L quita un turno de out y es independiente de
+    `Z` dentro de la cubeta): `f_b = P(Z | b)`, `p⁰_b = P(P ∧ Z | b)`, **`r̂_b = p⁰_b / f_b`** y **`θ̂_b = r̂_b / P(P | b)`**, por cubeta y
+    global, con IC95 por bootstrap de **juegos** (1 000 réplicas, semilla de config; se remuestrea dentro de cada cubeta y la
+    tabla va ordenada de forma determinista).
+  - **Prop. 17:** `m̃_b` = turnos por media entrada de `T_b`; `n_b` = turnos de la cubeta; `κ̄` = K / turnos global (una sola
+    cifra, no por cubeta; tanto `m̃_b`, `n_b` como `κ̄` se calculan sobre T). `W(Γ) = Σ_{b ∈ {Extreme, No}} Γ·r̂_b / (m̃_b + Γ·r̂_b)`
+    con `Γ = 1` y `Γ = 2`, y `SE_ref = √(κ̄(1−κ̄)(1/n_Ext + 1/n_No))`.
+  - **Reglas fijadas por el orquestador (no se ajustan; viven en `config/default.yaml`).** **G0.9** (mecanismo; se reporta siempre
+    y no falla): `θ̂` global con IC95; **U dominante** si el IC95 superior ≤ 0.25, **L dominante** si el inferior ≥ 0.50, **mezcla**
+    en otro caso (sin dato para clasificar → mezcla, la ruta conservadora). **G0.8′** (sustituye a G0.8): `W(Γ=2) ≤ 3.92·SE_ref`;
+    si además `W(Γ=2) ≤ SE_ref` → `qa.perdida_ignorable = true`; si pasa sin eso → `false` y F8 reporta los contrastes con intervalo de
+    Imbens–Manski; **si falla → discrepancia, no se sigue a F1**.
+  - `pitcheo f00 --aplicar` escribe `qa.mecanismo_outs ∈ {U, L, mezcla}` y `qa.perdida_ignorable` (bool) en `config/default.yaml`,
+    como ya hacía con `y_p` y el signo (ADR-014); los leen F4, F6 y F8. Los valores de partida son los conservadores (`mezcla`, `false`).
+  - **Corroboraciones informativas (no son compuertas):** (a) % de rodados entre los OUT_BIP con `Outs` previo ∈ {0, 1}, P vs. T∖P;
+    (b) columna `Outs` en P vs. T∖P (mínimo > 0, out terminal con `Outs` = 2, huecos); (c) logit de `1[h ∈ P]` sobre cubeta + año, sin
+    y con `min(N_h, 5)`, errores agrupados por juego; (d) jugadas con `OutsOnPlay ≥ 2` contra las dobles matanzas esperadas a la tasa MLB
+    (solo referencia); (e) `|P|` por juego contra una Poisson (`docs/figuras/f00/P_por_juego_vs_poisson.png`).
+  - **Limpieza del reporte:** «turno final perdido» → «out faltante (sin turno incompleto)»; se elimina `π̂_K` del reporte y del
+    Bloque (la tabla de déficits queda como informativa, igual que la tasa por cubeta del antiguo G0.8); I3 se marca «sustituida por
+    G0.2 (ADR-010)»; I8 reporta, para cada tipo que falla, la mediana de `|HorzBreak|` por mano y lo marca «no informativo» si alguna es
+    < 2 in (el tipo casi no rompe en horizontal y el signo de su media es ruido). No cambia el cumplimiento de I8.
+  - Se **acepta D01**: `π̂_K` por déficits no está identificado y se retira. No se implementan pesos `ω` (F4).
+- **Alternativas.** Seguir leyendo el out faltante como turno perdido (el dato real lo contradice en cinco puntos); descartar las
+  medias entradas de 2 outs (selecciona contra el tráfico de corredores, que difiere por cubeta); usar la tasa de P por cubeta como
+  compuerta (mide U + L juntos y falla aunque no falte ningún lanzamiento).
+- **Consecuencias (§1.4).** U dominante: pesos `ω` de ADR-015 retirados (no falta ningún lanzamiento y `ω` inventaría ponches), F4.1
+  usa el modelo **C** (todas las de T más el regresor `u_h = 3 − O_h` con `w_u ≤ 0`) como principal y el criterio A como
+  sensibilidad, F4.2 sin pesos, G4.6 = A vs. C y G6.5 retirada. Mezcla o L: `ω` **por cubeta** con `M_b = r̂_b·|T_b|` y `π ∈ {0, 1}`
+  (cotas), **sin** `π̂_K`; A principal y C sensibilidad. Si `perdida_ignorable = false`, todo contraste de outcomes observados entre
+  cubetas se reporta además con intervalo de Imbens–Manski.
+- **Transparencia de pre-registro.** Los diagnósticos usan el tráfico de corredores por cubeta, que no es el estadístico de
+  ninguna H1–H6; H3 condiciona en EV×LA y usa valor de batazo.

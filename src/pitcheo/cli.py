@@ -215,9 +215,10 @@ def cmd_f00(a, cfg):
         rep_dir=(out / "reports") if out else cfg.ruta("reportes"),
         log_dir=(out / "reports" / "logs") if out else cfg.ruta("logs"),
         fig_dir=(out / "figuras" / "f00") if out else cfg.ruta("figuras") / "f00")
-    if a.aplicar and res.get("calibracion_elegida") and not a.sintetico:
-        r = fase00.aplicar_calibracion(cfg.archivo, res["calibracion_elegida"])
-        print(f"config actualizado ({cfg.archivo.name}): {r}" if r["cambio"] else "config ya coincide con la calibración")
+    if a.aplicar and not a.sintetico and (res.get("calibracion_elegida") or res.get("mecanismo_outs")):
+        r = fase00.aplicar_config(cfg.archivo, res["calibracion_elegida"], res["mecanismo_outs"],
+                                  res["perdida_ignorable"])
+        print(f"config actualizado ({cfg.archivo.name}): {r}" if r["cambio"] else "config ya coincide con lo medido")
     print(f"\nreporte -> {res['reporte']}")
     if not res["ok"]:
         print("\n[COMPUERTA FALLIDA] ver el Bloque para el orquestador en el reporte.")
@@ -247,7 +248,8 @@ def main(argv=None):
     s.add_argument("--sintetico", type=int, default=0, metavar="N",
                    help="genera N juegos sintéticos (3 formatos) y corre F0 sobre ellos")
     s.add_argument("--aplicar", action="store_true",
-                   help="escribe en config/default.yaml el y_p y el signo de PlateLocSide que eligieron los datos (ADR-014)")
+                   help="escribe en config/default.yaml lo que midió F0: el y_p y el signo de PlateLocSide (ADR-014) y "
+                        "qa.mecanismo_outs y qa.perdida_ignorable (ADR-016, G0.9 y G0.8′)")
     s.add_argument("--out", default=None,
                    help="redirige pitches, reportes, logs y figuras a este directorio (con --sintetico: "
                         "data/interim/sintetico)")

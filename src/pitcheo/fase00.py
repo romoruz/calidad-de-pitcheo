@@ -64,14 +64,14 @@ def _ge(v, minimo) -> bool:
 
 
 def evaluar_gates(rep: dict, q: dict | None, g: dict, extras: dict | None = None, fis: dict | None = None) -> dict:
-    """G0.1-G0.8 de ROADMAP §4-F0 (v2.4: ADR-010 a 013; v2.5: ADR-010 enmendado, 014 y 015)."""
+    """G0.1-G0.9 de ROADMAP §4-F0 (v2.4: ADR-010 a 013; v2.5: ADR-010 enmendado y 014; v2.6: ADR-016, G0.8′ y G0.9)."""
     fis = fis or {}
     sin_regla = len(rep["sin_regla"])
     gates: dict = {"G0.5": {"ok": sin_regla == 0, "detalle": f"valores sin regla: {sin_regla}"}}
     if q is None or extras is None:
         for k, txt in (("G0.1", "I1, I2, I6′"), ("G0.2", "polinomios"), ("G0.3", "diagnóstico de 2 outs"),
                        ("G0.4", "I9"), ("G0.6", "exclusiones"), ("G0.7", "marco temporal 9P"),
-                       ("G0.8", "pérdida de turnos por cubeta")):
+                       ("G0.8′", "cota del sesgo por pérdida de datos"), ("G0.9", "mecanismo de los outs faltantes")):
             gates[k] = {"ok": False, "detalle": f"no evaluada: hay valores sin regla ({txt})"}
         return dict(sorted(gates.items()))
     i1, i2, i6 = (q[k]["cumplimiento"] for k in ("I1", "I2", "I6p"))
@@ -97,7 +97,7 @@ def evaluar_gates(rep: dict, q: dict | None, g: dict, extras: dict | None = None
     gates["G0.3"] = {"ok": "n" in dos and cla.get("n") is not None,
                      "detalle": (f"diagnóstico de las {dos.get('n', 0):,} medias entradas de 2 outs producido y clasificado "
                                  f"(no finales: {cla.get('n', 0):,}): turno incompleto {cla.get('pct_turno_incompleto')} % "
-                                 f"vs turno final perdido {cla.get('pct_turno_final_perdido')} %")}
+                                 f"vs out faltante (sin turno incompleto) {cla.get('pct_out_faltante')} %")}
     gates["G0.4"] = {"ok": q["I9"]["cumplimiento"] == g["g04_i9"],
                      "detalle": f"I9 {_pct(q['I9']['cumplimiento'])} de {q['I9']['n']:,} juegos con cubeta"}
     em, ec = rep["exclusiones"]["modelo"], rep["exclusiones"]["cadena"]
@@ -126,15 +126,24 @@ def evaluar_gates(rep: dict, q: dict | None, g: dict, extras: dict | None = None
     else:
         gates["G0.7"] = {"ok": False, "detalle": "no se pudo calibrar el marco temporal de los 9P (pocos datos)"}
 
-    pt = extras["perdida_turnos"]
-    rango = pt.get("rango_pp")
-    tasas = ", ".join(f"{r['cubeta']} {100 * r['tasa_turno_final_perdido']:.2f} %" for r in pt["por_cubeta"]
-                      if r["cubeta"] != "(sin cubeta)")
-    gates["G0.8"] = {"ok": rango is not None and rango <= g["g08_rango_pp"],
-                     "detalle": (f"tasa de turno final perdido por cubeta (todos los años): {tasas} · máx − mín = "
-                                 f"{_f(rango, 3)} pp (máx. {g['g08_rango_pp']} pp)"
-                                 + ("" if rango is not None and rango <= g["g08_rango_pp"] else
-                                    " → **DISCREPANCIA: la pérdida de datos se confunde con la altitud; no se sigue a F1**"))}
+    mo = extras["mecanismo_outs"]
+    p17, g08, g09 = mo["prop17"], mo["G08p"], mo["G09"]
+    if p17.get("evaluable"):
+        e, n = p17["cubeta_extrema"], p17["cubeta_base"]
+        detalle = (f"Prop. 17: W(Γ=1) {_f(p17['W']['1'])} · **W(Γ=2) {_f(p17['W']['2'])}** vs "
+                   f"{g['g08_k_ic']}·SE_ref = {_f(g['g08_k_ic'] * p17['SE_ref'])} y 1·SE_ref = {_f(p17['SE_ref'])} "
+                   f"(κ̄ {_f(p17['kappa_bar'])}, n {e} {p17['n_extrema']:,} / {n} {p17['n_base']:,}) · r̂ {e} "
+                   f"{_pct(p17['r_hat'][e])} / {n} {_pct(p17['r_hat'][n])} · "
+                   f"**perdida_ignorable = {str(g08['perdida_ignorable']).lower()}**"
+                   + ("" if g08["ok"] else " → **DISCREPANCIA: el ancho del conjunto identificado supera al IC95 "
+                                           "muestral; no se sigue a F1**"))
+    else:
+        detalle = f"contraste {p17.get('cubeta_extrema')} − {p17.get('cubeta_base')} no evaluable (falta una cubeta)"
+    gates["G0.8′"] = {"ok": bool(g08["ok"]), "detalle": detalle}
+    ic = g09["ic95"]
+    gates["G0.9"] = {"ok": True, "detalle": (
+        f"θ̂ global = {_f(g09['theta_global'])} IC95 {_ic_txt(ic)} → **{g09['mecanismo']}** "
+        f"(U si sup ≤ {g['g09_u_max']} · L si inf ≥ {g['g09_l_min']} · mezcla en otro caso); se reporta siempre, no falla")}
     return dict(sorted(gates.items()))
 
 
@@ -149,6 +158,15 @@ def _pct(v) -> str:
 # --------------------------------------------------------------------------
 # Reporte
 # --------------------------------------------------------------------------
+def _i8_tipo(tipo: str, v: dict) -> str:
+    """I8 por tipo: ✓, ✗ con las medianas de |HorzBreak| por mano, o ✗ «no informativo» si alguna es < umbral."""
+    if v.get("signo_opuesto"):
+        return f"{tipo}=✓"
+    md, mz = v.get("mediana_abs_derecho_in"), v.get("mediana_abs_zurdo_in")
+    marca = " no informativo" if v.get("no_informativo") else ""
+    return f"{tipo}=✗ (|HB| mediana D {_f(md, 1)} / Z {_f(mz, 1)} in{marca})"
+
+
 def _tabla(filas: list[dict], cols: list[str]) -> list[str]:
     if not filas:
         return ["_(vacía)_"]
@@ -248,16 +266,21 @@ def _sec_adr011(disc: dict) -> list[str]:
                              ["derivada", "derivada_valor", "bandera", "bandera_valor", "pitch_call_h", "n"]) + [""]
 
 
-def _sec_adr012_015(dos_outs: dict, pt: dict) -> list[str]:
+def _ic_txt(ic, d: int = 3, escala: float = 1.0) -> str:
+    return "—" if not ic else f"[{ic[0] * escala:.{d}f}, {ic[1] * escala:.{d}f}]"
+
+
+def _sec_adr012_016(dos_outs: dict, mo: dict) -> list[str]:
     d2, d3, cla = dos_outs["dos_outs"], dos_outs["tres_outs"], dos_outs["clasificacion_no_finales"]
-    L = ["## ADR-012 / ADR-015 — medias entradas de 2 outs: ¿robo o turno final perdido?", "",
+    L = ["## ADR-012 / ADR-016 — medias entradas de 2 outs registrados: out faltante", "",
          ("Sin orden de lanzamientos, un turno es **incompleto** si hay lanzamientos de un bateador de la media entrada "
-         "sin ningún evento terminal (lo que dejaría un robo o un pickoff con 2 outs). Si todos sus turnos terminan, "
-         "la media entrada perdió su **último turno completo**."), ""]
+          "sin ningún evento terminal (lo que dejaría un robo o un pickoff con 2 outs). Si todos sus turnos terminan, la "
+          "media entrada tiene un **out faltante (sin turno incompleto)**: `OutsOnPlay` no lo cuenta (U) o se perdió con "
+          "su turno (L). La Prop. 16 de más abajo los separa."), ""]
     if d2.get("n"):
         L += [(f"**Clasificación de las {cla['n']:,} medias entradas NO finales de 2 outs:** turno incompleto "
-              f"{cla['turno_incompleto']:,} (**{cla['pct_turno_incompleto']} %**) · turno final perdido "
-              f"{cla['turno_final_perdido']:,} (**{cla['pct_turno_final_perdido']} %**)."), ""]
+               f"{cla['turno_incompleto']:,} (**{cla['pct_turno_incompleto']} %**) · out faltante (sin turno incompleto) "
+               f"{cla['out_faltante']:,} (**{cla['pct_out_faltante']} %**)."), ""]
 
         def cuant(g):
             c = g["lanzamientos_por_media_entrada"]
@@ -267,7 +290,7 @@ def _sec_adr012_015(dos_outs: dict, pt: dict) -> list[str]:
             ("% que es la última del juego", d2["pct_ultima_del_juego"], d3["pct_ultima_del_juego"]),
             ("lanzamientos por media entrada (mediana / media)", cuant(d2), cuant(d3)),
             ("% con ≥1 turno incompleto", d2["pct_con_turno_incompleto"], d3["pct_con_turno_incompleto"]),
-            ("**ponches por out registrado**", _f(d2["ponches_por_out_registrado"], 3),
+            ("ponches por out registrado", _f(d2["ponches_por_out_registrado"], 3),
              _f(d3["ponches_por_out_registrado"], 3)),
         ] + [(f"eventos {e} por media entrada", d2["eventos_terminales_por_media_entrada"][e],
               d3["eventos_terminales_por_media_entrada"][e]) for e in d2["eventos_terminales_por_media_entrada"]] + [
@@ -277,74 +300,157 @@ def _sec_adr012_015(dos_outs: dict, pt: dict) -> list[str]:
     else:
         L += ["_No hay medias entradas de 2 outs._", ""]
 
-    L += ["### Tasa de turno final perdido por cubeta (G0.8)", "",
-          ("Sobre las medias entradas **no finales**; IC de Wilson al 95 %. Si difiere entre cubetas, la pérdida de "
-          "datos se confunde con la altitud en cualquier comparación de outcomes (F8)."), ""]
+    # ---- ADR-016: conjunto T, Prop. 16 y Prop. 17 ----
+    L += ["## ADR-016 — ¿outs no contabilizados (U) o turnos perdidos (L)?", "",
+          ("**Conjunto T** = medias entradas no finales, `Inning` ≤ 9, consistentes (outs registrados ≤ 3) y sin turno "
+           "incompleto. `O_h` = Σ `OutsOnPlay`; **P** = {O_h = 2}; `N_h` = turnos con evento 1B, 2B, 3B, BB, HBP o ROE; "
+           "**Z** = {N_h = 0}. Bajo S1 (un U exige un corredor, luego Z = 0) y S2 (L no depende de Z): "
+           "r_b = p⁰_b / f_b, con f_b = P(Z | b), p⁰_b = P(P ∧ Z | b) y θ_b = r_b / P(P | b)."), "",
+          "| filtro | excluye (en cascada) | no lo cumplen (solo este filtro) | quedan |", "|---|---|---|---|"]
+    for p in mo["T"]["pasos"]:
+        L.append(f"| {p['filtro']} | {_n(p['excluye'])} | {_n(p['excluye_solo_este'])} | {p['quedan']:,} |")
+    t = mo["T"]
+    L += ["", f"T: {t['medias_entradas']:,} medias entradas · |P| = {t['P']:,} · |Z| = {t['Z']:,} · |P ∧ Z| = {t['PZ']:,}", ""]
+
+    p16 = mo["prop16"]
+    L += [(f"### Prop. 16 por cubeta y global (IC95 por bootstrap de {p16['juegos']:,} juegos, "
+           f"{p16['bootstrap']['n']} réplicas, semilla {p16['bootstrap']['seed']})"), "",
+          "| cubeta | medias entradas | P % | f_b = Z % | p⁰_b % | **r̂_b %** [IC95] | **θ̂_b** [IC95] |",
+          "|---|---|---|---|---|---|---|"]
+    for r in p16["por_cubeta"] + [p16["global"]]:
+        ic = r["ic95"]
+        L.append(f"| {r['cubeta']} | {r['medias_entradas']:,} | {_f(r['tasa_P'] and 100 * r['tasa_P'], 2)} | "
+                 f"{_f(r['f'] and 100 * r['f'], 2)} | {_f(100 * r['p0'], 3)} | "
+                 f"**{_f(r['r_hat'] and 100 * r['r_hat'], 3)}** {_ic_txt(ic['r_hat'], 3, 100)} | "
+                 f"**{_f(r['theta_hat'], 3)}** {_ic_txt(ic['theta_hat'])} |")
+    L += [""]
+    g9 = mo["G09"]
+    L += [(f"**G0.9 (mecanismo):** θ̂ global = {_f(g9['theta_global'])} IC95 {_ic_txt(g9['ic95'])} → "
+           f"**{g9['mecanismo']}** ({g9['regla']}). Se reporta siempre; no falla."), ""]
+
+    p17 = mo["prop17"]
+    L += ["### Prop. 17 — cota del sesgo del contraste Extreme − No", ""]
+    if p17.get("evaluable"):
+        e, n = p17["cubeta_extrema"], p17["cubeta_base"]
+        L += [f"- m̃_b (turnos por media entrada de T_b): {e} {_f(p17['m_tilde'][e])} · {n} {_f(p17['m_tilde'][n])}",
+              (f"- n_b (turnos): {e} {p17['n_extrema']:,} · {n} {p17['n_base']:,} · κ̄ (K por turno, global) = "
+              f"{_f(p17['kappa_bar'], 5)}"),
+              (f"- **W(Γ=1) = {_f(p17['W']['1'], 5)} · W(Γ=2) = {_f(p17['W']['2'], 5)}** · SE_ref = {_f(p17['SE_ref'], 5)} "
+              f"· 3.92·SE_ref = {_f(3.92 * p17['SE_ref'], 5)} · W(Γ=2)/SE_ref = {_f(mo['G08p'].get('W_sobre_SE_ref'), 3)}"),
+              (f"- **G0.8′:** {'pasa' if mo['G08p']['ok'] else 'FALLA (discrepancia, no se sigue a F1)'} · "
+               f"`perdida_ignorable` = **{str(mo['G08p']['perdida_ignorable']).lower()}** "
+               f"({'F8 reporta los contrastes con intervalo de Imbens–Manski' if not mo['G08p']['perdida_ignorable'] else 'W(Γ=2) ≤ SE_ref'})"),
+              ""]
+    else:
+        L += ["_No evaluable: falta la cubeta extrema o la base._", ""]
+
+    # ---- corroboraciones (a)-(e): informativas ----
+    c = mo["corroboraciones"]
+    L += ["### Corroboraciones (informativas, no son compuertas)", "",
+          (f"**(a) Rodados entre los OUT_BIP con `Outs` previo ∈ {{0, 1}}** ({c['a_rodados']['definicion']}): U (doble "
+          "matanza) predice más rodados en P que en T∖P; L, la misma mezcla."), ""]
+    L += _tabla([{"grupo": k, "n": v["n"], "rodados": v["k"], "%": v["pct"], "IC95 Wilson %": v["ic95_wilson_pct"]}
+                 for k, v in (("P", c["a_rodados"]["P"]), ("T∖P", c["a_rodados"]["T_menos_P"]))],
+                ["grupo", "n", "rodados", "%", "IC95 Wilson %"]) + [""]
+    L += [("**(b) Columna `Outs` (estado previo), P vs. T∖P.** U no quita lanzamientos: `Outs` es continuo y empieza en 0; "
+          "L deja huecos o arranca en 1."), ""]
+    L += _tabla([{"grupo": k, "medias entradas": v["n"], "% mín. Outs > 0": v["pct_min_outs_mayor_0"],
+                  "% out terminal con Outs = 2": v["pct_out_con_estado_2"], "% hueco en Outs": v["pct_hueco_en_outs"]}
+                 for k, v in (("P", c["b_outs_previo"]["P"]), ("T∖P", c["b_outs_previo"]["T_menos_P"]))],
+                ["grupo", "medias entradas", "% mín. Outs > 0", "% out terminal con Outs = 2", "% hueco en Outs"]) + [""]
+    lg = c["c_logit"]
+    L += [("**(c) Logit de 1[h ∈ P]** sobre cubeta + year, sin y con factor(min(N_h, 5)); errores agrupados por juego; "
+          f"OR contra {lg.get('base', '—')} (IC95). Si el OR cae al controlar por N_h, la diferencia es tráfico de "
+          "corredores."), ""]
+    if "error" in lg:
+        L += [f"_No se pudo ajustar: {lg['error']}_", ""]
+    else:
+        cubs = [k for k in lg["sin_N_h"] if k != "convergio"] if "error" not in lg["sin_N_h"] else []
+        filas = []
+        for cb in cubs:
+            fila = {"cubeta": cb}
+            for etq, clave in (("OR sin N_h", "sin_N_h"), ("OR con N_h", "con_N_h")):
+                v = lg[clave].get(cb)
+                fila[etq] = f"{v['OR']:.3f} {_ic_txt(v['ic95'], 2)}" if v else "—"
+            filas.append(fila)
+        L += _tabla(filas, ["cubeta", "OR sin N_h", "OR con N_h"])
+        sin_conv = [k for k in ("sin_N_h", "con_N_h") if lg[k].get("convergio") is False or "error" in lg[k]]
+        if sin_conv:
+            L += ["", (f"_Ajuste sin convergencia plena o con error en: {', '.join(sin_conv)} (típico si algún nivel de "
+                  "N_h casi no tiene P)._")]
+        L += [""]
+    dd = c["d_dobles"]
+    L += [(f"**(d) Jugadas con `OutsOnPlay` ≥ 2:** {dd['jugadas_con_2_o_mas_outs']:,} en {dd['juegos']:,} juegos; "
+           f"a la tasa MLB de referencia ({dd['tasa_mlb_ref_por_juego']} dobles matanzas por juego, solo referencia) se "
+           f"esperarían ≈ {dd['dobles_matanzas_esperadas_ref']:,.0f}: se registra el "
+           f"{_f(dd['fraccion_registrada'] and 100 * dd['fraccion_registrada'], 1)} %."), ""]
+    L += _tabla(dd["por_evento"], ["evento", "OutsOnPlay", "n"]) + [""]
+    pe = c["e_poisson"]
+    if pe.get("histograma"):
+        L += [(f"**(e) |P| por juego vs. Poisson** (figura `docs/figuras/f00/P_por_juego_vs_poisson.png`): {pe['juegos']:,} "
+               f"juegos · λ = {_f(pe['lambda'], 3)} · dispersión de Pearson φ = {_f(pe['dispersion_phi'], 2)} (≈ 1 = "
+               f"evento de juego a tasa constante; ≫ 1 = concentrado en algunos juegos) · P(≥1) observada "
+               f"{_f(pe['P_ge1']['observado'], 3)} vs Poisson {_f(pe['P_ge1']['poisson'], 3)} · P(>2) "
+               f"{_f(pe['P_gt2']['observado'], 3)} vs {_f(pe['P_gt2']['poisson'], 3)}"), ""]
+    else:
+        L += ["**(e)** No hay suficientes juegos con P para comparar con una Poisson.", ""]
+
+    # ---- informativas ----
+    inf = mo["informativas"]
+    L += ["### Tablas informativas", "",
+          ("**Out faltante (sin turno incompleto) por cubeta** (antiguo G0.8, ya no es compuerta): medias entradas no "
+           "finales, IC de Wilson al 95 %. Mezcla U y L; la Prop. 16 los separa."), ""]
     filas = [{"cubeta": r["cubeta"], "medias_entradas": r["medias_entradas"], "dos_outs": r["dos_outs"],
-              "turno_incompleto": r["turno_incompleto"], "turno_final_perdido": r["turno_final_perdido"],
-              "tasa_perdido_%": f"{100 * r['tasa_turno_final_perdido']:.3f}",
+              "turno_incompleto": r["turno_incompleto"], "out_faltante": r["out_faltante"],
+              "tasa_%": f"{100 * r['tasa_out_faltante']:.3f}",
               "ic95_wilson_%": f"[{100 * r['ic95_wilson'][0]:.3f}, {100 * r['ic95_wilson'][1]:.3f}]"}
-             for r in pt["por_cubeta"]]
+             for r in inf["out_faltante_por_cubeta"]]
     L += _tabla(filas, list(filas[0]) if filas else []) + ["",
-          (f"**Rango entre cubetas (máx − mín): {_f(pt.get('rango_pp'), 3)} pp** · M (turnos finales perdidos, no "
-          f"finales) = {pt['turnos_finales_perdidos_M']:,} de {pt['medias_entradas_no_finales']:,} medias entradas"), "",
-          "**Por cubeta y año:**", ""]
+          f"Rango entre cubetas (máx − mín): {_f(inf.get('rango_pp'), 3)} pp", "", "**Por cubeta y año:**", ""]
     filas = [{"cubeta": r["cubeta"], "year": r["year"], "medias_entradas": r["medias_entradas"],
-              "turno_final_perdido": r["turno_final_perdido"],
-              "tasa_perdido_%": f"{100 * r['tasa_turno_final_perdido']:.3f}",
+              "out_faltante": r["out_faltante"], "tasa_%": f"{100 * r['tasa_out_faltante']:.3f}",
               "ic95_wilson_%": f"[{100 * r['ic95_wilson'][0]:.3f}, {100 * r['ic95_wilson'][1]:.3f}]"}
-             for r in pt["por_cubeta_anio"]]
+             for r in inf["out_faltante_por_cubeta_anio"]]
     L += _tabla(filas, list(filas[0]) if filas else []) + [""]
-
-    L += ["### Déficits de eventos y π̂_K (ROADMAP §1.3)", "",
-          ("Déficit = media por media entrada de las de 3 outs − media de las de 2 outs; "
-          "π̂_K = d_K / (d_K + d_OUT_BIP + d_SAC). IC95 por bootstrap de medias entradas. **No se implementan los "
-          "pesos ω (eso es F4).**"), ""]
-    for nombre, clave in (("todas las de 2 outs (misma población que §1.3)", "todas_las_de_2_outs"),
-                          ("solo las de turno final perdido", "solo_turno_final_perdido")):
-        d = pt[clave]
-        if "deficit" not in d:
-            continue
-        L.append(f"- **{nombre}** (n = {d['n_dos']:,} vs {d['n_tres']:,}): "
-                 + " · ".join(f"d_{e} = {v['estimado']:.3f} [{v['ic95'][0]:.3f}, {v['ic95'][1]:.3f}]"
-                              for e, v in d["deficit"].items())
-                 + f" · **π̂_K = {d['pi_k']['estimado']:.3f}** [{d['pi_k']['ic95'][0]:.3f}, {d['pi_k']['ic95'][1]:.3f}]")
-    pj = pt["por_juego"]
-    L += ["", (f"- Agrupamiento por juego de los turnos finales perdidos: {pj['juegos']:,} juegos · tasa media "
-          f"{100 * pj['tasa_media']:.2f} % · dispersión de Pearson φ = {_f(pj['dispersion_pearson_phi'], 2)} "
-          "(≈ 1 si se reparten al azar entre juegos; ≫ 1 si se concentran en algunos) · "
-          f"{_f(pj['pct_juegos_con_al_menos_una'], 1)} % de los juegos con ≥ 1 · "
-          f"{_f(pj['pct_juegos_con_mas_de_dos'], 1)} % con > 2")]
-    L += ["", ("> Nota de identificación: los déficits comparan las medias entradas de 2 outs con las de 3 outs "
-               "**registradas**. π̂_K es una estimación gruesa: con datos sintéticos sembrados con una verdad de "
-               "π_K = 0.40, 0.71 y 0.93 devuelve ≈ 0.34, 0.30 y 0.30; es decir, mide los ponches entre los terceros "
-               "outs **registrados** (≈ la fracción de ponches entre todos los outs) y es **insensible** a la pérdida "
-               "selectiva. Si el valor real supera claramente esa fracción, no lo explica «se pierde el último "
-               "turno»: compara los **ponches por out registrado** de la tabla (iguales si solo faltara el último "
-               "turno) y la dispersión por juego. Las cotas con π ∈ {0, 1} de Prop. 15 no dependen de este valor. "
-               "Ver `docs/discrepancias/D01.md`."), ""]
-    return L
+    L += [("**Déficits de eventos** (media por media entrada de las de 3 outs − media de las de 2 outs; IC95 por bootstrap "
+          "de medias entradas). Informativos: el estimador de la fracción de ponches por déficits se retiró (ADR-016: no está "
+          "identificado; D01 resuelta). No se implementan pesos ω (F4)."), ""]
+    for nombre, clave in (("todas las de 2 outs", "deficits_todas_las_de_2_outs"),
+                          ("solo las de out faltante sin turno incompleto", "deficits_sin_turno_incompleto")):
+        d = inf[clave]
+        if "deficit" in d:
+            L.append(f"- **{nombre}** (n = {d['n_dos']:,} vs {d['n_tres']:,}): "
+                     + " · ".join(f"d_{e} = {v['estimado']:.3f} {_ic_txt(v['ic95'])}" for e, v in d["deficit"].items()))
+    return L + [""]
 
 
-def _cifras_v25(extras: dict | None) -> str:
-    """Cifras de v2.5 para el Bloque: t_s, ADR-014, G0.8 y π̂_K."""
+def _n(v) -> str:
+    return "—" if v is None else f"{v:,}"
+
+
+def _cifras_v26(extras: dict | None) -> str:
+    """Cifras de v2.6 para el Bloque: t_s, ADR-014 y ADR-016 (θ̂, r̂ por cubeta, W y reglas)."""
     if not extras:
         return ""
     ts = extras["polinomios"].get("t_s", {})
     cal = extras["calibracion_9p"]
     el, zt = cal.get("elegida") or {}, cal.get("zonetime") or {}
-    pt = extras["perdida_turnos"]
-    pi = pt["todas_las_de_2_outs"].get("pi_k", {})
+    mo = extras["mecanismo_outs"]
+    p16, p17, g9 = mo["prop16"], mo["prop17"], mo["G09"]
+    r_b = ", ".join(f"{r['cubeta']} {_pct(r['r_hat'])}" for r in p16["por_cubeta"])
+    w = (f"W(Γ=2) {_f(p17['W']['2'], 5)} vs 3.92·SE_ref {_f(3.92 * p17['SE_ref'], 5)} (SE_ref {_f(p17['SE_ref'], 5)})"
+         if p17.get("evaluable") else "W no evaluable")
     return (f"t_s mediana {_f(ts.get('mediana_s'), 4)} s · ADR-014 y_p {_f(el.get('y_plano_ft'), 4)} ft, signo "
-            f"{el.get('signo')}, |ZoneTime−(t_p−t_s)| mediana {_f(zt.get('mediana'), 5)} s · turno final perdido: rango "
-            f"entre cubetas {_f(pt.get('rango_pp'), 3)} pp · π̂_K {_f(pi.get('estimado'), 3)}")
+            f"{el.get('signo')}, |ZoneTime−(t_p−t_s)| mediana {_f(zt.get('mediana'), 5)} s · ADR-016: θ̂ "
+            f"{_f(g9['theta_global'], 3)} {_ic_txt(g9['ic95'])} → **{g9['mecanismo']}** · r̂ por cubeta: {r_b} · {w} · "
+            f"perdida_ignorable {str(mo['perdida_ignorable']).lower()}")
 
 
 def _secciones_v24(extras: dict, fis: dict | None = None) -> list[str]:
-    """Secciones del reporte de v2.4/v2.5: ADR-010 (enmendado), 014, 011, 012 y 015."""
+    """Secciones del reporte de v2.4 a v2.6: ADR-010 (enmendado), 014, 011, 012 y 016."""
     return (_sec_adr010(extras["polinomios"]) + _sec_adr014(extras["calibracion_9p"], fis or {})
             + _sec_adr011(extras["discrepancias_flags"])
-            + _sec_adr012_015(extras["dos_outs"], extras["perdida_turnos"])
+            + _sec_adr012_016(extras["dos_outs"], extras["mecanismo_outs"])
             + ["**OutsOnPlay × evento_terminal** (¿cuenta el out de los ponches?)", ""]
             + _tabla(extras["dos_outs"]["outs_on_play_x_evento_terminal"], ["evento", "OutsOnPlay", "n"]) + [""])
 
@@ -391,8 +497,9 @@ def reporte_md(rep: dict, q: dict | None, alc: dict | None, gates: dict, escrito
         det = {
             "I1": f"tol. {q['I1']['tolerancia_mph']} mph",
             "I2": "exacta",
-            "I3": " · ".join(f"{e}: {_pct(v['cumplimiento'])}, 2c2/a0={_f(v['razon_mediana_2c2_sobre_a0'])}"
-                             for e, v in q["I3"]["por_eje"].items()),
+            "I3": "**sustituida por G0.2 (ADR-010)**, ya no es compuerta; " + " · ".join(
+                f"{e}: {_pct(v['cumplimiento'])}, 2c2/a0={_f(v['razon_mediana_2c2_sobre_a0'])}"
+                for e, v in q["I3"]["por_eje"].items()),
             "I4": f"pendiente (origen) {_f(q['I4'].get('pendiente_origen'))}, con intercepto {_f(q['I4'].get('pendiente'))}, "
                   f"r={_f(q['I4'].get('correlacion'), 6)}",
             "I5": f"R={_f(q['I5'].get('R'), 6)}, espejo={q['I5'].get('espejo')}, desfase aprendido {_f(q['I5'].get('desfase_grados'), 1)}°",
@@ -401,8 +508,9 @@ def reporte_md(rep: dict, q: dict | None, alc: dict | None, gates: dict, escrito
             "I7": f"criterio A estricto (n = medias entradas); A sin la final: {_pct(q['I7'].get('sin_ultima_media_entrada'))}"
                   f"; **B (no finales): {_pct(q['I7'].get('B_no_finales'))}**; inconsistentes (≥4 outs): "
                   f"{q['I7'].get('inconsistentes')}; outs por media entrada {q['I7'].get('distribucion_outs')}",
-            "I8": "tipos: " + ", ".join(f"{t}={'✓' if v.get('signo_opuesto') else '✗'}"
-                                        for t, v in q["I8"]["tipos"].items() if v.get("evaluado")),
+            "I8": "tipos: " + ", ".join(_i8_tipo(t, v) for t, v in q["I8"]["tipos"].items() if v.get("evaluado"))
+                  + (f" · fallas no informativas (mediana de |HorzBreak| < {q['I8']['mediana_min_in']:g} in en una mano): "
+                     f"{len(q['I8']['fallas_no_informativas'])} de {len(q['I8']['fallas'])}" if q["I8"]["fallas"] else ""),
             "I9": f"juegos incoherentes: {q['I9']['juegos_incoherentes']}",
             "I10": f"violaciones: {q['I10']['violaciones']} {q['I10']['valores_invalidos']}",
         }
@@ -476,9 +584,9 @@ def reporte_md(rep: dict, q: dict | None, alc: dict | None, gates: dict, escrito
            f"{rep['exclusiones']['cadena']['pct_total']} % · I1 {_pct(q['I1']['cumplimiento'])} · "
            f"I6′ {_pct(q['I6p']['cumplimiento'])} · I7 A {_pct(q['I7']['cumplimiento'])} / B no finales "
            f"{_pct(q['I7'].get('B_no_finales'))} · ADR-010: "
-           f"{(extras or {}).get('polinomios', {}).get('decision', '—')} · {_cifras_v25(extras)}")
+           f"{(extras or {}).get('polinomios', {}).get('decision', '—')} · {_cifras_v26(extras)}")
           if q is not None else "- Cifras clave: no disponibles (valores sin regla, ver arriba)",
-          "- Desviaciones respecto al ROADMAP: ninguna (compuertas v2.5: ADR-010 enmendado, 014 y 015)",
+          "- Desviaciones respecto al ROADMAP: ninguna (compuertas v2.6: G0.8′ y G0.9 de ADR-016)",
           "- Mejora posible detectada: ninguna",
           "- Riesgo de empeorar: ninguno",
           "- Rama / PR / commit de resultados locales: fase00 / (pendiente) / (pendiente)",
@@ -513,6 +621,27 @@ def figura_alcance(alc: dict, ruta: Path) -> None:
     plt.close(fig)
 
 
+def figura_P_poisson(info: dict, ruta: Path) -> None:
+    """Corroboración (e) de ADR-016: |P| por juego (barras) contra una Poisson con la misma media (puntos). Solo agregados."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    h = info["histograma"]
+    ks = [r["k"] for r in h]
+    fig, ax = plt.subplots(figsize=(6.4, 3.8))
+    ax.bar(ks, [r["juegos"] for r in h], color="#4c78a8", label="observado")
+    ax.plot(ks, [r["esperados_poisson"] for r in h], "o-", color="#e45756", label=f"Poisson (λ = {info['lambda']:.2f})")
+    ax.set_xlabel("medias entradas de 2 outs registrados (P) por juego")
+    ax.set_ylabel("juegos")
+    ax.set_title(f"P por juego vs. Poisson · φ = {info['dispersion_phi']:.2f}")
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(ruta, dpi=120)
+    plt.close(fig)
+
+
 # --------------------------------------------------------------------------
 def correr(cfg, parquet: Path, salida_pitches: Path, rep_dir: Path, log_dir: Path, fig_dir: Path) -> dict:
     """Ejecuta F0. Devuelve {'ok': bool, 'gates': ..., 'reporte': ruta}. No sale del proceso."""
@@ -537,6 +666,9 @@ def correr(cfg, parquet: Path, salida_pitches: Path, rep_dir: Path, log_dir: Pat
             ruta = salida_pitches.relative_to(RAIZ) if salida_pitches.is_relative_to(RAIZ) else salida_pitches
             escritos = {"ruta": str(ruta), "filas_por_year": filas}
             figura_alcance(alc, fig_dir / "alcance.png")
+            if extras["mecanismo_outs"]["corroboraciones"]["e_poisson"].get("histograma"):
+                figura_P_poisson(extras["mecanismo_outs"]["corroboraciones"]["e_poisson"],
+                                 fig_dir / "P_por_juego_vs_poisson.png")
     else:
         gates = evaluar_gates(rep, None, cfg["f00"]["gates"])
 
@@ -554,20 +686,38 @@ def correr(cfg, parquet: Path, salida_pitches: Path, rep_dir: Path, log_dir: Pat
     (log_dir / f"f00_{stamp}.log").write_text(json.dumps(resumen, indent=2, ensure_ascii=False), encoding="utf-8")
     print(md)
     elegida = ((extras or {}).get("calibracion_9p") or {}).get("elegida")
+    mo = (extras or {}).get("mecanismo_outs") or {}
     return {"ok": all(g["ok"] for g in gates.values()), "gates": gates, "reporte": rep_dir / "FASE_00.md",
-            "calibracion_elegida": elegida}
+            "calibracion_elegida": elegida, "mecanismo_outs": mo.get("mecanismo_outs"),
+            "perdida_ignorable": mo.get("perdida_ignorable")}
 
 
-def aplicar_calibracion(archivo: Path, elegida: dict) -> dict:
-    """Escribe en config/default.yaml el plano y el signo que ELIGIERON los datos (ADR-014).
+def aplicar_config(archivo: Path, elegida: dict | None = None, mecanismo: str | None = None,
+                   ignorable: bool | None = None) -> dict:
+    """Escribe en config/default.yaml lo que MIDIÓ F0: el plano y el signo de ADR-014 y, de ADR-016, `qa.mecanismo_outs`
+    (U | L | mezcla) y `qa.perdida_ignorable` (bool), que leen F4, F6 y F8.
 
-    Reemplaza solo los valores de `y_plato_ft` y `signo_plateloc_x` (conserva el resto y los comentarios).
+    Reemplaza solo esos valores (conserva el resto y los comentarios). Devuelve lo que cambió.
     """
     import re
     txt = archivo.read_text(encoding="utf-8")
-    nuevo = re.sub(r"(\n\s*y_plato_ft:\s*)[-+0-9.eE]+", lambda m: f"{m.group(1)}{elegida['y_plano_ft']:.7f}", txt, count=1)
-    nuevo = re.sub(r"(\n\s*signo_plateloc_x:\s*)[-+]?\d+", lambda m: f"{m.group(1)}{elegida['signo']}", nuevo, count=1)
+    nuevo, cambios = txt, {}
+
+    def poner(patron: str, valor: str, clave: str) -> None:
+        nonlocal nuevo
+        reemplazado = re.sub(patron, lambda m: f"{m.group(1)}{valor}", nuevo, count=1)
+        if reemplazado != nuevo:
+            cambios[clave] = valor
+        nuevo = reemplazado
+
+    if elegida:
+        poner(r"(\n\s*y_plato_ft:\s*)[-+0-9.eE]+", f"{elegida['y_plano_ft']:.7f}", "y_plato_ft")
+        poner(r"(\n\s*signo_plateloc_x:\s*)[-+]?\d+", str(elegida["signo"]), "signo_plateloc_x")
+    if mecanismo in ("U", "L", "mezcla"):
+        poner(r"(\n\s*mecanismo_outs:\s*)(?:U|L|mezcla)\b", mecanismo, "mecanismo_outs")
+    if ignorable is not None:
+        poner(r"(\n\s*perdida_ignorable:\s*)(?:true|false)\b", str(bool(ignorable)).lower(), "perdida_ignorable")
     if nuevo == txt:
         return {"cambio": False}
     archivo.write_text(nuevo, encoding="utf-8")
-    return {"cambio": True, "y_plato_ft": elegida["y_plano_ft"], "signo_plateloc_x": elegida["signo"]}
+    return {"cambio": True, **cambios}

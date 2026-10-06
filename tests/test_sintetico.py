@@ -225,25 +225,75 @@ def test_caso_plateloc_side_con_signo_sembrado_y_plano_configurable():
     assert d0["ZoneTime"].mean() > d["ZoneTime"].mean() and v0["y_plano_ft"] == 0.0
 
 
-def test_caso_turnos_finales_perdidos_sobre_todo_ponches():
-    """ADR-015: la mayoría de las medias entradas de 2 outs perdió su último turno COMPLETO, y más a menudo si era K."""
-    from pitcheo.io import leer_diccionario
-    from pitcheo.limpieza import limpiar
-    from pitcheo.qa import diagnostico_dos_outs
-    d0, v = generar(20, 5, con_verdad=True)
-    d, _ = limpiar(d0, leer_diccionario(CFG.ruta("diccionario")), CAT, CFG["f00"])
-    cla = diagnostico_dos_outs(d)["clasificacion_no_finales"]
-    assert cla["pct_turno_final_perdido"] > 70 and cla["pct_turno_incompleto"] > 3
-    assert v["perdidos"]["K"] > 0 and v["perdidos"]["OUT_BIP"] > 0
-    assert v["pi_k"] > 0.5                                       # sembrado MNAR: los ponches se pierden más
+@pytest.fixture(scope="module")
+def base_out():
+    """(ADR-016) 100 juegos del simulador base-out, sin ensuciar: dobles matanzas mal contadas y sin turnos perdidos."""
+    return generar(100, 7, sucio=False, con_verdad=True)
 
 
-def test_caso_turnos_finales_perdidos_estratificados_y_por_cubeta():
-    _d0, v = generar(12, 4, con_verdad=True, p_perdida_tipo={"K": 0.0, "OUT_BIP": 0.0})
-    assert v["perdidos"] == {"K": 0, "OUT_BIP": 0}              # sin pérdida sembrada no se pierde nada
-    _d1, v1 = generar(12, 4, con_verdad=True, p_perdida_cubeta={"No Altitude": 0.0, "Medium Altitude": 0.0,
-                                                               "Extreme Altitude": 0.0})
-    assert v1["perdidos"] == {"K": 0, "OUT_BIP": 0}
+def test_caso_base_out_dobles_matanzas_calibradas_y_mal_contadas(base_out):
+    d, v = base_out
+    por_juego = v["dobles_matanzas"] / d["game_anon_id"].n_unique()
+    assert 1.4 <= por_juego <= 2.4                                       # ≈ 1.6-2.0 por juego (MLB 1.63)
+    assert 0.85 <= v["dobles_matanzas_como_1_out"] / v["dobles_matanzas"] <= 0.99   # OutsOnPlay = 1 en ~93 %
+    registradas_2 = d.filter(pl.col("OutsOnPlay") == 2)
+    assert 0 < registradas_2.height == v["dobles_matanzas"] - v["dobles_matanzas_como_1_out"]
+    assert set(registradas_2["play_result"].to_list()) == {"Out"} and _vals(registradas_2, "hit_type") == {"GroundBall"}
+
+
+def test_caso_base_out_el_out_del_ponche_es_siempre_1_y_outs_previo_es_el_real(base_out):
+    d, _ = base_out
+    assert (d.filter(pl.col("KorBB") == "Strikeout")["OutsOnPlay"] == 1).all()
+    # `Outs` es el estado previo REAL: nunca baja dentro de la media entrada y llega a 2 como máximo.
+    g = d.group_by("game_anon_id", "Inning", "Top/Bottom", maintain_order=True).agg(
+        pl.col("Outs").diff().min().alias("min_dif"), pl.col("Outs").max().alias("max"), pl.col("Outs").first().alias("ini"))
+    assert (g["min_dif"].drop_nulls() >= 0).all() and (g["max"] <= 2).all()
+    # Una doble matanza cuenta 1 out registrado pero 2 reales: la media entrada queda con 2 outs registrados (P).
+    sumas = d.group_by("game_anon_id", "Inning", "Top/Bottom").agg(pl.col("OutsOnPlay").sum().alias("o"))
+    assert 0.05 < (sumas["o"] == 2).mean() < 0.2 and (sumas["o"] <= 3).all()
+
+
+def test_caso_base_out_mas_trafico_en_altura_y_nadie_en_base_es_posible(base_out):
+    d, _ = base_out
+    h = (d.group_by("game_anon_id", "Inning", "Top/Bottom")
+         .agg(pl.col("altitude_category").first().alias("c"),
+              pl.col("play_result").is_in(["Single", "Double", "Triple", "Walk", "HitByPitch", "Error"]).sum().alias("n")))
+    z = h.group_by("c").agg((pl.col("n") == 0).mean().alias("z")).to_dict(as_series=False)
+    z = dict(zip(z["c"], z["z"], strict=True))
+    assert z["Extreme Altitude"] < z["No Altitude"]                         # más corredores en altura
+    assert 0.2 < z["No Altitude"] < 0.6                                       # y bastantes entradas sin nadie en base
+
+
+def test_caso_extra_innings_con_corredor_colocado_y_pickoff_sin_lanzamiento():
+    d, _ = generar(40, 3, sucio=False, con_verdad=True, p_extra=1.0, p_pickoff_fantasma=1.0)
+    assert (d.group_by("game_anon_id").agg(pl.col("Inning").max().alias("m"))["m"] >= 10).all()   # todos van a extras
+    ini = (d.filter(pl.col("Inning") >= 10).group_by("game_anon_id", "Inning", "Top/Bottom", maintain_order=True)
+           .agg(pl.col("Outs").first().alias("ini")))
+    assert (ini["ini"] == 1).all()                      # el corredor colocado fue puesto out entre lanzamientos
+    sin_pickoff, _ = generar(20, 3, sucio=False, con_verdad=True, p_extra=1.0, p_pickoff_fantasma=0.0)
+    ini0 = (sin_pickoff.filter(pl.col("Inning") >= 10).group_by("game_anon_id", "Inning", "Top/Bottom", maintain_order=True)
+            .agg(pl.col("Outs").first().alias("ini")))
+    assert (ini0["ini"] == 0).all()
+    assert (generar(10, 3, sucio=False, p_extra=0.0)["Inning"] <= 9).all()      # sin extras no hay entradas > 9
+
+
+def test_caso_perdida_de_turnos_de_out_configurable_y_por_defecto_cero():
+    _d, v0 = generar(20, 4, con_verdad=True)
+    assert v0["perdidos"] == {"K": 0, "OUT_BIP": 0, "SAC": 0}               # sin ℓ sembrado no se pierde ningún turno
+    d1, v1 = generar(30, 4, con_verdad=True, perdida_cubeta={"No Altitude": 0.0, "Medium Altitude": 0.0,
+                                                            "Extreme Altitude": 0.0})
+    assert sum(v1["perdidos"].values()) == 0
+    d2, v2 = generar(30, 4, con_verdad=True, perdida_cubeta={"No Altitude": 0.2, "Medium Altitude": 0.2,
+                                                            "Extreme Altitude": 0.2})
+    assert sum(v2["perdidos"].values()) > 30 and d2.height < d1.height       # faltan los lanzamientos de esos turnos
+
+
+def test_caso_perdida_con_sesgo_a_ponche():
+    cub = {"No Altitude": 0.25, "Medium Altitude": 0.25, "Extreme Altitude": 0.25}
+    _a, va = generar(40, 6, con_verdad=True, perdida_cubeta=cub)
+    _b, vb = generar(40, 6, con_verdad=True, perdida_cubeta=cub, sesgo_k=8.0)
+    frac = lambda v: v["perdidos"]["K"] / sum(v["perdidos"].values())        
+    assert frac(vb) > frac(va) + 0.25 and frac(vb) > 0.6
 
 
 def test_cada_defecto_sembrado_cabe_en_las_compuertas(df):

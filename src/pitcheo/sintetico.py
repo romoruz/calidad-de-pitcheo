@@ -79,10 +79,15 @@ _P_HIT_TYPES = [0.42, 0.24, 0.22, 0.08, 0.04]
 # tercer out SIN lanzamiento propio (robo, pickoff): la media entrada se corta en mitad de un turno.
 _P_CORTE = {2: 0.015, 1: 0.004, 0: 0.004}
 
-# ADR-015: ~90 % de las medias entradas de 2 outs reales pierde el ÚLTIMO TURNO COMPLETO (todos sus lanzamientos
-# faltan), y los ponches que cierran la entrada se pierden más que los outs en juego (MNAR). Probabilidad de que se
-# pierda el turno que da el tercer out, según cómo termine.
-_P_PERDIDA = {"K": 0.21, "OUT_BIP": 0.055}
+# ADR-016 (ROADMAP §1.4): las medias entradas con 2 outs registrados son, sobre todo, outs que `OutsOnPlay` no cuenta
+# (U): dobles matanzas registradas como 1 out y outs de corredor entre lanzamientos. El simulador base-out las
+# reproduce; la pérdida real de turnos (L) es opcional y arranca en cero.
+P_DOBLE_MATANZA = 0.47          # P(doble matanza | rodado de out, corredor en 1B, < 2 outs): ≈ 1.6-2.0 por juego
+P_DP_CONTADA_COMO_1 = 0.93      # `OutsOnPlay` = 1 en el 93 % de las dobles matanzas (reportes de F0: casi no hay 2)
+P_EXTRA = 0.06                  # fracción de juegos que pasan a extra innings (corredor fantasma en 2B desde la 10.ª)
+P_PICKOFF_FANTASMA = 0.30       # el corredor colocado es puesto out entre lanzamientos (out real sin lanzamiento)
+# Tráfico de corredores mayor en altura: P(un out en juego pasa a sencillo), por cubeta.
+TRAFICO_DEFECTO = {"No Altitude": 0.0, "Medium Altitude": 0.15, "Extreme Altitude": 0.50}
 
 # Resultados de bola en juego y su mezcla aproximada (nunca el 100 % de los datos reales).
 _P_FOUL = {"FoulBall": 0.70, "FoulBallFieldable": 0.10, "FoulBallNotFieldable": 0.20}
@@ -202,20 +207,25 @@ def _fisica_lanzamiento(rng, tipo: str, mano: str, dens_scale: float, y_plano: f
 
 
 def _desenlace(rng, en_zona: bool) -> dict:
-    """PitchCall base ('FoulBall' sin dividir) y flags coherentes. No es terminal por sí mismo."""
-    p_swing = 0.62 if en_zona else 0.30
+    """PitchCall base ('FoulBall' sin dividir) y flags coherentes. No es terminal por sí mismo.
+
+    Las probabilidades dan una mezcla de turnos parecida a la de una liga (ponches ≈ 21 %, bases por bolas ≈ 9 %, golpes
+    ≈ 1 %, resto bola en juego) aunque la zona de strike del sintético sea chica; así el tráfico de corredores del
+    simulador base-out (ADR-016) no depende de un exceso de bases por bolas.
+    """
+    p_swing = 0.70 if en_zona else 0.58
     swing = rng.random() < p_swing
     if swing:
-        p_contacto = 0.82 if en_zona else 0.66
+        p_contacto = 0.85 if en_zona else 0.72
         if rng.random() < p_contacto:
-            call = "InPlay" if rng.random() < 0.34 else "FoulBall"
+            call = "InPlay" if rng.random() < 0.42 else "FoulBall"
         else:
             call = "StrikeSwinging"
     elif en_zona:
         call = "StrikeCalled"
     else:
         r = rng.random()
-        call = "BallCalled" if r < 0.93 else ("BallinDirt" if r < 0.98 else "HitByPitch")
+        call = "BallCalled" if r < 0.945 else ("BallinDirt" if r < 0.995 else "HitByPitch")
     return {"PitchCall": call}
 
 
@@ -270,6 +280,65 @@ def _resultado_bip(ht, ev, angle, direction, distance, res) -> dict:
     }
 
 
+def _bases_por_bolas(bases):
+    """Base por bolas o golpe: el bateador va a 1B y solo avanzan los corredores forzados."""
+    b1, b2, b3 = bases
+    return [True, b2 or b1, b3 or (b1 and b2)], int(b1 and b2 and b3)
+
+
+def _bases_por_avance(bases, k):
+    """El bateador llega a la base `k` (4 = jonrón) y cada corredor avanza `k` bases."""
+    nuevas, carreras = [False] * 3, 0
+    for pos in (i + 1 for i, ocupada in enumerate(bases) if ocupada):
+        if pos + k >= 4:
+            carreras += 1
+        else:
+            nuevas[pos + k - 1] = True
+    if k >= 4:
+        carreras += 1
+    else:
+        nuevas[k - 1] = True
+    return nuevas, carreras
+
+
+def _corredores_avanzan(bases):
+    """Cada corredor avanza una base y el bateador no llega (sacrificio, rodado con corredor forzado)."""
+    nuevas, carreras = [False] * 3, 0
+    for pos in (i + 1 for i, ocupada in enumerate(bases) if ocupada):
+        if pos == 3:
+            carreras += 1
+        else:
+            nuevas[pos] = True
+    return nuevas, carreras
+
+
+def _jugada_bip(rng, bat, bases, outs, p_trafico, p_dp, p_dp_uno):
+    """Bola en juego sobre el estado base-out: avance simple de corredores y outs REALES vs REGISTRADOS (ADR-016).
+
+    Devuelve (bat, bases_nuevas, outs_reales, outs_registrados, carreras, es_doble_matanza). Con tráfico mayor
+    un out de aire (no rodado) pasa a sencillo con probabilidad `p_trafico`. Un rodado de out con corredor en 1B y < 2 outs es doble
+    matanza con probabilidad `p_dp`: 2 outs reales, y `OutsOnPlay` = 1 con probabilidad `p_dp_uno` (U: out no contado).
+    """
+    if bat["play_result"] == "Out" and bat["hit_type"] != "GroundBall" and rng.random() < p_trafico:
+        bat = _resultado_bip(bat["hit_type"], bat["ExitSpeed"], bat["Angle"], bat["Direction"], bat["Distance"],
+                             "Single")
+    res = bat["play_result"]
+    if res in ("Single", "Double", "Triple", "HomeRun", "Error"):
+        nuevas, carreras = _bases_por_avance(bases, {"Double": 2, "Triple": 3, "HomeRun": 4}.get(res, 1))
+        return bat, nuevas, 0, 0, carreras, False
+    if res == "Sacrifice":
+        nuevas, carreras = _corredores_avanzan(bases)
+        return bat, nuevas, 1, 1, (carreras if outs + 1 < 3 else 0), False
+    if res == "FieldersChoice" and bases[0]:          # el corredor de 1B es el out; el bateador queda en 1B
+        nuevas, carreras = _corredores_avanzan([False, bases[1], bases[2]])
+        nuevas[0] = True
+        return bat, nuevas, 1, 1, (carreras if outs + 1 < 3 else 0), False
+    if res == "Out" and bat["hit_type"] == "GroundBall" and bases[0] and outs < 2 and rng.random() < p_dp:
+        registrados = 1 if rng.random() < p_dp_uno else 2
+        return bat, [False, False, bases[1]], 2, registrados, int(bases[2] and outs + 2 < 3), True
+    return bat, list(bases), 1, 1, 0, False
+
+
 _COLS_BATAZO_NULAS = {
     "hit_type": None, "ExitSpeed": None, "Angle": None, "Direction": None, "Distance": None,
     "play_result": None, "is_hit": 0, "single": 0, "double": 0, "triple": 0, "home_run": 0,
@@ -309,7 +378,9 @@ def generar(n_juegos: int = 40, semilla: int = 2026, cubetas: dict | None = None
             n_lanzadores_nucleo: int = 12, anios: tuple[int, ...] = (2024, 2025, 2026),
             innings_por_juego: int = 9, sucio: bool = True,
             convencion_polinomio: dict | str | None = None, con_verdad: bool = False,
-            p_perdida_cubeta: dict | None = None, p_perdida_tipo: dict | None = None,
+            perdida_cubeta: dict | None = None, sesgo_k: float = 1.0, trafico_cubeta: dict | None = None,
+            p_doble_matanza: float = P_DOBLE_MATANZA, p_dp_contada_como_1: float = P_DP_CONTADA_COMO_1,
+            p_extra: float = P_EXTRA, p_pickoff_fantasma: float = P_PICKOFF_FANTASMA,
             signo_plateloc_x: int = SIGNO_PLATELOC_X,
             y_plano_ft: float = Y_FRENTE_PLATO) -> pl.DataFrame | tuple[pl.DataFrame, dict]:
     """Genera un dataset sintético con el esquema (y, si `sucio`, los defectos) de los datos reales.
@@ -320,23 +391,32 @@ def generar(n_juegos: int = 40, semilla: int = 2026, cubetas: dict | None = None
 
     `convencion_polinomio`: `None` = la REAL (ADR-010 enmendado); un dict `{"X": ("z", -1), ...}` = permutación
     con signo SIN desfase de tiempo; `"ruido"` = polinomios sin relación con los 9P.
-    `p_perdida_cubeta`: multiplicador por cubeta de la probabilidad de perder el turno final (sembrar una
-    diferencia por altitud y comprobar que G0.8 la detecta). `p_perdida_tipo`: probabilidad de perder el turno final
-    según cierre en ponche (`K`) o en out en juego (`OUT_BIP`); por defecto, más alta para el ponche (MNAR).
-    `signo_plateloc_x` y `y_plano_ft`: el signo y el plano con los que se escribe `PlateLocSide`/`ZoneTime`. `con_verdad=True` devuelve también la verdad
-    sembrada (`t_s` por lanzamiento, plano, signo y la fracción de turnos finales perdidos que eran ponche).
+
+    **Simulador base-out (ADR-016, ROADMAP §1.4).** Cada media entrada lleva outs REALES y corredores en 1B/2B/3B con
+    avance simple; la columna `Outs` es el estado previo real. `OutsOnPlay` es lo que registra el dato: 1 siempre en un
+    ponche y 1 en el `p_dp_contada_como_1` de las dobles matanzas (U: out no contado). `trafico_cubeta` = P(un out en
+    juego pasa a sencillo) por cubeta (más corredores en altura). Con probabilidad `p_extra` un juego sigue a extra
+    innings, que arrancan con un corredor colocado en 2B; con `p_pickoff_fantasma` ese corredor es puesto out entre
+    lanzamientos (out real sin turno y sin `OutsOnPlay`, con Z = 1: por eso F0 deja los extra innings fuera de T).
+    `perdida_cubeta` = ℓ_b, la fracción de medias entradas completas (≤ 9) a las que se les pierde un turno de OUT
+    (L: faltan todos sus lanzamientos); por defecto 0. Se asigna ESTRATIFICADA por cubeta y por Z (un acumulador por
+    celda) para que la pérdida sea independiente de Z (S2 de la Prop. 16) sin el ruido de una moneda por entrada.
+    `sesgo_k` > 1 hace más probable que el turno perdido sea un ponche.
+
+    `signo_plateloc_x` y `y_plano_ft`: el signo y el plano con los que se escribe `PlateLocSide`/`ZoneTime`.
+    `con_verdad=True` devuelve también la verdad sembrada (`t_s` por lanzamiento, plano, signo, turnos perdidos por
+    tipo, dobles matanzas y cuántas se registraron como 1 out).
     """
     rng = np.random.default_rng(semilla)
-    perdidos = {"K": 0, "OUT_BIP": 0}
-    # La pérdida sembrada es ESTRATIFICADA: por cubeta y por tipo de cierre se acumula la probabilidad y se pierde un
-    # turno cada vez que la suma cruza 1 (con fase inicial aleatoria). La proporción realizada es exactamente la
-    # sembrada (± 1 turno), así que las pruebas de G0.8 no dependen del ruido de una moneda por turno.
-    fase_perdida: dict[tuple[str, str], float] = {}
+    perdidos = {"K": 0, "OUT_BIP": 0, "SAC": 0}
+    n_dp = n_dp_uno = 0
+    fase_perdida: dict[tuple[str, int], float] = {}
     cubetas = cubetas or CUBETAS_DEFECTO
     nombres_cub = list(cubetas)
     pesos_cub = np.array([cubetas[c]["peso_juegos"] for c in nombres_cub], float)
     pesos_cub /= pesos_cub.sum()
     rho_ref = _densidad_rel(3.0)
+    trafico = {**TRAFICO_DEFECTO, **(trafico_cubeta or {})}
 
     lanz = [f"pitcher_{i:05d}" for i in range(1, n_lanzadores + 1)]
     nucleo = lanz[:n_lanzadores_nucleo]
@@ -357,15 +437,21 @@ def generar(n_juegos: int = 40, semilla: int = 2026, cubetas: dict | None = None
         alt_m = float(rng.choice(cubetas[cub]["altitudes_m"]))
         dens_scale = _densidad_rel(alt_m) / rho_ref
         anio = int(anios[rng.integers(0, len(anios))])
-        for inning in range(1, innings_por_juego + 1):
+        tope = innings_por_juego + (1 + int(rng.random() < 0.3) if rng.random() < p_extra else 0)
+        for inning in range(1, tope + 1):
             for mitad in ("Top", "Bottom"):
                 lanzador = (nucleo[rng.integers(0, len(nucleo))] if rng.random() < 0.6
                             else lanz[rng.integers(0, len(lanz))])
                 mano = mano_p[lanzador]
                 receptor = recs[rng.integers(0, len(recs))]
-                outs = 0
+                outs = 0                                   # outs REALES
+                extra_innings = inning > innings_por_juego
+                bases = [False, extra_innings, False]      # extra innings: corredor colocado en 2B
+                if extra_innings and rng.random() < p_pickoff_fantasma:
+                    outs, bases[1] = 1, False              # puesto out entre lanzamientos: out real, sin turno
                 pa = 0
                 media_cortada = False
+                turnos: list[tuple[int, int, str]] = []    # (fila inicial, fila final, tipo) de cada turno completo
                 while outs < 3 and not media_cortada:
                     pa += 1
                     fila_pa = len(filas)
@@ -376,6 +462,8 @@ def generar(n_juegos: int = 40, semilla: int = 2026, cubetas: dict | None = None
                     lado_etq = "Switch" if switch[bateador] else lado_b[bateador]
                     balls, strikes = 0, 0
                     terminada = False
+                    outs_reales_jugada = 0
+                    tipo_turno = "otro"
                     while not terminada:
                         puid += 1
                         tipo = tipos[rng.choice(len(tipos), p=pesos_tipo)]
@@ -392,28 +480,35 @@ def generar(n_juegos: int = 40, semilla: int = 2026, cubetas: dict | None = None
                             strikes += 1
                             if strikes >= 3:
                                 terminada, korbb, strikeout, outs_jugada = True, "Strikeout", 1, 1
+                                outs_reales_jugada, tipo_turno = 1, "K"
                         elif call == "FoulBall":
                             strikes = min(strikes + 1, 2)
                         elif call in ("BallCalled", "BallinDirt", "BallIntentional"):
                             balls += 1
                             if balls >= 4:
                                 terminada, korbb, base_on_balls = True, "Walk", 1
+                                bases, runs = _bases_por_bolas(bases)
+                                tipo_turno = "N"
                         elif call == "HitByPitch":
                             terminada = True
+                            bases, runs = _bases_por_bolas(bases)
+                            tipo_turno = "N"
                         elif call == "InPlay":
                             terminada, is_batted = True, 1
                             bat = _batazo(rng, dens_scale)
                             if forzar_out:
                                 bat = _resultado_bip(bat["hit_type"], bat["ExitSpeed"], bat["Angle"],
                                                      bat["Direction"], bat["Distance"], "Out")
+                            bat, bases, outs_reales_jugada, outs_jugada, runs, es_dp = _jugada_bip(
+                                rng, bat, bases, outs, 0.0 if forzar_out else trafico.get(cub, 0.0),
+                                p_doble_matanza, p_dp_contada_como_1)
+                            n_dp += es_dp
+                            n_dp_uno += es_dp and outs_jugada == 1
                             extra.update(bat)
-                            outs_jugada = bat["_outs"]
-                            if bat["is_hit"] or bat["play_result"] == "Error":
-                                runs = (max(1, int(rng.integers(0, 3))) if bat["home_run"]
-                                        else int(rng.random() < 0.25))
-
-                        if terminada:
-                            outs_jugada = min(outs_jugada, 3 - outs)
+                            res_bip = bat["play_result"]
+                            tipo_turno = ("N" if res_bip in ("Single", "Double", "Triple", "Error")
+                                          else "SAC" if res_bip == "Sacrifice"
+                                          else "OUT_BIP" if outs_reales_jugada else "otro")
 
                         call_etq = _etiqueta_foul(rng, call)
                         play_result = (extra["play_result"] if call == "InPlay"
@@ -455,15 +550,22 @@ def generar(n_juegos: int = 40, semilla: int = 2026, cubetas: dict | None = None
                         if corte and not terminada and n_lanz >= n_corte:
                             media_cortada = True   # tercer out sin lanzamiento: el turno queda incompleto
                             break
-                    outs += outs_jugada
-                    if outs >= 3 and not media_cortada:   # este turno dio el tercer out: ¿se pierde completo?
-                        fin = "K" if korbb == "Strikeout" else "OUT_BIP"
-                        acum = fase_perdida.setdefault((cub, fin), float(rng.random()))
-                        acum += (p_perdida_tipo or _P_PERDIDA)[fin] * (p_perdida_cubeta or {}).get(cub, 1.0)
-                        fase_perdida[(cub, fin)] = acum - 1.0 if acum >= 1.0 else acum
-                        if acum >= 1.0:
-                            del filas[fila_pa:]
-                            perdidos[fin] += 1
+                    if not media_cortada:
+                        turnos.append((fila_pa, len(filas), tipo_turno))
+                    outs += outs_reales_jugada
+                # L: se pierden todos los lanzamientos de un turno de OUT de la media entrada (ADR-016, Prop. 16).
+                ell = (perdida_cubeta or {}).get(cub, 0.0)
+                con_out = [t for t in turnos if t[2] in perdidos]
+                if ell > 0 and con_out and not media_cortada and not extra_innings:
+                    z = int(all(t[2] != "N" for t in turnos))
+                    acum = fase_perdida.setdefault((cub, z), float(rng.random())) + ell
+                    if acum >= 1.0:
+                        peso = np.array([sesgo_k if t[2] == "K" else 1.0 for t in con_out])
+                        ini, fin, tipo_perdido = con_out[rng.choice(len(con_out), p=peso / peso.sum())]
+                        del filas[ini:fin]
+                        perdidos[tipo_perdido] += 1
+                        acum -= 1.0
+                    fase_perdida[(cub, z)] = acum
     df = _convencion_polinomio(pl.DataFrame(filas), convencion_polinomio, rng)
     if sucio:
         df = _ensuciar(df, rng, n_juegos)
@@ -471,9 +573,8 @@ def generar(n_juegos: int = 40, semilla: int = 2026, cubetas: dict | None = None
     out = _tipar_real(df, leer_diccionario(_RAIZ / "docs" / "diccionario.csv"))
     if not con_verdad:
         return out
-    tot = perdidos["K"] + perdidos["OUT_BIP"]
     return out, {"t_s": ts, "y_plano_ft": y_plano_ft, "signo_x": signo_plateloc_x, "perdidos": perdidos,
-                 "pi_k": perdidos["K"] / tot if tot else float("nan")}
+                 "dobles_matanzas": n_dp, "dobles_matanzas_como_1_out": n_dp_uno}
 
 
 # --------------------------------------------------------------------------

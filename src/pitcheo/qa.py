@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import itertools
 import math
+import warnings
 
 import numpy as np
 import polars as pl
@@ -55,7 +56,7 @@ def i3_polinomio(df: pl.DataFrame, rtol: float = 0.01, piso: float = 1.0) -> dic
     cumpl = [v["cumplimiento"] for v in por_eje.values() if v["cumplimiento"] is not None]
     n = max((v["n"] for v in por_eje.values()), default=0)
     return {"cumplimiento": min(cumpl) if cumpl else None, "n": n, "por_eje": por_eje,
-            "tolerancia_relativa": rtol, "piso": piso}
+            "tolerancia_relativa": rtol, "piso": piso, "sustituida_por": "G0.2 (ADR-010 enmendado)"}
 
 
 def i4_gravedad(df: pl.DataFrame, rango: tuple[float, float] = (0.95, 1.05)) -> dict:
@@ -141,16 +142,21 @@ def i7_outs_media_entrada(df: pl.DataFrame, esperado: int = 3, inconsistente: in
                                    t.group_by("outs").len().sort("outs").iter_rows()})
 
 
-def i8_signo_horzbreak(df: pl.DataFrame, min_filas: int = 50) -> dict:
+def i8_signo_horzbreak(df: pl.DataFrame, min_filas: int = 50, mediana_min_in: float = 2.0) -> dict:
     """I8: el signo de HorzBreak se invierte con PitcherThrows para el mismo AutoPitchType.
 
     Cumplimiento = fracción de tipos (con >= `min_filas` por mano) donde las medias tienen
     signo opuesto. Usa la mano CRUDA definida (Left/Right): no depende de ADR-003.
+
+    v2.6: para cada tipo que FALLA se reporta la mediana de |HorzBreak| por mano; si alguna es menor que
+    `mediana_min_in` (2 in) el tipo casi no rompe en horizontal, el signo de su media es ruido y la falla se marca
+    `no_informativo`. No cambia el cumplimiento; solo dice cuántas de las fallas son informativas.
     """
     d = df.filter(pl.col("PitcherThrows").cast(pl.Utf8).is_in(["Left", "Right"])).select(
         pl.col("AutoPitchType").cast(pl.Utf8).alias("tipo"),
         pl.col("PitcherThrows").cast(pl.Utf8).alias("mano"), "HorzBreak").drop_nulls()
-    g = d.group_by("tipo", "mano").agg(pl.col("HorzBreak").mean().alias("m"), pl.len().alias("n"))
+    g = d.group_by("tipo", "mano").agg(pl.col("HorzBreak").mean().alias("m"),
+                                       pl.col("HorzBreak").abs().median().alias("mediana_abs"), pl.len().alias("n"))
     tipos, ok_n = {}, 0
     for tipo in g["tipo"].unique().sort():
         s = g.filter(pl.col("tipo") == tipo)
@@ -161,9 +167,16 @@ def i8_signo_horzbreak(df: pl.DataFrame, min_filas: int = 50) -> dict:
         mr, ml = float(r["m"][0]), float(left["m"][0])
         opuesto = mr * ml < 0
         ok_n += int(opuesto)
-        tipos[tipo] = {"evaluado": True, "media_derecho": mr, "media_zurdo": ml, "signo_opuesto": bool(opuesto)}
+        info = {"evaluado": True, "media_derecho": mr, "media_zurdo": ml, "signo_opuesto": bool(opuesto)}
+        if not opuesto:
+            md, mz = float(r["mediana_abs"][0]), float(left["mediana_abs"][0])
+            info |= {"mediana_abs_derecho_in": md, "mediana_abs_zurdo_in": mz,
+                     "no_informativo": bool(min(md, mz) < mediana_min_in)}
+        tipos[tipo] = info
     n = sum(1 for v in tipos.values() if v["evaluado"])
-    return _res(ok_n, n, tipos=tipos)
+    fallas = [t for t, v in tipos.items() if v.get("evaluado") and not v["signo_opuesto"]]
+    return _res(ok_n, n, tipos=tipos, mediana_min_in=mediana_min_in, fallas=fallas,
+                fallas_no_informativas=[t for t in fallas if tipos[t]["no_informativo"]])
 
 
 def i9_altitud_constante(df: pl.DataFrame) -> dict:
@@ -195,7 +208,7 @@ def correr_qa(df: pl.DataFrame, cat: dict, qa: dict) -> dict:
         "I5": i5_tilt_spinaxis(df, qa["i5_min"]),
         "I6p": i6p_flags(df, cat["pitch_call_h"]["contacto"]),
         "I7": i7_outs_media_entrada(df, qa["i7_outs_por_media_entrada"], cat.get("outs_inconsistente", 4)),
-        "I8": i8_signo_horzbreak(df, qa["i8_min_filas"]),
+        "I8": i8_signo_horzbreak(df, qa["i8_min_filas"], qa.get("i8_mediana_min_in", 2.0)),
         "I9": i9_altitud_constante(df),
         "I10": i10_outs_validos(df, cat["outs_validos"]),
     }
@@ -369,32 +382,33 @@ def discrepancias_flags(df: pl.DataFrame, cat: dict) -> dict:
     return out
 
 
-# --------------------------------------------------------------------------
-# ADR-012 — diagnóstico de las medias entradas que terminan con 2 outs
-# --------------------------------------------------------------------------
-def _cuantiles(s: pl.Series) -> dict:
-    return {"media": float(s.mean()), "mediana": float(s.median()),
-            "p10": float(s.quantile(0.1)), "p90": float(s.quantile(0.9))} if s.len() else {}
-
-
 _EV_OUT = ["K", "OUT_BIP", "SAC"]
+_EV_BASE = ["1B", "2B", "3B", "BB", "HBP", "ROE"]        # N_h (Prop. 16): turnos que dejan al bateador en base
+_CUBETA_SIN = "(sin cubeta)"
 
 
 def _medias_con_eventos(df: pl.DataFrame, inconsistente: int = 4) -> pl.DataFrame:
     """Una fila por media entrada con outs, eventos terminales, turnos incompletos, año y cubeta.
 
     No hay orden de lanzamientos: un turno es **incompleto** si hay lanzamientos de un bateador (con id) de
-    la media entrada y ninguno trae evento terminal. La cubeta es la imputada por juego (ADR-005).
+    la media entrada y ninguno trae evento terminal. La cubeta es la imputada por juego (ADR-005). Además de los
+    conteos por evento trae el resumen de la columna `Outs` (estado previo): mínimo, máximo, valores distintos y si
+    hay un out terminal con `Outs` = 2 (corroboración (b) de ADR-016).
     """
     t = tabla_medias_entradas(df, inconsistente)
     claves = ["game_anon_id", "Inning", "mitad"]
     d = df.filter(pl.col("game_anon_id").is_not_null() & pl.col("Inning").is_not_null()).with_columns(
         pl.col("Top/Bottom").cast(pl.Utf8).alias("mitad"),
-        pl.col("evento_terminal").cast(pl.Utf8).alias("_ev"))
+        pl.col("evento_terminal").cast(pl.Utf8).alias("_ev"),
+        pl.col("Outs").cast(pl.Float64).alias("_outs_prev"))
     por_media = d.group_by(*claves).agg(
         pl.col("_ev").is_not_null().sum().alias("n_terminales"),
         pl.col("_ev").is_in(_EV_OUT).sum().alias("outs_por_eventos"),
-        *[(pl.col("_ev") == e).sum().alias(f"ev_{e}") for e in _EV_OUT + ["BB", "HBP", "ROE"]])
+        *[(pl.col("_ev") == e).sum().alias(f"ev_{e}") for e in _EV_OUT + _EV_BASE],
+        pl.col("_outs_prev").min().alias("outs_min"),
+        pl.col("_outs_prev").max().alias("outs_max"),
+        pl.col("_outs_prev").drop_nulls().n_unique().alias("outs_n_unicos"),
+        ((pl.col("_outs_prev") == 2) & pl.col("_ev").is_in(_EV_OUT)).any().alias("out_con_outs2"))
     turnos = (d.filter(pl.col("batter_anon_id").is_not_null())
               .group_by(*claves, "batter_anon_id").agg(pl.col("_ev").is_not_null().any().alias("termina")))
     inc = turnos.group_by(*claves).agg((~pl.col("termina")).sum().alias("turnos_incompletos"))
@@ -403,25 +417,34 @@ def _medias_con_eventos(df: pl.DataFrame, inconsistente: int = 4) -> pl.DataFram
     juego = (df.filter(pl.col("game_anon_id").is_not_null())
              .group_by("game_anon_id")
              .agg(pl.col("year").first().alias("year"),
-                  cubeta.drop_nulls().first().fill_null("(sin cubeta)").alias("cubeta")))
+                  cubeta.drop_nulls().first().fill_null(_CUBETA_SIN).alias("cubeta")))
     # Orden determinista: el group_by multihilo no garantiza el orden y el bootstrap con semilla fija remuestrea por
     # posición; sin esto el mismo `seed` daba intervalos distintos entre corridas.
     return (t.join(por_media, on=claves, how="left").join(inc, on=claves, how="left")
             .join(juego, on="game_anon_id", how="left")
-            .with_columns(pl.col("turnos_incompletos").fill_null(0), pl.col("cubeta").fill_null("(sin cubeta)"))
+            .with_columns(pl.col("turnos_incompletos").fill_null(0), pl.col("cubeta").fill_null(_CUBETA_SIN))
             .sort("game_anon_id", "Inning", "mitad"))
 
 
-def diagnostico_dos_outs(df: pl.DataFrame, inconsistente: int = 4) -> dict:
-    """¿Por qué el ~13 % de las medias entradas suma 2 outs en vez de 3? (agregado, ADR-012 y 015).
+def _cuantiles(s: pl.Series) -> dict:
+    return {"media": float(s.mean()), "mediana": float(s.median()),
+            "p10": float(s.quantile(0.1)), "p90": float(s.quantile(0.9))} if s.len() else {}
+
+
+# --------------------------------------------------------------------------
+# ADR-012 / ADR-016 — diagnóstico de las medias entradas que terminan con 2 outs registrados
+# --------------------------------------------------------------------------
+def diagnostico_dos_outs(df: pl.DataFrame, inconsistente: int = 4, t: pl.DataFrame | None = None) -> dict:
+    """¿Por qué el ~13 % de las medias entradas suma 2 outs registrados en vez de 3? (agregado, ADR-012 y 016).
 
     Contrasta tres candidatos: (1) tercer out en un evento sin lanzamiento propio (robo, pickoff): la media
-    entrada deja un turno **incompleto**; (2) **turno final perdido**: faltan todos los lanzamientos del
-    último turno; (3) `OutsOnPlay` que no cuenta ciertos outs. ADR-015: cada media entrada **no final** de
-    2 outs se clasifica en "turno incompleto" (hay un bateador con lanzamientos pero sin evento terminal) o
-    "turno final perdido" (todos sus turnos terminan).
+    entrada deja un turno **incompleto**; (2) un turno de out cuyos lanzamientos faltan (L); (3) `OutsOnPlay` que
+    no cuenta ciertos outs (U). Cada media entrada **no final** de 2 outs se clasifica en "turno incompleto" (hay un
+    bateador con lanzamientos pero sin evento terminal) o **"out faltante (sin turno incompleto)"**: todos sus turnos
+    terminan, así que falta un out que se perdió con su turno (L) o que `OutsOnPlay` no cuenta (U); ADR-016 los separa.
+    `t` = tabla de `_medias_con_eventos` si ya se calculó.
     """
-    t = _medias_con_eventos(df, inconsistente)
+    t = _medias_con_eventos(df, inconsistente) if t is None else t
 
     def grupo(outs: int) -> dict:
         g = t.filter(pl.col("outs") == outs)
@@ -434,8 +457,8 @@ def diagnostico_dos_outs(df: pl.DataFrame, inconsistente: int = 4) -> dict:
             "lanzamientos_por_media_entrada": _cuantiles(g["n_lanz"].cast(pl.Float64)),
             "pct_con_turno_incompleto": round(100.0 * float((g["turnos_incompletos"] > 0).mean()), 3),
             "turnos_incompletos_media": float(g["turnos_incompletos"].mean()),
-            # Si lo único que falta es el último turno y los outs son intercambiables, los ponches por out
-            # REGISTRADO serían iguales en las de 2 y en las de 3 outs. Si no, son poblaciones distintas.
+            # Si lo único que falta es un turno independiente del tipo de out, los ponches por out REGISTRADO
+            # serían iguales en las de 2 y en las de 3 outs. Si no, son poblaciones distintas (ADR-016).
             "ponches_por_out_registrado": float(g["ev_K"].sum() / g["outs"].sum()) if g["outs"].sum() else None,
             "eventos_terminales_por_media_entrada": {
                 e: round(float(g[f"ev_{e}"].mean()), 3) for e in _EV_OUT + ["BB", "HBP", "ROE"]},
@@ -445,16 +468,16 @@ def diagnostico_dos_outs(df: pl.DataFrame, inconsistente: int = 4) -> dict:
 
     dos_nf = t.filter((pl.col("outs") == 2) & ~pl.col("final"))
     n_inc = int((dos_nf["turnos_incompletos"] > 0).sum())
-    n_perd = int(dos_nf.height - n_inc)
+    n_falt = int(dos_nf.height - n_inc)
     tabla = (df.group_by(pl.col("evento_terminal").cast(pl.Utf8).fill_null("NO_TERMINAL").alias("evento"),
                          pl.col("OutsOnPlay").cast(pl.Int64).alias("OutsOnPlay"))
              .agg(pl.len().alias("n")).sort("evento", "OutsOnPlay"))
     return {
         "dos_outs": grupo(2), "tres_outs": grupo(3),
         "clasificacion_no_finales": {
-            "n": int(dos_nf.height), "turno_incompleto": n_inc, "turno_final_perdido": n_perd,
+            "n": int(dos_nf.height), "turno_incompleto": n_inc, "out_faltante": n_falt,
             "pct_turno_incompleto": round(100.0 * n_inc / dos_nf.height, 3) if dos_nf.height else None,
-            "pct_turno_final_perdido": round(100.0 * n_perd / dos_nf.height, 3) if dos_nf.height else None},
+            "pct_out_faltante": round(100.0 * n_falt / dos_nf.height, 3) if dos_nf.height else None},
         "outs_on_play_x_evento_terminal": tabla.to_dicts(),
     }
 
@@ -471,105 +494,358 @@ def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
 
 
 def _tasas(g: pl.DataFrame, claves: list[str]) -> list[dict]:
-    """Tasas por grupo sobre medias entradas no finales: 2 outs, turno incompleto y turno final perdido."""
+    """Tasas por grupo sobre medias entradas no finales: 2 outs, turno incompleto y out faltante (informativas)."""
     out = []
     for fila in (g.group_by(*claves).agg(
             pl.len().alias("n"), (pl.col("outs") == 2).sum().alias("dos_outs"),
             ((pl.col("outs") == 2) & (pl.col("turnos_incompletos") > 0)).sum().alias("incompleto"),
-            ((pl.col("outs") == 2) & (pl.col("turnos_incompletos") == 0)).sum().alias("perdido"))
+            ((pl.col("outs") == 2) & (pl.col("turnos_incompletos") == 0)).sum().alias("faltante"))
             .sort(*claves).iter_rows(named=True)):
-        lo, hi = wilson(fila["perdido"], fila["n"])
+        lo, hi = wilson(fila["faltante"], fila["n"])
         out.append({**{c: fila[c] for c in claves}, "medias_entradas": fila["n"], "dos_outs": fila["dos_outs"],
-                    "turno_incompleto": fila["incompleto"], "turno_final_perdido": fila["perdido"],
+                    "turno_incompleto": fila["incompleto"], "out_faltante": fila["faltante"],
                     "tasa_dos_outs": fila["dos_outs"] / fila["n"],
-                    "tasa_turno_final_perdido": fila["perdido"] / fila["n"],
+                    "tasa_out_faltante": fila["faltante"] / fila["n"],
                     "ic95_wilson": [lo, hi]})
     return out
 
 
-def analisis_perdida_turnos(df: pl.DataFrame, inconsistente: int = 4, n_boot: int = 1000, seed: int = 2026) -> dict:
-    """ADR-015: la pérdida de turnos finales por cubeta × año y por cubeta, y π̂_K (agregado).
+# --------------------------------------------------------------------------
+# ADR-016 — conjunto T, Prop. 16 (identificación de la pérdida real), Prop. 17 (cota del sesgo) y reglas G0.8′/G0.9
+# --------------------------------------------------------------------------
+def conjunto_T(df: pl.DataFrame, inconsistente: int = 4,
+               t: pl.DataFrame | None = None) -> tuple[pl.DataFrame, list[dict]]:
+    """T = medias entradas no finales, `Inning` ≤ 9, consistentes (outs registrados ≤ 3) y sin turno incompleto.
 
-    - Tasa de "turno final perdido" por (cubeta, año) y por cubeta, sobre las medias entradas **no finales**,
-      con IC de Wilson. G0.8: el rango entre cubetas (puntos %) debe ser pequeño; si no, la pérdida se
-      confunde con la altitud en cualquier comparación de outcomes.
-    - Déficits de eventos K, OUT_BIP y SAC por media entrada (3 outs menos 2 outs) y
-      π̂_K = d_K / (d_K + d_OUT_BIP + d_SAC) con IC por bootstrap de medias entradas. No se implementan los
-      pesos de Horvitz–Thompson (eso es F4).
+    Devuelve (T, pasos). Cada media entrada de T trae `P` (outs registrados = 2), `N_h` (turnos que dejan al bateador
+    en base: 1B, 2B, 3B, BB, HBP, ROE), `Z` (N_h = 0) y `PZ`. `pasos` dice cuántas excluye cada filtro, en cascada y
+    aplicado solo.
     """
-    t = _medias_con_eventos(df, inconsistente)
-    nf = t.filter(~pl.col("final"))
-    con_cubeta = nf.filter(pl.col("cubeta") != "(sin cubeta)")
-    por_cubeta = _tasas(nf, ["cubeta"])
-    comparadas = [r for r in por_cubeta if r["cubeta"] != "(sin cubeta)"]
-    tasas = [100 * r["tasa_turno_final_perdido"] for r in comparadas]
-    rango = float(max(tasas) - min(tasas)) if len(tasas) >= 2 else None
+    t = (_medias_con_eventos(df, inconsistente) if t is None else t).with_columns(
+        pl.sum_horizontal([pl.col(f"ev_{e}") for e in _EV_BASE]).alias("N_h"))
+    filtros = {"no es la final del juego": ~pl.col("final"), "Inning ≤ 9": pl.col("Inning") <= 9,
+               f"consistente (outs < {inconsistente})": pl.col("outs") < inconsistente,
+               "sin turno incompleto": pl.col("turnos_incompletos") == 0}
+    pasos = [{"filtro": "todas las medias entradas", "excluye": None, "excluye_solo_este": None, "quedan": t.height}]
+    cur = t
+    for nombre, expr in filtros.items():
+        antes = cur.height
+        cur = cur.filter(expr)
+        pasos.append({"filtro": nombre, "excluye": antes - cur.height,
+                      "excluye_solo_este": int(t.filter(~expr).height), "quedan": cur.height})
+    T = cur.with_columns((pl.col("outs") == 2).alias("P"), (pl.col("N_h") == 0).alias("Z")).with_columns(
+        (pl.col("P") & pl.col("Z")).alias("PZ"))
+    return T, pasos
 
+
+_COLS_SUMA = ["nT", "nP", "nZ", "nPZ", "turnos", "nK"]
+
+
+def _por_juego(T: pl.DataFrame) -> pl.DataFrame:
+    """Una fila por juego de T con los conteos que alimentan Prop. 16/17 (ordenada por juego: bootstrap reproducible)."""
+    return (T.group_by("game_anon_id")
+            .agg(pl.col("cubeta").first().alias("cubeta"), pl.len().alias("nT"), pl.col("P").sum().alias("nP"),
+                 pl.col("Z").sum().alias("nZ"), pl.col("PZ").sum().alias("nPZ"),
+                 pl.col("n_terminales").sum().alias("turnos"), pl.col("ev_K").sum().alias("nK"))
+            .sort("game_anon_id"))
+
+
+def _razones(s) -> dict:
+    """f, p0, r̂ y θ̂ de Prop. 16 a partir de las sumas (nT, nP, nZ, nPZ, ...), escalares o arreglos (réplicas)."""
+    nT, nP, nZ, nPZ = (np.asarray(s[i], float) for i in range(4))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        f, p0 = nZ / nT, nPZ / nT
+        r = np.where(nZ > 0, nPZ / np.where(nZ > 0, nZ, 1), np.nan)
+        tasa_p = nP / nT
+        theta = np.where(nP > 0, r / np.where(nP > 0, tasa_p, 1), np.nan)
+    return {"f": f, "p0": p0, "r_hat": r, "tasa_P": tasa_p, "theta_hat": theta}
+
+
+def _ic(x: np.ndarray) -> list | None:
+    x = x[np.isfinite(x)]
+    return [float(np.quantile(x, 0.025)), float(np.quantile(x, 0.975))] if len(x) else None
+
+
+def _num(v) -> float | None:
+    v = float(v)
+    return v if math.isfinite(v) else None
+
+
+def prop16(T: pl.DataFrame, n_boot: int = 1000, seed: int = 2026) -> dict:
+    """Prop. 16 por cubeta y global: f_b, p0_b, r̂_b = p0_b / f_b y θ̂_b = r̂_b / P(P | b), con IC95 por bootstrap de juegos.
+
+    El bootstrap remuestrea juegos con reemplazo DENTRO de cada cubeta (la cubeta es constante por juego), así que cada
+    réplica conserva el tamaño de cada cubeta; el global suma las réplicas de las cubetas. La tabla `J` va ordenada por
+    juego y la semilla es la de config: el mismo dato da el mismo intervalo.
+    """
+    J = _por_juego(T)
     rng = np.random.default_rng(seed)
+    obs, boot = {}, {}
+    for cub in sorted(J["cubeta"].unique().to_list()):
+        a = J.filter(pl.col("cubeta") == cub).select(_COLS_SUMA).to_numpy().astype(float)
+        obs[cub] = a.sum(axis=0)
+        idx = rng.integers(0, len(a), size=(n_boot, len(a)))
+        boot[cub] = np.stack([a[:, j][idx].sum(axis=1) for j in range(a.shape[1])], axis=0)    # (6, B)
+    obs["global"], boot["global"] = sum(obs.values()), sum(boot.values())
 
-    def deficits(tres: pl.DataFrame, dos: pl.DataFrame) -> dict:
-        a3 = {e: tres[f"ev_{e}"].to_numpy().astype(float) for e in _EV_OUT}
-        a2 = {e: dos[f"ev_{e}"].to_numpy().astype(float) for e in _EV_OUT}
-        if len(a3["K"]) == 0 or len(a2["K"]) == 0:
-            return {"n_dos": int(dos.height), "n_tres": int(tres.height)}
+    def fila(nombre: str) -> dict:
+        o, b = _razones(obs[nombre]), _razones(boot[nombre])
+        s = obs[nombre]
+        return {"cubeta": nombre, "medias_entradas": int(s[0]), "P": int(s[1]), "Z": int(s[2]), "PZ": int(s[3]),
+                "turnos": int(s[4]), "m_tilde": _num(s[4] / s[0]) if s[0] else None, "ponches": int(s[5]),
+                **{k: _num(v) for k, v in o.items()},
+                "ic95": {k: _ic(v) for k, v in b.items() if k in ("f", "tasa_P", "r_hat", "theta_hat")}}
 
-        def calc(i3, i2):
-            d = {e: a3[e][i3].mean() - a2[e][i2].mean() for e in _EV_OUT}
-            tot = sum(d.values())
-            return d, (d["K"] / tot if tot > 0 else float("nan"))
+    return {"por_cubeta": [fila(c) for c in obs if c != "global"], "global": fila("global"),
+            "juegos": J.height, "bootstrap": {"n": n_boot, "seed": seed, "unidad": "juego, dentro de cada cubeta"}}
 
-        d0, pi0 = calc(slice(None), slice(None))
-        bs = []
-        for _ in range(n_boot):
-            d, pi = calc(rng.integers(0, len(a3["K"]), len(a3["K"])), rng.integers(0, len(a2["K"]), len(a2["K"])))
-            bs.append([d["K"], d["OUT_BIP"], d["SAC"], pi])
-        bs = np.array(bs)
-        ic = lambda col: [float(np.nanquantile(bs[:, col], 0.025)), float(np.nanquantile(bs[:, col], 0.975))]
-        return {"n_dos": int(dos.height), "n_tres": int(tres.height),
-                "deficit": {e: {"estimado": float(d0[e]), "ic95": ic(i)} for i, e in enumerate(_EV_OUT)},
-                "pi_k": {"estimado": float(pi0), "ic95": ic(3)}}
 
-    # ¿La pérdida se reparte al azar entre juegos o se concentra en algunos? (huecos de datos por juego).
-    # Dispersión de Pearson φ de los turnos finales perdidos por juego: ≈ 1 si es binomial, >> 1 si se agrupa.
-    pj = (nf.filter(pl.col("game_anon_id").is_not_null()).group_by("game_anon_id")
-          .agg(pl.len().alias("n"), ((pl.col("outs") == 2) & (pl.col("turnos_incompletos") == 0)).sum().alias("m")))
-    n_g, m_g = pj["n"].to_numpy().astype(float), pj["m"].to_numpy().astype(float)
-    p_bar = m_g.sum() / n_g.sum() if n_g.sum() else float("nan")
-    phi = (float(np.sum((m_g - n_g * p_bar) ** 2 / (n_g * p_bar * (1 - p_bar))) / (len(n_g) - 1))
-           if len(n_g) > 1 and 0 < p_bar < 1 else None)
-    por_juego = {"juegos": len(n_g), "tasa_media": float(p_bar),
-                 "dispersion_pearson_phi": phi,
-                 "pct_juegos_con_al_menos_una": float(100 * np.mean(m_g > 0)) if len(m_g) else None,
-                 "pct_juegos_con_mas_de_dos": float(100 * np.mean(m_g > 2)) if len(m_g) else None}
-    tres = t.filter(pl.col("outs") == 3)
-    dos_todas = t.filter(pl.col("outs") == 2)
-    dos_perdidas = dos_todas.filter(pl.col("turnos_incompletos") == 0)
+def prop17(filas: list[dict], kappa_bar: float, cub_ext: str, cub_no: str, gammas=(1, 2)) -> dict:
+    """Prop. 17: W(Γ) = Σ_{b ∈ {Extreme, No}} Γ·r̂_b / (m̃_b + Γ·r̂_b) y SE_ref = √(κ̄(1−κ̄)(1/n_Ext + 1/n_No)).
+
+    `filas`: una por cubeta con `cubeta`, `r_hat`, `m_tilde` (turnos observados por media entrada de T_b) y `turnos`
+    (n_b). κ̄ es la tasa GLOBAL de K por turno: una sola cifra. W es el ancho del conjunto identificado del contraste
+    Extreme − No cuando la fracción de turnos perdidos con K recorre [0, 1] (Manski).
+    """
+    por = {f["cubeta"]: f for f in filas}
+    try:
+        e, n = por[cub_ext], por[cub_no]
+        n_e, n_n = e["turnos"], n["turnos"]
+        se = math.sqrt(kappa_bar * (1 - kappa_bar) * (1 / n_e + 1 / n_n))
+        w = {}
+        for g in gammas:
+            partes = [g * f["r_hat"] / (f["m_tilde"] + g * f["r_hat"]) for f in (e, n)]
+            w[str(g)] = float(sum(partes))
+    except (KeyError, TypeError, ZeroDivisionError, ValueError):
+        return {"evaluable": False, "cubeta_extrema": cub_ext, "cubeta_base": cub_no}
+    return {"evaluable": True, "cubeta_extrema": cub_ext, "cubeta_base": cub_no, "kappa_bar": kappa_bar,
+            "SE_ref": se, "n_extrema": n_e, "n_base": n_n, "W": w,
+            "m_tilde": {cub_ext: e["m_tilde"], cub_no: n["m_tilde"]}, "r_hat": {cub_ext: e["r_hat"], cub_no: n["r_hat"]}}
+
+
+def regla_g08p(p17: dict, k_ic: float = 3.92, k_ign: float = 1.0, gamma: str = "2") -> dict:
+    """G0.8′: W(Γ=2) ≤ 3.92·SE_ref. Si además W(Γ=2) ≤ SE_ref → `perdida_ignorable` verdadera; si pasa sin eso, falsa
+    (F8 reporta los contrastes con intervalo de Imbens-Manski). Si falla, es una discrepancia y no se sigue a F1."""
+    if not p17.get("evaluable"):
+        return {"ok": False, "perdida_ignorable": False, "motivo": "contraste Extreme − No no evaluable"}
+    w, se = p17["W"][gamma], p17["SE_ref"]
+    ok = w <= k_ic * se
+    return {"ok": bool(ok), "perdida_ignorable": bool(ok and w <= k_ign * se), "W": w, "SE_ref": se,
+            "W_sobre_SE_ref": w / se if se else None, "umbral_ic": k_ic, "umbral_ignorable": k_ign}
+
+
+def regla_g09(theta_ic: list | None, u_max: float = 0.25, l_min: float = 0.50) -> str:
+    """G0.9: U dominante si el IC95 superior de θ̂ ≤ 0.25; L dominante si el inferior ≥ 0.50; mezcla en otro caso."""
+    if not theta_ic:
+        return "mezcla"
+    lo, hi = theta_ic
+    return "U" if hi <= u_max else ("L" if lo >= l_min else "mezcla")
+
+
+# --------------------------------------------------------------------------
+# ADR-016 — corroboraciones (a)-(e): informativas, no son compuertas
+# --------------------------------------------------------------------------
+def _pct_wilson(k: int, n: int) -> dict:
+    lo, hi = wilson(k, n)
+    return {"n": int(n), "k": int(k), "pct": round(100.0 * k / n, 3) if n else None,
+            "ic95_wilson_pct": [round(100 * lo, 3), round(100 * hi, 3)] if n else None}
+
+
+def corr_a_rodados(df: pl.DataFrame, T: pl.DataFrame) -> dict:
+    """(a) % de rodados entre los OUT_BIP con `Outs` previo ∈ {0, 1}: P vs. T∖P.
+
+    Rodado = `hit_type` GroundBall; si esa categoría no existe, `Angle` < 10°. Con doble matanza no contada (U) se
+    espera que P tenga MÁS rodados; con un turno perdido (L), la misma mezcla que T∖P.
+    """
+    hit = df["hit_type"].cast(pl.Utf8) if "hit_type" in df.columns else pl.Series([], dtype=pl.Utf8)
+    hay = "GroundBall" in set(hit.drop_nulls().unique().to_list())
+    rodado = (pl.col("hit_type").cast(pl.Utf8) == "GroundBall") if hay else (pl.col("Angle") < 10)
+    claves = ["game_anon_id", "Inning", "mitad"]
+    d = (df.filter((pl.col("evento_terminal").cast(pl.Utf8) == "OUT_BIP")
+                   & pl.col("Outs").cast(pl.Float64).is_in([0.0, 1.0]))
+         .with_columns(pl.col("Top/Bottom").cast(pl.Utf8).alias("mitad"), rodado.alias("_rod"))
+         .filter(pl.col("_rod").is_not_null())
+         .join(T.select(*claves, "P"), on=claves, how="inner"))
+    out = {"definicion": "hit_type == GroundBall" if hay else "Angle < 10°"}
+    for nombre, valor in (("P", True), ("T_menos_P", False)):
+        g = d.filter(pl.col("P") == valor)
+        out[nombre] = _pct_wilson(int(g["_rod"].sum()), g.height)
+    return out
+
+
+def corr_b_outs_previo(T: pl.DataFrame) -> dict:
+    """(b) Columna `Outs` (estado previo), P vs. T∖P: % con mínimo `Outs` > 0 (faltan los primeros turnos), % con un
+    out terminal en un lanzamiento con `Outs` = 2 y % con un hueco en los valores de `Outs`.
+
+    U no quita lanzamientos: `Outs` previo es continuo y empieza en 0. L sí: deja huecos o arranca en 1.
+    """
+    t = T.with_columns(
+        (pl.col("outs_min") > 0).fill_null(False).alias("_min"),
+        (pl.col("outs_n_unicos") < (pl.col("outs_max") - pl.col("outs_min") + 1)).fill_null(False).alias("_hueco"))
+    out = {}
+    for nombre, valor in (("P", True), ("T_menos_P", False)):
+        g = t.filter(pl.col("P") == valor)
+        out[nombre] = {"n": g.height,
+                       "pct_min_outs_mayor_0": _pct_wilson(int(g["_min"].sum()), g.height)["pct"],
+                       "pct_out_con_estado_2": _pct_wilson(int(g["out_con_outs2"].sum()), g.height)["pct"],
+                       "pct_hueco_en_outs": _pct_wilson(int(g["_hueco"].sum()), g.height)["pct"]}
+    return out
+
+
+def corr_c_logit(T: pl.DataFrame, cub_base: str, tope_n: int = 5) -> dict:
+    """(c) Logit de 1[h ∈ P] sobre cubeta + año, sin y con factor(min(N_h, 5)); errores agrupados por juego.
+
+    OR de cada cubeta contra la base con IC95. Si el OR por cubeta cae al controlar por N_h, la diferencia entre
+    cubetas es tráfico de corredores (U); si sigue igual, no lo es. Excluye las medias entradas sin cubeta.
+    """
+    import pandas as pd
+    import statsmodels.api as sm
+    from statsmodels.tools.sm_exceptions import ConvergenceWarning, PerfectSeparationError
+
+    d = T.filter(pl.col("cubeta") != _CUBETA_SIN).select("game_anon_id", "cubeta", "year", "N_h", "P").to_pandas()
+    if d["cubeta"].nunique() < 2 or cub_base not in set(d["cubeta"]):
+        return {"error": "menos de dos cubetas o falta la base"}
+    grupos = pd.factorize(d["game_anon_id"])[0]
+
+    def ajustar(con_n: bool) -> dict:
+        partes = [pd.get_dummies(d["cubeta"].astype(str), prefix="cubeta", dtype=float).drop(columns=f"cubeta_{cub_base}"),
+                  pd.get_dummies(d["year"].astype(str), prefix="year", dtype=float).iloc[:, 1:]]
+        if con_n:
+            partes.append(pd.get_dummies(np.minimum(d["N_h"], tope_n).astype(int).astype(str), prefix="N",
+                                         dtype=float).iloc[:, 1:])
+        X = sm.add_constant(pd.concat(partes, axis=1))
+        with warnings.catch_warnings(record=True) as avisos:
+            warnings.simplefilter("always")
+            try:
+                r = sm.Logit(d["P"].astype(float), X).fit(disp=0, maxiter=200, cov_type="cluster",
+                                                          cov_kwds={"groups": grupos})
+            except (PerfectSeparationError, np.linalg.LinAlgError, ValueError) as e:   # separación, matriz singular...
+                return {"error": f"{type(e).__name__}: {str(e)[:160]}"}
+        ci = r.conf_int()
+        ors = {c.removeprefix("cubeta_"): {"OR": float(np.exp(r.params[c])),
+                                           "ic95": [float(np.exp(ci.loc[c, 0])), float(np.exp(ci.loc[c, 1]))]}
+               for c in r.params.index if c.startswith("cubeta_")}
+        ors["convergio"] = bool(r.mle_retvals.get("converged", True)) and not any(
+            issubclass(a.category, ConvergenceWarning) for a in avisos)
+        return ors
+
+    return {"base": cub_base, "n": len(d), "sin_N_h": ajustar(False), "con_N_h": ajustar(True)}
+
+
+def corr_d_dobles(df: pl.DataFrame, ref_por_juego: float = 1.63) -> dict:
+    """(d) Jugadas con `OutsOnPlay` ≥ 2 por evento, junto al número de dobles matanzas esperado a la tasa MLB de
+    referencia (1.63 por juego; solo referencia). `fraccion_registrada` baja si `OutsOnPlay` no las cuenta (U)."""
+    d = df.filter(pl.col("OutsOnPlay").cast(pl.Int64) >= 2)
+    juegos = int(df["game_anon_id"].drop_nulls().n_unique())
+    esperadas = ref_por_juego * juegos
+    tabla = (d.group_by(pl.col("evento_terminal").cast(pl.Utf8).fill_null("NO_TERMINAL").alias("evento"),
+                        pl.col("OutsOnPlay").cast(pl.Int64).alias("OutsOnPlay"))
+             .agg(pl.len().alias("n")).sort("evento", "OutsOnPlay"))
+    return {"por_evento": tabla.to_dicts(), "jugadas_con_2_o_mas_outs": int(d.height), "juegos": juegos,
+            "tasa_mlb_ref_por_juego": ref_por_juego, "dobles_matanzas_esperadas_ref": esperadas,
+            "fraccion_registrada": (d.height / esperadas) if esperadas else None}
+
+
+def corr_e_poisson(T: pl.DataFrame) -> dict:
+    """(e) |P| por juego de T contra una Poisson con la misma media: histograma, dispersión de Pearson φ y P(≥1), P(>2).
+
+    Un evento de juego a tasa constante (doble matanza no contada) da φ ≈ 1; una falla del sensor u operador se
+    concentra en algunos juegos (φ ≫ 1). Solo conteos de juegos: nada por lanzamiento.
+    """
+    from scipy.stats import poisson
+
+    m = _por_juego(T)["nP"].to_numpy().astype(float)
+    n = len(m)
+    if n < 2 or m.mean() <= 0:
+        return {"juegos": n, "lambda": float(m.mean()) if n else None}
+    lam = float(m.mean())
+    ks = np.arange(0, int(m.max()) + 1)
+    return {"juegos": n, "lambda": lam, "varianza": float(m.var(ddof=1)),
+            "dispersion_phi": float(np.sum((m - lam) ** 2 / lam) / (n - 1)),
+            "P_ge1": {"observado": float(np.mean(m >= 1)), "poisson": float(1 - poisson.pmf(0, lam))},
+            "P_gt2": {"observado": float(np.mean(m > 2)), "poisson": float(1 - poisson.cdf(2, lam))},
+            "histograma": [{"k": int(k), "juegos": int(np.sum(m == k)), "esperados_poisson": float(n * poisson.pmf(k, lam))}
+                           for k in ks]}
+
+
+def _deficits(tres: pl.DataFrame, dos: pl.DataFrame, n_boot: int, seed: int) -> dict:
+    """Déficit de eventos K, OUT_BIP y SAC por media entrada (3 outs menos 2 outs), IC95 por bootstrap. Informativo."""
+    rng = np.random.default_rng(seed)
+    a3 = {e: tres[f"ev_{e}"].to_numpy().astype(float) for e in _EV_OUT}
+    a2 = {e: dos[f"ev_{e}"].to_numpy().astype(float) for e in _EV_OUT}
+    if len(a3["K"]) == 0 or len(a2["K"]) == 0:
+        return {"n_dos": int(dos.height), "n_tres": int(tres.height)}
+    d0 = {e: a3[e].mean() - a2[e].mean() for e in _EV_OUT}
+    bs = {e: [] for e in _EV_OUT}
+    for _ in range(n_boot):
+        i3, i2 = rng.integers(0, len(a3["K"]), len(a3["K"])), rng.integers(0, len(a2["K"]), len(a2["K"]))
+        for e in _EV_OUT:
+            bs[e].append(a3[e][i3].mean() - a2[e][i2].mean())
+    return {"n_dos": int(dos.height), "n_tres": int(tres.height),
+            "deficit": {e: {"estimado": float(d0[e]), "ic95": _ic(np.array(bs[e]))} for e in _EV_OUT}}
+
+
+def mecanismo_outs(df: pl.DataFrame, qa: dict, gates: dict, inconsistente: int = 4, seed: int = 2026,
+                   t_all: pl.DataFrame | None = None) -> dict:
+    """ADR-016 (ROADMAP §1.4): conjunto T, Prop. 16 y 17, G0.8′ y G0.9, corroboraciones (a)-(e) y tablas informativas.
+
+    El umbral y las reglas vienen de `config/default.yaml` y son los fijados por el orquestador (no se ajustan).
+    `perdida_ignorable` y `mecanismo` son lo que `--aplicar` escribe en `qa.perdida_ignorable` y `qa.mecanismo_outs`.
+    """
+    n_boot = int(qa.get("bootstrap_n", 1000))
+    cub_ext, cub_no = qa.get("cubeta_extrema", "Extreme Altitude"), qa.get("cubeta_base", "No Altitude")
+    t_all = _medias_con_eventos(df, inconsistente) if t_all is None else t_all
+    T, pasos = conjunto_T(df, inconsistente, t_all)
+    p16 = prop16(T, n_boot, seed)
+    turnos, ponches = p16["global"]["turnos"], p16["global"]["ponches"]
+    kappa = ponches / turnos if turnos else float("nan")
+    p17 = prop17(p16["por_cubeta"], kappa, cub_ext, cub_no, tuple(qa.get("gammas", (1, 2))))
+    g08 = regla_g08p(p17, gates.get("g08_k_ic", 3.92), gates.get("g08_k_ignorable", 1.0))
+    theta_ic = p16["global"]["ic95"].get("theta_hat")
+    mecanismo = regla_g09(theta_ic, gates.get("g09_u_max", 0.25), gates.get("g09_l_min", 0.50))
+
+    # Informativas: la tasa de out faltante por cubeta (el antiguo G0.8) y los déficits (sin π̂_K, retirado en ADR-016).
+    nf = t_all.filter(~pl.col("final"))
+    por_cubeta = _tasas(nf, ["cubeta"])
+    tasas = [100 * r["tasa_out_faltante"] for r in por_cubeta if r["cubeta"] != _CUBETA_SIN]
+    tres = t_all.filter(pl.col("outs") == 3)
+    dos = t_all.filter(pl.col("outs") == 2)
     return {
-        "por_cubeta": por_cubeta, "por_cubeta_anio": _tasas(nf, ["cubeta", "year"]),
-        "cubetas_comparadas": [r["cubeta"] for r in comparadas], "rango_pp": rango,
-        "medias_entradas_no_finales": int(nf.height), "con_cubeta": int(con_cubeta.height),
-        "turnos_finales_perdidos_M": int(((nf["outs"] == 2) & (nf["turnos_incompletos"] == 0)).sum()),
-        "por_juego": por_juego,
-        "todas_las_de_2_outs": deficits(tres, dos_todas),         # misma población que ROADMAP §1.3
-        "solo_turno_final_perdido": deficits(tres, dos_perdidas),
+        "T": {"pasos": pasos, "medias_entradas": T.height, "P": int(T["P"].sum()), "Z": int(T["Z"].sum()),
+              "PZ": int(T["PZ"].sum())},
+        "prop16": p16, "prop17": p17,
+        "G08p": {**g08, "regla": "W(Γ=2) ≤ 3.92·SE_ref; ignorable si W(Γ=2) ≤ SE_ref"},
+        "G09": {"mecanismo": mecanismo, "theta_global": p16["global"]["theta_hat"], "ic95": theta_ic,
+                "regla": "U si IC95 sup ≤ 0.25 · L si IC95 inf ≥ 0.50 · mezcla en otro caso"},
+        "mecanismo_outs": mecanismo, "perdida_ignorable": bool(g08["perdida_ignorable"]),
+        "corroboraciones": {
+            "a_rodados": corr_a_rodados(df, T), "b_outs_previo": corr_b_outs_previo(T),
+            "c_logit": corr_c_logit(T, cub_no), "d_dobles": corr_d_dobles(
+                df, float(qa.get("dobles_matanzas_por_juego_ref", 1.63))), "e_poisson": corr_e_poisson(T)},
+        "informativas": {
+            "out_faltante_por_cubeta": por_cubeta, "out_faltante_por_cubeta_anio": _tasas(nf, ["cubeta", "year"]),
+            "rango_pp": float(max(tasas) - min(tasas)) if len(tasas) >= 2 else None,
+            "deficits_todas_las_de_2_outs": _deficits(tres, dos, n_boot, seed),
+            "deficits_sin_turno_incompleto": _deficits(tres, dos.filter(pl.col("turnos_incompletos") == 0), n_boot, seed)},
     }
 
 
 def correr_extras(df: pl.DataFrame, cat: dict, qa: dict, gates: dict | None = None, fis: dict | None = None,
                   seed: int = 2026) -> dict:
-    """Diagnósticos de v2.4/v2.5: ADR-010 (polinomios), ADR-011 (is_*), ADR-012/015 (2 outs y pérdida de
-    turnos) y ADR-014 (marco temporal de los 9P)."""
+    """Diagnósticos de v2.4 a v2.6: ADR-010 (polinomios), ADR-011 (is_*), ADR-012/016 (2 outs y mecanismo de los
+    outs faltantes) y ADR-014 (marco temporal de los 9P)."""
     gates, fis = gates or {}, fis or {}
     pol = matriz_polinomios(df, gates.get("g02_r2_c2_min", 0.9999), gates.get("g02_r2_c1_min", 0.999),
                             qa["poli_piso"])
     ts = t_s_por_lanzamiento(df, pol, qa["poli_piso"]) if pol.get("existe") else None
     inc = cat.get("outs_inconsistente", 4)
+    t_all = _medias_con_eventos(df, inc)         # una sola vez: lo usan el diagnóstico de 2 outs y ADR-016
     return {
         "polinomios": pol,
         "calibracion_9p": calibrar_plano_y_signo(
             df, ts, tuple(fis.get("planos_candidatos_ft", (Y_FRENTE_PLATO_FT, 0.0))),
             tuple(fis.get("signos_candidatos", (1, -1)))),
         "discrepancias_flags": discrepancias_flags(df, cat),
-        "dos_outs": diagnostico_dos_outs(df, inc),
-        "perdida_turnos": analisis_perdida_turnos(df, inc, int(qa.get("bootstrap_n", 1000)), seed),
+        "dos_outs": diagnostico_dos_outs(df, inc, t_all),
+        "mecanismo_outs": mecanismo_outs(df, qa, gates, inc, seed, t_all),
     }
