@@ -1,7 +1,7 @@
 # ROADMAP MAESTRO — Stuff+ LMB calibrado por densidad del aire
 
 **Proyecto:** Hackathon ISAC 2026 · Reto Diablos Rojos · `romoruz/calidad-de-pitcheo`
-**Versión:** 2.3 (2.2 + decisiones de D00 sobre categorías reales y composición de cubetas)
+**Versión:** 2.4 (2.3 + decisiones sobre la corrida real de F0: ADR-010 a 013)
 **Ruta local (clon del repo + datos):** `/home/rodrigo/calidad-de-pitcheo`
 **Regla:** solo el orquestador cambia este archivo. Claude Code lo lee, no lo edita.
 
@@ -169,6 +169,21 @@ Ninguna de estas decisiones usa outcomes: son inventarios de etiquetas y reglas 
 
 **Consecuencias en el resto del roadmap** (ya aplicadas abajo): F0 implementa ADR-002 a 007, I9 e I10, y el sintético reproduce cada caso real con una prueba. La normalización y la compuerta G2.2 de F2 cambian. H2 usa las familias de ADR-002. La recta primaria de F5.3 usa familias. Los ADR que el roadmap pedía en F4 y F6 pasan a ser 008 y 009.
 
+### 1.2 Decisiones del orquestador sobre la corrida real de F0
+
+Fallaron G0.1, G0.2 y G0.3. Ninguna falla es un error de código: las tres son supuestos del roadmap que el dato real no cumple. Son reglas de **control de calidad de datos**, no hipótesis, y F1 aún no ocurre; por eso se redefinen aquí con su justificación, sin sesgo post hoc.
+
+| ADR | Falla | Diagnóstico | Decisión |
+|---|---|---|---|
+| **010** | G0.2: I3 = 0 % (razones $2c_2/a_0$: X −1.87, Y −1.00, Z 0.17) | Y da −1.00 casi exacto: el eje Y del polinomio corre en sentido opuesto al `y` de los 9P. X y Z no dan ±1: **los ejes del polinomio no son los mismos que los de los 9P**, no es un problema de origen de tiempo (un desplazamiento de tiempo no cambia $c_2$) | **La trayectoria canónica es la de los 9P**: $\mathbf r(t)=\mathbf r_0+\mathbf v_0t+\tfrac12\mathbf a t^2$. Es exactamente el mismo modelo de aceleración constante, con convención ya conocida. F0 identifica el mapeo de los polinomios por una **matriz 3×3** de regresiones ($c_2^{P}$ sobre $a_{0}^{q}$, $c_1^{P}$ sobre $v_0^{q}$) y busca la permutación con signo que dé $R^2\ge0.99$. Si existe, se documenta y los polinomios sirven de verificación cruzada. Si no, se declaran no canónicos y no se usan. **Ninguna fase depende de ellos** |
+| **011** | G0.1: I6′ = 99.75 % (suma 99.93 %; contacto ⇔ Foul/InPlay 99.75 %; whiff ⇒ StrikeSwinging 100 %) | Las banderas `is_*` del organizador no son partición exacta de `PitchCall` en ~0.25 % de los lanzamientos (probablemente foul tips y fouls atrapables marcados distinto). `is_hit_by_pitch` es siempre 0 | **El árbol de desenlaces se define desde `pitch_call_h`**, no desde las banderas: swing = {StrikeSwinging, Foul, InPlay}; whiff = StrikeSwinging; contacto = {Foul, InPlay}. Así es una partición exacta por construcción. Las `is_*` quedan como verificación cruzada con su tabla de discrepancias. En el conteo manda `evento_terminal` (ADR-007) sobre `pitch_call_h`: un foul con `KorBB=Strikeout` es K |
+| **012** | G0.3: I7 = 86.1 % (outs por media entrada: 3 → 31 883; **2 → 4 763**; 0–1 → 276; ≥4 → 101) | 12.9 % terminan con 2 outs y apenas 0.5 pp se explican por la última media entrada del juego. Candidatos: tercer out en evento sin lanzamiento propio (robo, pickoff), lanzamientos faltantes de Trackman, o `OutsOnPlay` que no cuenta outs de corredores | Dos criterios de completitud. **A (estricto):** suma de outs = 3. **B (amplio):** el estado previo `Outs = 2` aparece en la media entrada y existe la media entrada siguiente del juego. F4.1 usa **A** como principal y **B** como sensibilidad; si los pesos difieren más que sus IC, se escala. Las medias entradas con ≥ 4 outs son inconsistentes y se excluyen de ambos |
+| **013** | IDs nulos: `pitcher_anon_id` 3 272 (0.52 %), `batter_anon_id` 2 020, `catcher_anon_id` 2 325 | Un ID nulo de lanzador formaría un "lanzador fantasma" en `GroupKFold` y en los rasgos de arsenal | Dos banderas separadas. `excluir_modelo`: lo de ADR-002/003/004/006 **más** `pitcher_anon_id` nulo. `excluir_cadena`: solo `pitch_call_h = Undefined`, `Outs` inválido y `play_result=NeutralPlay` con `InPlay` (7 filas sin resultado). La cadena de conteos y los pesos lineales usan **todas** las transiciones válidas, porque la mano o el ID no afectan a la transición del conteo |
+
+**Buenas noticias de la corrida:** 765 lanzadores tienen ≥ 30 lanzamientos en ≥ 2 cubetas y 665 aparecen en las tres. La identificación intra-lanzador de F2, F3 y H1 tiene muestra de sobra. I9 = 100 %: la cubeta es constante por juego. Cero valores sin regla. Exclusiones totales 0.33 % (≈ 0.85 % con ADR-013).
+
+**Nota para F7:** 2026 trae 135 604 lanzamientos, ~55 % de una temporada completa. El *season holdout* debe reportar el tamaño de cada pliegue y no comparar métricas sin esa nota.
+
 ---
 
 ## 2. Notación y constantes
@@ -324,6 +339,43 @@ Si I3 falla, la convención de tiempo del polinomio es distinta a la supuesta: s
 | I9 | `altitude_category` constante dentro de cada `game_anon_id` | 100 % de los juegos con cubeta |
 | I10 | `Outs ∈ {0,1,2}` | se reporta el conteo de violaciones |
 
+**Compuertas redefinidas en v2.4 (ADR-010 a 013):**
+
+| Compuerta | v2.3 | v2.4 |
+|---|---|---|
+| G0.1 | I1, I2, I6′ ≥ 99.9 % | I1, I2 ≥ 99.9 % · I6′ ≥ 99.5 % **y** tabla de discrepancias `is_*` × `pitch_call_h` (el árbol ya no depende de las banderas) |
+| G0.2 | I3 ≥ 99 % o convención documentada | Matriz 3×3 producida **y** (permutación con signo con $R^2\ge0.99$ en los tres ejes, **o** ADR-010 declara los polinomios no canónicos). En ambos casos pasa, porque la trayectoria canónica es 9P |
+| G0.3 | I7 ≥ 90 % | Criterio B ≥ 95 % de las medias entradas no finales **y** diagnóstico de las de 2 outs producido |
+| G0.6 | exclusiones ≤ 3 % | `excluir_modelo` ≤ 3 % · `excluir_cadena` ≤ 0.5 % |
+
+**Prompt de corrección F0 (v2.4, Sonnet, misma rama `fase00`):**
+
+```text
+Haz git pull de main y rebase de fase00 sobre main. ROADMAP.md está en v2.4: lee
+§1.2 (ADR-010 a 013) y las compuertas redefinidas de §4-F0. En la rama fase00:
+1. ADR-010: en qa.py, matriz 3×3 de regresiones (pendiente, intercepto, R²) de
+   c2 de cada eje del polinomio sobre ax0/ay0/az0, y de c1 sobre vx0/vy0/vz0.
+   Busca la permutación con signo de mejor R² mínimo. Si c1 encaja con un
+   intercepto ≠ 0, estima el desplazamiento de tiempo t_s = (c1 − v0)/a0.
+   Reporta la matriz y la decisión. Agrega en src/pitcheo/fisica.py la
+   función trayectoria_9p(t) = r0 + v0 t + ½ a t² como trayectoria canónica.
+2. ADR-011: columnas es_swing, es_whiff, es_contacto, es_foul, es_bip derivadas de
+   pitch_call_h. Tabla de discrepancias (agregada) contra is_swing, is_whiff,
+   is_contact, is_ball_in_play: cada combinación con su n.
+3. ADR-012: criterios A y B de completitud por media entrada; columnas
+   media_entrada_A y media_entrada_B. Diagnóstico de las medias entradas de 2
+   outs: % última del juego; si OutsOnPlay cuenta el out de los ponches (tabla
+   OutsOnPlay × evento_terminal=K); número de lanzamientos por media entrada vs.
+   las de 3 outs; y eventos terminales de su último turno reconstruible.
+4. ADR-013: banderas excluir_modelo y excluir_cadena con motivo.
+5. Sintético: reproduce los ejes del polinomio con la convención que resulte del
+   punto 1 si existe; si no, déjalo como está. Reproduce medias entradas de 2
+   outs, filas con pitcher_anon_id nulo y fouls con KorBB=Strikeout. Una prueba
+   por caso.
+6. ADR-010 a 013 en docs/DECISIONES.md citando ROADMAP §1.2. Compuertas v2.4.
+```
+*(+ sufijo §0.3)*
+
 **Prompt (Sonnet):**
 
 ```text
@@ -354,9 +406,10 @@ generador sintético).
    play_result × pitch_call_h × KorBB con el evento asignado; conteo de imputaciones
    y exclusiones por ADR (cuántas filas, %).
 6. scripts/fases/f00.sh según el sufijo §0.3.
-Compuertas: G0.1 I1, I2, I6′ ≥ 99.9 %; G0.2 I3 ≥ 99 % o convención documentada;
-G0.3 I7 ≥ 90 %; G0.4 I9 = 100 %; G0.5 cero valores "sin regla";
-G0.6 exclusiones totales (ADR-003/004/006 + EXC) ≤ 3 % de los lanzamientos.
+Compuertas (redefinidas en v2.4; ver tabla de arriba): G0.1 I1, I2 ≥ 99.9 % e
+I6′ ≥ 99.5 % con tabla; G0.2 matriz 3×3 y decisión ADR-010; G0.3 criterio B ≥ 95 %
+con diagnóstico; G0.4 I9 = 100 %; G0.5 cero valores "sin regla"; G0.6
+excluir_modelo ≤ 3 % y excluir_cadena ≤ 0.5 %.
 ```
 *(+ sufijo §0.3)*
 
@@ -540,7 +593,7 @@ Guarda data/interim/invariantes.parquet. reports/FASE_03.md con el Bloque.
 
 **Modelo:** Opus (diseño) → Sonnet · **Duración:** 4–5 h · **En paralelo con F5.**
 
-**4.1 Pesos lineales por media entrada.** Sea $h$ una media entrada completa (I7). Con $N_{e,h}$ el número de eventos terminales $e\in\{1B,2B,3B,HR,BB,HBP,K,\text{OUT\_BIP},\text{ROE},\text{SAC}\}$ (ADR-007):
+**4.1 Pesos lineales por media entrada.** Sea $h$ una media entrada completa según el criterio **A** de ADR-012 (principal); se repite con el criterio **B** como sensibilidad. Con $N_{e,h}$ el número de eventos terminales $e\in\{1B,2B,3B,HR,BB,HBP,K,\text{OUT\_BIP},\text{ROE},\text{SAC}\}$ (ADR-007):
 
 $$R_h=\sum_e w_e N_{e,h}+u_h .$$
 
@@ -614,7 +667,7 @@ Guarda data/interim/objetivo.parquet. reports/FASE_04.md con el Bloque.
 
 **5.3 Rasgos relacionales.** Recta primaria por lanzador×año: la familia de mayor uso entre {FF, SI} (ADR-002); si el lanzador no tiene ninguna con ≥ 10 % de uso, FC. Diferencias $\Delta v$, $\Delta$IVB, $\Delta$HB, $\lVert\Delta(x_0,z_0)\rVert$, uso. Con pocos lanzamientos, la media de la recta se encoge hacia la media de su forma (Bayes empírico, Prop. 10).
 
-**5.4 Túnel estático exacto.** Con los polinomios, $y(t)=c_0^{(y)}+c_1^{(y)}t+c_2^{(y)}t^2$. El instante de decisión resuelve $y(t^\ast)=y_d$:
+**5.4 Túnel estático exacto.** Con la trayectoria canónica 9P (ADR-010), $y(t)=y_0+v_{y0}t+\tfrac12a_{y0}t^2$, es decir $c_0=y_0$, $c_1=v_{y0}$, $c_2=\tfrac12a_{y0}$. El instante de decisión resuelve $y(t^\ast)=y_d$:
 
 $$t^\ast=\frac{-c_1^{(y)}-\sqrt{(c_1^{(y)})^2-4c_2^{(y)}(c_0^{(y)}-y_d)}}{2c_2^{(y)}}$$
 
@@ -662,6 +715,8 @@ mismo lanzador? Veredicto de compuertas.
 | N4 | $P(\text{strike cantado}\mid\text{no swing})$ | no swing |
 | N5 | $\mathbb E[\hat w\mid\text{BIP}]$ | en juego (regresión) |
 
+Los nodos se definen desde `pitch_call_h` y `evento_terminal` (ADR-011), no desde las banderas `is_*`; así forman una partición exacta.
+
 Auxiliares para el reporte: $P(\text{chase})$ con `swung_outside_strike_zone`, $P(\text{GB}\mid\text{BIP})$, $P(\text{contacto duro}\mid\text{BIP})$.
 
 Con $\Delta_s(c)$ el cambio de valor por strike, $\Delta_b(c)$ por bola y $\Delta_f(c)=\Delta_s(c)\,\mathbb 1[S<2]$ por foul, la **ley de la esperanza total** sobre el árbol da exactamente
@@ -690,7 +745,7 @@ y $L_i=m_P(x_i,\ell_i,c_i)-\bar m(x_i,c_i)$. Entonces $\mathbb E[L\mid x,c]=0$.
 
 **6.3 Restricciones monótonas** (ablación): $v_{perc}$ y `Extension` decrecientes en xRV. Se conservan solo si la log-loss fuera de muestra empeora < 0.1 %.
 
-**6.4 Validación cruzada anidada.** Externa: año (entrenar en $Y_1,Y_2$ → probar en $Y_3$; y rotación). Interna: `GroupKFold(5)` por `pitcher_anon_id`. Calibración isotónica sobre predicciones fuera de fold.
+**6.4 Validación cruzada anidada.** Externa: año (entrenar en $Y_1,Y_2$ → probar en $Y_3$; y rotación). Filas con `excluir_modelo` fuera (ADR-013). Interna: `GroupKFold(5)` por `pitcher_anon_id`. Calibración isotónica sobre predicciones fuera de fold.
 
 **6.5 Proposición 10 (escala Stuff+).** Sea $s=-\text{xRV}^S$. Con $\mu,\sigma$ calculadas **una sola vez** sobre la población de referencia (medias lanzador×forma con $n\ge50$, evaluadas en el entorno neutral $\bar\rho$ de la liga, por año):
 
@@ -959,6 +1014,8 @@ PR, merge a main, tag v1.0.
 | Cubetas de altitud no ordenadas como se supone | Media | Alto | G2.2 | Usar $\hat\rho_g$ continua y no la etiqueta |
 | *Extreme* sin una clase de densidad de ~2 200 m distinguible | Media | Medio | G2.2(c) | $\rho_{CDMX}$ por barométrica relativa a la referencia; se reporta como supuesto |
 | Valores categóricos nuevos en datos futuros | Media | Bajo | G0.5 | Fallo explícito "sin regla", nunca asignación silenciosa |
+| Medias entradas de 2 outs sesgan los pesos lineales | Media | Medio | ADR-012 | Criterio A principal, B sensibilidad; escalar si difieren |
+| Banderas `is_*` inconsistentes con `PitchCall` | Confirmada | Bajo | ADR-011 | Árbol desde `pitch_call_h` |
 | Sesgo de sensor por parque | Media | Alto | G2.3 (Prop. 3) | Sobreidentificación; acotar sesgo |
 | Convención del polinomio distinta | Media | Medio | I3 | Ajustar fórmula de $t^\ast$; ADR |
 | Pocos lanzadores en varias cubetas | Media | Alto | F0 | Efectos aleatorios en vez de fijos; ampliar IC |
