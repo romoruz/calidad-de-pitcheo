@@ -1,7 +1,7 @@
 # ROADMAP MAESTRO — Stuff+ LMB calibrado por densidad del aire
 
 **Proyecto:** Hackathon ISAC 2026 · Reto Diablos Rojos · `romoruz/calidad-de-pitcheo`
-**Versión:** 2.8 (2.7 + enmienda de H5 a prueba de equivalencia, antes de cualquier análisis de outcomes)
+**Versión:** 2.9 (2.8 + revisión del diseño de F2: Props. 2′ y 3′, errores estándar, sintética)
 **Ruta local (clon del repo + datos):** `/home/rodrigo/calidad-de-pitcheo`
 **Regla:** solo el orquestador cambia este archivo. Claude Code lo lee, no lo edita.
 
@@ -356,6 +356,43 @@ Ignora el agrupamiento por juego, así que el SE sale **menor** y la regla es m�
 - los OR del logit.
 
 Ninguna es estadístico de H1–H6, y se declaran en `docs/HIPOTESIS.md`.
+
+---
+
+### 1.6 Revisión del diseño de F2 (D02a del orquestador)
+
+**(1) Prop. 3′ — sesgo de calibración (sustituye a la Prop. 3).** Con escala espacial $\lambda_g$ y reloj $\tau_g$ por parque, se mide $\tilde{\mathbf v}=(\lambda/\tau)\mathbf v$ y $\tilde{\mathbf a}=(\lambda/\tau^2)\mathbf a$. Al restar la gravedad verdadera,
+
+$$\tilde{\mathbf a}-\mathbf g=\frac{\lambda}{\tau^2}\,\mathbf a_{aero}+c_g\,\mathbf g,\qquad c_g=\frac{\lambda_g}{\tau_g^2}-1 .$$
+
+*Consecuencias:*
+
+- (a) El cociente aerodinámico $\mathbf a_{aero}/\lVert\mathbf v\rVert^2$ escala por $1/\lambda$, de modo que $\delta^D_g=\log\rho_g-\log\lambda_g$; el reloj no entra.
+- (b) Escala **y** reloj dejan el mismo residuo $c_g\mathbf g$, casi perpendicular a $\mathbf v$. Ese residuo carga en el canal de sustentación, así que $\delta^L_g-\delta^D_g$ estima $c_g$, la combinación, sin poder separar escala de reloj.
+- (c) Un sesgo de 2 % mueve $\delta$ un 2 %, un orden de magnitud bajo la señal ($|\log0.762|=0.27$).
+
+*Detector adicional.* Si `SpinAxis` es medido (no inferido del movimiento), sea $\hat{\mathbf e}=\hat{\mathbf v}\times\hat{\mathbf n}_{spin}$. El modelo es $\tilde{\mathbf a}\cdot\hat{\mathbf e}_i=c_g(\mathbf g\cdot\hat{\mathbf e}_i)+\beta_{j,k}+\epsilon_i$, donde $\beta_{j,k}$ absorbe la estela por costuras y el desajuste de eje del lanzador; de ahí sale $\hat c_g$ por juego. Si la varianza de $\tilde{\mathbf a}\cdot\hat{\mathbf e}$ es ≈ 0, el eje es inferido del movimiento: se declara así y el único detector es G2.3.
+
+**(2) Prop. 2′ — dos efectos fijos (sustituye a la Prop. 2).**
+
+$$y^D_i=\delta_{g(i)}+\alpha_{j(i),k(i)}+f_D(S_i,k_i,h_i,\text{year})+\eta_i .$$
+
+$\delta_g-\delta_{g'}$ está identificado dentro del **conjunto conectado** del grafo bipartito juegos–(lanzador×forma) (Abowd, Kramarz y Margolis, 1999); se reporta su tamaño. *Por qué:* sin $\alpha$, el C_D medio del staff local carga en el parque, con un sesgo de orden 0.01 en $\log\rho$, igual a la resolución que pide G2.2(c). Se estima por proyecciones alternadas (Guimarães y Portugal, 2010). La normalización $\bar\delta_{No}:=0$ no cambia.
+
+**(3) Errores estándar.**
+
+- Para $\delta_g$: corrección CR2 (Bell y McCaffrey, 2002) con conglomerados = lanzador dentro del juego, porque hay pocos (~9 por juego).
+- Para contrastes de medias por cubeta y la regresión de Deming: agrupamiento doble juego × lanzador (Cameron, Gelbach y Miller, 2011).
+- G2.4 usa la mediana del SE CR2.
+
+**(4) Error del punto medio.** $\varepsilon\approx s^2/4$ con $s\propto\rho$: depende de ρ, no lo absorbe $f_D$. El sesgo diferencial es ≈ $s_0^2(1-0.76^2)/4\approx0.001$ en $\log\rho$, despreciable; la sintética lo verifica.
+
+**(5) Fallback del soporte común.** Nunca se elimina `year`, porque la pelota cambia de arrastre entre temporadas. El orden es: menos nudos → lineal → fundir forma en familia → marcar el juego como baja confianza.
+
+**(6) Sintética de F2, además de lo ya diseñado:**
+
+- efecto de lanzador $\alpha_{j}$ con desviación estándar 0.05 en log C_D, y staffs asignados a parques locales: debe mostrar el sesgo sin $\alpha$ y su desaparición con $\alpha$;
+- casos (λ = 1.02, τ = 1) y (λ = 1, τ = 1.01): ambos deben detectarse en G2.3 con $\hat c_g$ ≈ ±0.02.
 
 ---
 
