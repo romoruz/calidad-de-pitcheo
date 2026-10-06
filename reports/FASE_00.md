@@ -1,6 +1,6 @@
 # FASE 00 — Ingesta y QA por identidades
 
-Filas de entrada: 635,002 · filas de salida: 635,002 · 4.6s
+Filas de entrada: 635,002 · filas de salida: 635,002 · 6.6s
 
 `data/interim/pitches.parquet` particionado por year: 2024: 243,254, 2025: 256,144, 2026: 135,604
 
@@ -83,8 +83,8 @@ Revisa que ninguna combinación inesperada tenga un evento que no debería.
 | NeutralPlay | InPlay | Undefined | — | 7 |
 | Strikeout | Foul | Strikeout | K | 3 |
 | Out | StrikeSwinging | Undefined | — | 1 |
-| Walk | StrikeCalled | Walk | BB | 1 |
 | Out | BallCalled | Undefined | — | 1 |
+| Walk | StrikeCalled | Walk | BB | 1 |
 
 ### Incoherencias (se reportan, no fallan)
 
@@ -134,7 +134,7 @@ Total (unión, sin doble conteo): **5,102** lanzamientos = **0.8035 %**.
 
 Total (unión, sin doble conteo): **856** lanzamientos = **0.1348 %**.
 
-## ADR-010 — ejes de los polinomios de trayectoria vs. los 9P
+## ADR-010 (enmienda v2.5) — los polinomios de trayectoria son los 9P en otros ejes
 
 n = 635,002 filas. Cada celda es **R² (pendiente)** de la regresión simple de la fila (eje del polinomio) sobre la columna (eje de los 9P).
 
@@ -162,25 +162,45 @@ n = 635,002 filas. Cada celda es **R² (pendiente)** de la regresión simple de 
 | Y | 0.0133 (+0.036) | 0.0000 (+179.864) | 0.9554 (+1.059) |
 | Z | 0.9970 (+1.111) | 0.0000 (+3691.023) | 0.0145 (+0.465) |
 
-- Mejor permutación con signo (R² mínimo sobre c2 y c1): {'X': 'y', 'Y': 'z', 'Z': 'x'} · signos {'X': 1, 'Y': 1, 'Z': 1} · R² mín. **0.988868** (exigido 0.99)
-- Escala |2·pendiente(c2)| (1 = misma escala): {'X': '1.0000', 'Y': '1.0000', 'Z': '1.0000'}
-- **Decisión: `no_canonicos`** — ninguna permutación con signo alcanza el R² exigido: se declaran no canónicos y no se usan.
+- Permutación (elegida con **c2**, que no depende del origen de tiempo): {'X': 'y', 'Y': 'z', 'Z': 'x'} · signos {'X': 1, 'Y': 1, 'Z': 1} · escala |2·pendiente(c2)| {'X': '1.0000', 'Y': '1.0000', 'Z': '1.0000'}
+- c2: R² por pares mín. **1.000000** · regresión conjunta mín. **1.000000** (exigido 0.9999)
+- **t_s por lanzamiento** = (s·c1_X − v0)/a0 (n = 635,002): mediana -0.03630 s · IQR 0.00750 s · p1 -0.05131 · p99 -0.02476  (negativo = el polinomio arranca ANTES de y = 50 ft: en la liberación)
+- t_s por eje (mediana, consistencia): X: -0.03630, Y: -0.03630, Z: -0.03608
 
-Regresión conjunta (informativa): cada eje del polinomio sobre los tres ejes de los 9P a la vez. Si R² ≈ 1 con coeficientes que no son ±1 y 0, los polinomios están en un marco **rotado**, no son una permutación con signo.
+**c1 del polinomio sobre (v0 + a0·t_s) del eje permutado** — contra v2.4, que comparaba c1 con v0 a secas:
 
-| familia | eje del polinomio | R² | coef. sobre (x, y, z) | intercepto |
+| eje del polinomio | R² con t_s | pendiente | R² sin t_s (v2.4) | nota |
 |---|---|---|---|---|
-| c2 | X | 1.000000 | (+0.0000, +0.5000, -0.0000) | -0.0000 |
-| c2 | Y | 1.000000 | (-0.0000, +0.0000, +0.5000) | -0.0000 |
-| c2 | Z | 1.000000 | (+0.5000, +0.0000, -0.0000) | -0.0000 |
-| c1 | X | 0.999701 | (+0.0006, +1.0013, -0.0017) | -0.6961 |
-| c1 | Y | 0.995333 | (+0.0031, +0.0343, +1.0271) | 5.3374 |
-| c1 | Z | 0.998100 | (+1.0345, -0.0087, +0.0024) | -1.0875 |
-| c0 | X | 0.004739 | (+0.0232, -2815.7412, +0.0200) | 140841.6074 |
-| c0 | Y | 0.955410 | (+0.0001, +923.7797, +1.0591) | -46189.2228 |
-| c0 | Z | 0.996996 | (+1.1103, +554.2823, +0.0131) | -27714.1947 |
+| X | 1.000000 | 1.00000 | 0.9997 | eje de referencia: 1 por construcción |
+| Y | 1.000000 | 1.00000 | 0.9889 | prueba independiente |
+| Z | 1.000000 | 1.00000 | 0.9980 | prueba independiente |
 
-**Verificación de la trayectoria canónica (9P):** posición en t = ZoneTime contra el dato (n = 635,002; |error| en pies, mediana / p99): PlateLocSide 1.2897 / 5.0899 · PlateLocHeight 0.4717 / 1.0554 · y(ZoneTime) − 17/12 ft 4.2740 / 5.3908
+- R² mín. de c1 con t_s: **1.000000** (exigido 0.999)
+- **Decisión: `equivalentes`** — los polinomios son los 9P en ejes permutados con el origen de tiempo en la liberación; sirven de verificación cruzada.
+
+Regresión conjunta de c2 (informativa): cada eje del polinomio sobre los tres ejes de los 9P a la vez.
+
+| eje del polinomio | R² | coef. sobre (x, y, z) | intercepto |
+|---|---|---|---|
+| X | 1.000000 | (+0.0000, +0.5000, -0.0000) | -0.0000 |
+| Y | 1.000000 | (-0.0000, +0.0000, +0.5000) | -0.0000 |
+| Z | 1.000000 | (+0.5000, +0.0000, -0.0000) | -0.0000 |
+
+## ADR-014 — marco temporal único de los 9P
+
+El reloj de los 9P arranca en y0 = 50 ft; `ZoneTime` y los polinomios arrancan en la liberación. El tiempo al plato t_p es la raíz de y(t_p) = y_p con los 9P (no `ZoneTime`). Se elige el plano y_p y el signo s de `PlateLocSide = s·x(t_p)` por mínimo error mediano. |error| en pies, mediana / p99:
+
+n = 635,002
+
+| y_p (ft) | signo s | PlateLocSide | PlateLocHeight | elegida |
+|---|---|---|---|---|
+| 1.4167 | +1 | 1.2236 / 4.8221 | 0.0013 / 0.0318 |  |
+| 1.4167 | -1 | 0.0017 / 0.0091 | 0.0013 / 0.0318 | ✅ |
+| 0.0000 | +1 | 1.2448 / 4.9043 | 0.1551 / 0.3307 |  |
+| 0.0000 | -1 | 0.0359 / 0.1444 | 0.1551 / 0.3307 |  |
+
+- **Verificación de ZoneTime** con t_s por lanzamiento: |ZoneTime − (t_p − t_s)| mediana **0.00003 s** · p99 0.00011 s (n = 635,002). Lo que se hacía mal, |ZoneTime − t_p|: mediana 0.03626 s.
+- Config vigente (`fisica.y_plato_ft`, `fisica.signo_plateloc_x`): y_p = 1.4166667, s = -1. Coincide con la elegida por los datos.
 
 ## ADR-011 — banderas is_* del organizador vs. pitch_call_h
 
@@ -206,12 +226,14 @@ El árbol de desenlaces se define desde `pitch_call_h` (partición exacta); las 
 | es_contacto | 0 | is_contact | 1 | HitByPitch | 230 |
 | es_swing | 0 | is_swing | 1 | BallinDirt | 45 |
 | es_contacto | 0 | is_contact | 1 | BallinDirt | 45 |
-| es_bip | 0 | is_ball_in_play | 1 | BallCalled | 1 |
 | es_bip | 0 | is_ball_in_play | 1 | StrikeSwinging | 1 |
+| es_bip | 0 | is_ball_in_play | 1 | BallCalled | 1 |
 
-## ADR-012 — medias entradas de 2 outs (diagnóstico)
+## ADR-012 / ADR-015 — medias entradas de 2 outs: ¿robo o turno final perdido?
 
-Candidatos: (1) tercer out sin lanzamiento propio (robo, pickoff) → la media entrada deja un turno **incompleto**; (2) lanzamientos faltantes; (3) `OutsOnPlay` que no cuenta ciertos outs. Sin orden de lanzamientos, el último turno reconstruible es el del bateador sin evento terminal.
+Sin orden de lanzamientos, un turno es **incompleto** si hay lanzamientos de un bateador de la media entrada sin ningún evento terminal (lo que dejaría un robo o un pickoff con 2 outs). Si todos sus turnos terminan, la media entrada perdió su **último turno completo**.
+
+**Clasificación de las 4,449 medias entradas NO finales de 2 outs:** turno incompleto 415 (**9.328 %**) · turno final perdido 4,034 (**90.672 %**).
 
 | métrica | 2 outs | 3 outs |
 |---|---|---|
@@ -219,7 +241,7 @@ Candidatos: (1) tercer out sin lanzamiento propio (robo, pickoff) → la media e
 | % que es la última del juego | 6.592 | 5.228 |
 | lanzamientos por media entrada (mediana / media) | 14 / 15.1 | 16 / 17.5 |
 | % con ≥1 turno incompleto | 9.469 | 2.948 |
-| turnos incompletos por media entrada | 0.0989 | 0.0300 |
+| **ponches por out registrado** | 0.187 | 0.300 |
 | eventos K por media entrada | 0.374 | 0.899 |
 | eventos OUT_BIP por media entrada | 1.579 | 1.967 |
 | eventos SAC por media entrada | 0.029 | 0.055 |
@@ -227,6 +249,46 @@ Candidatos: (1) tercer out sin lanzamiento propio (robo, pickoff) → la media e
 | eventos HBP por media entrada | 0.081 | 0.057 |
 | eventos ROE por media entrada | 0.057 | 0.046 |
 | outs implicados por eventos − OutsOnPlay | {'-2': 3, '-1': 129, '0': 4585, '1': 46} | {'-3': 5, '-2': 116, '-1': 2467, '0': 29118, '1': 173, '2': 3, '3': 1} |
+
+### Tasa de turno final perdido por cubeta (G0.8)
+
+Sobre las medias entradas **no finales**; IC de Wilson al 95 %. Si difiere entre cubetas, la pérdida de datos se confunde con la altitud en cualquier comparación de outcomes (F8).
+
+| cubeta | medias_entradas | dos_outs | turno_incompleto | turno_final_perdido | tasa_perdido_% | ic95_wilson_% |
+|---|---|---|---|---|---|---|
+| (sin cubeta) | 153 | 22 | 1 | 21 | 13.725 | [9.156, 20.072] |
+| Extreme Altitude | 9,799 | 1,476 | 78 | 1,398 | 14.267 | [13.588, 14.973] |
+| Medium Altitude | 8,332 | 1,091 | 115 | 976 | 11.714 | [11.041, 12.422] |
+| No Altitude | 16,612 | 1,860 | 221 | 1,639 | 9.866 | [9.422, 10.329] |
+
+**Rango entre cubetas (máx − mín): 4.400 pp** · M (turnos finales perdidos, no finales) = 4,034 de 34,896 medias entradas
+
+**Por cubeta y año:**
+
+| cubeta | year | medias_entradas | turno_final_perdido | tasa_perdido_% | ic95_wilson_% |
+|---|---|---|---|---|---|
+| (sin cubeta) | 2025 | 53 | 6 | 11.321 | [5.293, 22.577] |
+| (sin cubeta) | 2026 | 100 | 15 | 15.000 | [9.306, 23.284] |
+| Extreme Altitude | 2024 | 3,642 | 523 | 14.360 | [13.259, 15.537] |
+| Extreme Altitude | 2025 | 3,836 | 554 | 14.442 | [13.365, 15.590] |
+| Extreme Altitude | 2026 | 2,321 | 321 | 13.830 | [12.485, 15.295] |
+| Medium Altitude | 2024 | 3,334 | 411 | 12.328 | [11.255, 13.487] |
+| Medium Altitude | 2025 | 3,503 | 402 | 11.476 | [10.462, 12.574] |
+| Medium Altitude | 2026 | 1,495 | 163 | 10.903 | [9.422, 12.584] |
+| No Altitude | 2024 | 6,619 | 655 | 9.896 | [9.199, 10.639] |
+| No Altitude | 2025 | 6,426 | 677 | 10.535 | [9.808, 11.310] |
+| No Altitude | 2026 | 3,567 | 307 | 8.607 | [7.730, 9.572] |
+
+### Déficits de eventos y π̂_K (ROADMAP §1.3)
+
+Déficit = media por media entrada de las de 3 outs − media de las de 2 outs; π̂_K = d_K / (d_K + d_OUT_BIP + d_SAC). IC95 por bootstrap de medias entradas. **No se implementan los pesos ω (eso es F4).**
+
+- **todas las de 2 outs (misma población que §1.3)** (n = 4,763 vs 31,883): d_K = 0.525 [0.506, 0.542] · d_OUT_BIP = 0.387 [0.370, 0.407] · d_SAC = 0.026 [0.021, 0.032] · **π̂_K = 0.559** [0.539, 0.577]
+- **solo las de turno final perdido** (n = 4,312 vs 31,883): d_K = 0.538 [0.522, 0.557] · d_OUT_BIP = 0.363 [0.345, 0.380] · d_SAC = 0.028 [0.022, 0.033] · **π̂_K = 0.579** [0.562, 0.599]
+
+- Agrupamiento por juego de los turnos finales perdidos: 2,126 juegos · tasa media 11.56 % · dispersión de Pearson φ = 1.10 (≈ 1 si se reparten al azar entre juegos; ≫ 1 si se concentran en algunos) · 84.7 % de los juegos con ≥ 1 · 29.9 % con > 2
+
+> Nota de identificación: los déficits comparan las medias entradas de 2 outs con las de 3 outs **registradas**. π̂_K es una estimación gruesa: con datos sintéticos sembrados con una verdad de π_K = 0.40, 0.71 y 0.93 devuelve ≈ 0.34, 0.30 y 0.30; es decir, mide los ponches entre los terceros outs **registrados** (≈ la fracción de ponches entre todos los outs) y es **insensible** a la pérdida selectiva. Si el valor real supera claramente esa fracción, no lo explica «se pierde el último turno»: compara los **ponches por out registrado** de la tabla (iguales si solo faltara el último turno) y la dispersión por juego. Las cotas con π ∈ {0, 1} de Prop. 15 no dependen de este valor. Ver `docs/discrepancias/D01.md`.
 
 **OutsOnPlay × evento_terminal** (¿cuenta el out de los ponches?)
 
@@ -270,17 +332,19 @@ Candidatos: (1) tercer out sin lanzamiento propio (robo, pickoff) → la media e
 ## Compuertas
 
 - **G0.1** ✅ I1 100.0000 % · I2 100.0000 % (mín. 99.9%) · I6′ 99.7491 % (mín. 99.5%) · tabla de discrepancias is_* × pitch_call_h: producida
-- **G0.2** ✅ matriz 3×3 producida · ningún mapeo con R² ≥ 0.99 (mejor R² mín. 0.988868) → ADR-010: polinomios NO canónicos · la trayectoria canónica es la de los 9P
-- **G0.3** ❌ criterio B 91.9790 % de 34,896 medias entradas no finales (mín. 95%) · diagnóstico de las de 2 outs: producido (4,763 medias entradas)
+- **G0.2** ✅ ADR-010 enmendado: permutación {'X': 'y', 'Y': 'z', 'Z': 'x'} · c2 R² por pares 1.000000 y conjunta 1.000000 (mín. 0.9999) · c1 con t_s R² mín. 1.000000 (mín. 0.999) → **equivalentes**; la trayectoria canónica sigue siendo la de los 9P
+- **G0.3** ✅ diagnóstico de las 4,763 medias entradas de 2 outs producido y clasificado (no finales: 4,449): turno incompleto 9.328 % vs turno final perdido 90.672 %
 - **G0.4** ✅ I9 100.0000 % de 2,117 juegos con cubeta
 - **G0.5** ✅ valores sin regla: 0
 - **G0.6** ✅ excluir_modelo 0.803 % (máx. 3%) · excluir_cadena 0.135 % (máx. 0.5%)
+- **G0.7** ✅ ADR-014 con y_p = 1.4167 ft y signo -1: |error| mediana/p99 PlateLocSide 0.0017/0.0091 ft · PlateLocHeight 0.0013/0.0318 ft (máx. 0.05/0.3) · |ZoneTime − (t_p − t_s)| mediana 0.00003 s (máx. 0.005) · config vigente coincide
+- **G0.8** ❌ tasa de turno final perdido por cubeta (todos los años): Extreme Altitude 14.27 %, Medium Altitude 11.71 %, No Altitude 9.87 % · máx − mín = 4.400 pp (máx. 3.0 pp) → **DISCREPANCIA: la pérdida de datos se confunde con la altitud; no se sigue a F1**
 
 ### Bloque para el orquestador — F00
 - Modelo(s) usado(s): Sonnet
-- Compuertas: G0.1 ✅ | G0.2 ✅ | G0.3 ❌ | G0.4 ✅ | G0.5 ✅ | G0.6 ✅
-- Cifras clave: 635,002 lanzamientos · 2,127 juegos · excluir_modelo 0.8035 % · excluir_cadena 0.1348 % · I1 100.0000 % · I6′ 99.7491 % · I7 A 86.1167 % / B no finales 91.9790 % · ADR-010: no_canonicos
-- Desviaciones respecto al ROADMAP: ninguna (compuertas v2.4, ADR-010 a 013)
+- Compuertas: G0.1 ✅ | G0.2 ✅ | G0.3 ✅ | G0.4 ✅ | G0.5 ✅ | G0.6 ✅ | G0.7 ✅ | G0.8 ❌
+- Cifras clave: 635,002 lanzamientos · 2,127 juegos · excluir_modelo 0.8035 % · excluir_cadena 0.1348 % · I1 100.0000 % · I6′ 99.7491 % · I7 A 86.1167 % / B no finales 91.9790 % · ADR-010: equivalentes · t_s mediana -0.0363 s · ADR-014 y_p 1.4167 ft, signo -1, |ZoneTime−(t_p−t_s)| mediana 0.00003 s · turno final perdido: rango entre cubetas 4.400 pp · π̂_K 0.559
+- Desviaciones respecto al ROADMAP: ninguna (compuertas v2.5: ADR-010 enmendado, 014 y 015)
 - Mejora posible detectada: ninguna
 - Riesgo de empeorar: ninguno
 - Rama / PR / commit de resultados locales: fase00 / (pendiente) / (pendiente)
