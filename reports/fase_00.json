@@ -1,16 +1,16 @@
 {
   "gates": {
     "G0.1": {
-      "ok": false,
-      "detalle": "I1 100.0000 % · I2 100.0000 % · I6′ 99.7491 % (mín. 99.9%)"
+      "ok": true,
+      "detalle": "I1 100.0000 % · I2 100.0000 % (mín. 99.9%) · I6′ 99.7491 % (mín. 99.5%) · tabla de discrepancias is_* × pitch_call_h: producida"
     },
     "G0.2": {
-      "ok": false,
-      "detalle": "I3 0.0000 % (mín. 99%); razón 2·c2/a0 por eje: X=-1.8680, Y=-0.9992, Z=0.1749 — si falla: documentar la convención, no forzarla"
+      "ok": true,
+      "detalle": "matriz 3×3 producida · ningún mapeo con R² ≥ 0.99 (mejor R² mín. 0.988868) → ADR-010: polinomios NO canónicos · la trayectoria canónica es la de los 9P"
     },
     "G0.3": {
       "ok": false,
-      "detalle": "I7 86.1167 % de 37,023 medias entradas (mín. 90%)"
+      "detalle": "criterio B 91.9790 % de 34,896 medias entradas no finales (mín. 95%) · diagnóstico de las de 2 outs: producido (4,763 medias entradas)"
     },
     "G0.4": {
       "ok": true,
@@ -22,10 +22,10 @@
     },
     "G0.6": {
       "ok": true,
-      "detalle": "exclusiones 0.327 % de los lanzamientos (máx. 3%)"
+      "detalle": "excluir_modelo 0.803 % (máx. 3%) · excluir_cadena 0.135 % (máx. 0.5%)"
     }
   },
-  "segundos": 3.0,
+  "segundos": 4.6,
   "salida": {
     "ruta": "data/interim/pitches.parquet",
     "filas_por_year": {
@@ -160,6 +160,13 @@
     "undefined_excluidos": 841,
     "pct_undefined": 0.1324
   },
+  "ADR-011": {
+    "es_swing": 296657,
+    "es_whiff": 71914,
+    "es_contacto": 224743,
+    "es_foul": 108797,
+    "es_bip": 115946
+  },
   "ADR-003": {
     "lanzador": {
       "filas_mano_indefinida": 1421,
@@ -218,30 +225,75 @@
     "outs_nulos": 0
   },
   "exclusiones": {
-    "por_motivo": {
-      "ADR-002:EXC": {
-        "n": 62,
-        "pct": 0.0098
+    "modelo": {
+      "por_motivo": {
+        "ADR-002:EXC": {
+          "n": 62,
+          "pct": 0.0098
+        },
+        "ADR-003:lanzador": {
+          "n": 0,
+          "pct": 0.0
+        },
+        "ADR-003:bateador": {
+          "n": 1163,
+          "pct": 0.1831
+        },
+        "ADR-004:Undefined": {
+          "n": 841,
+          "pct": 0.1324
+        },
+        "ADR-006:Outs": {
+          "n": 8,
+          "pct": 0.0013
+        },
+        "ADR-013:pitcher_id_nulo": {
+          "n": 3272,
+          "pct": 0.5153
+        }
       },
-      "ADR-003:lanzador": {
-        "n": 0,
-        "pct": 0.0
-      },
-      "ADR-003:bateador": {
-        "n": 1163,
-        "pct": 0.1831
-      },
-      "ADR-004:Undefined": {
-        "n": 841,
-        "pct": 0.1324
-      },
-      "ADR-006:Outs": {
-        "n": 8,
-        "pct": 0.0013
-      }
+      "total": 5102,
+      "pct_total": 0.8035
     },
-    "total": 2074,
-    "pct_total": 0.3266
+    "cadena": {
+      "por_motivo": {
+        "ADR-004:Undefined": {
+          "n": 841,
+          "pct": 0.1324
+        },
+        "ADR-006:Outs": {
+          "n": 8,
+          "pct": 0.0013
+        },
+        "ADR-013:InPlay_sin_resultado": {
+          "n": 7,
+          "pct": 0.0011
+        }
+      },
+      "total": 856,
+      "pct_total": 0.1348
+    }
+  },
+  "ADR-012": {
+    "medias_entradas": 37023,
+    "finales": 2127,
+    "no_finales": 34896,
+    "A": 31883,
+    "pct_A": 86.1167,
+    "B_no_finales": 32097,
+    "pct_B_no_finales": 91.979,
+    "inconsistentes": 101,
+    "distribucion_outs": {
+      "0": 75,
+      "1": 201,
+      "2": 4763,
+      "3": 31883,
+      "4": 84,
+      "5": 8,
+      "6": 7,
+      "8": 1,
+      "9": 1
+    }
   },
   "tabla_evento": [
     {
@@ -406,17 +458,17 @@
       "n": 3
     },
     {
-      "play_result": "Walk",
-      "pitch_call_h": "StrikeCalled",
-      "KorBB": "Walk",
-      "evento_terminal": "BB",
-      "n": 1
-    },
-    {
       "play_result": "Out",
       "pitch_call_h": "StrikeSwinging",
       "KorBB": "Undefined",
       "evento_terminal": null,
+      "n": 1
+    },
+    {
+      "play_result": "Walk",
+      "pitch_call_h": "StrikeCalled",
+      "KorBB": "Walk",
+      "evento_terminal": "BB",
       "n": 1
     },
     {
@@ -532,6 +584,8 @@
       "n": 37023,
       "sin_ultima_media_entrada": 0.8658872077028886,
       "n_sin_ultima": 34896,
+      "B_no_finales": 0.9197902338376891,
+      "inconsistentes": 101,
       "distribucion_outs": {
         "0": 75,
         "1": 201,
@@ -568,7 +622,7 @@
         },
         "Four-Seam": {
           "evaluado": true,
-          "media_derecho": 8.329586578556277,
+          "media_derecho": 8.32958657855628,
           "media_zurdo": -8.047659213093702,
           "signo_opuesto": true
         },
@@ -721,5 +775,934 @@
       "3": 665
     },
     "lanzadores_con_30_lanzamientos_en_2_o_mas_cubetas": 765
+  },
+  "extras": {
+    "polinomios": {
+      "n": 635002,
+      "matriz": {
+        "c2": {
+          "X": {
+            "x": {
+              "pendiente": -0.059124141910128006,
+              "intercepto": 11.583750409584795,
+              "r2": 0.08262623984431168
+            },
+            "y": {
+              "pendiente": 0.5000000148970987,
+              "intercepto": 6.816236464146641e-09,
+              "r2": 0.9999999999963364
+            },
+            "z": {
+              "pendiente": 0.1560692673605777,
+              "intercepto": 15.494319506729992,
+              "r2": 0.38025502293730534
+            }
+          },
+          "Y": {
+            "x": {
+              "pendiente": -0.10837500937195967,
+              "intercepto": -12.259933608325253,
+              "r2": 0.07113222151972229
+            },
+            "y": {
+              "pendiente": 0.6091126332085895,
+              "intercepto": -26.25117773661413,
+              "r2": 0.3802550301798661
+            },
+            "z": {
+              "pendiente": 0.5000000154250339,
+              "intercepto": 8.495321779378173e-09,
+              "r2": 0.9999999999990627
+            }
+          },
+          "Z": {
+            "x": {
+              "pendiente": 0.5000000151392338,
+              "intercepto": 2.868026705016291e-09,
+              "r2": 0.9999999999993769
+            },
+            "y": {
+              "pendiente": -0.349376089577502,
+              "intercepto": 6.57516769999521,
+              "r2": 0.08262624222966361
+            },
+            "z": {
+              "pendiente": -0.1640881648932135,
+              "intercepto": -5.561454780450908,
+              "r2": 0.07113222104878701
+            }
+          }
+        },
+        "c1": {
+          "X": {
+            "x": {
+              "pendiente": -0.27835386885738644,
+              "intercepto": -127.03545740036947,
+              "r2": 0.03447662388407001
+            },
+            "y": {
+              "pendiente": 1.0009656669437001,
+              "intercepto": -0.7325065869642913,
+              "r2": 0.9997005256057516
+            },
+            "z": {
+              "pendiente": 1.260249399514236,
+              "intercepto": -123.63323634616937,
+              "r2": 0.1968042148161784
+            }
+          },
+          "Y": {
+            "x": {
+              "pendiente": -0.051956377947242775,
+              "intercepto": -2.2625073886556812,
+              "r2": 0.008374504482097174
+            },
+            "y": {
+              "pendiente": 0.1947218688043428,
+              "intercepto": 22.313691091515825,
+              "r2": 0.2637619792197117
+            },
+            "z": {
+              "pendiente": 1.0698743896712533,
+              "intercepto": 1.1283567746938203,
+              "r2": 0.9888676229548248
+            }
+          },
+          "Z": {
+            "x": {
+              "pendiente": 1.036789861869206,
+              "intercepto": 0.007747454034079837,
+              "r2": 0.9979584486617138
+            },
+            "y": {
+              "pendiente": -0.13692058572461652,
+              "intercepto": -14.546266105095299,
+              "r2": 0.03902741823977514
+            },
+            "z": {
+              "pendiente": -0.17332721787913938,
+              "intercepto": 2.26203720574554,
+              "r2": 0.0077670427843176465
+            }
+          }
+        },
+        "c0": {
+          "X": {
+            "x": {
+              "pendiente": 0.023834019298771342,
+              "intercepto": 54.661628259560516,
+              "r2": 0.004456607131234166
+            },
+            "y": {
+              "pendiente": -2764.1819293486824,
+              "intercepto": 138263.7388387745,
+              "r2": 2.434041704272765e-05
+            },
+            "z": {
+              "pendiente": 0.02945744392879697,
+              "intercepto": 54.4753037510086,
+              "r2": 0.0005650951556530006
+            }
+          },
+          "Y": {
+            "x": {
+              "pendiente": 0.03596116682921673,
+              "intercepto": 5.798405128158316,
+              "r2": 0.013268695486411805
+            },
+            "y": {
+              "pendiente": 179.8637283707456,
+              "intercepto": -8987.417085150582,
+              "r2": 1.347822963499612e-07
+            },
+            "z": {
+              "pendiente": 1.0591385630823535,
+              "intercepto": -0.23718060263845242,
+              "r2": 0.9554059174295716
+            }
+          },
+          "Z": {
+            "x": {
+              "pendiente": 1.1107131454852146,
+              "intercepto": -0.007474192652143108,
+              "r2": 0.9969842540909922
+            },
+            "y": {
+              "pendiente": 3691.0232710920295,
+              "intercepto": -184552.06894487268,
+              "r2": 4.470571373301288e-06
+            },
+            "z": {
+              "pendiente": 0.4653693079566591,
+              "intercepto": -3.5445470127790863,
+              "r2": 0.014527859715986392
+            }
+          }
+        }
+      },
+      "r2_min_exigido": 0.99,
+      "permutacion": {
+        "X": "y",
+        "Y": "z",
+        "Z": "x"
+      },
+      "signos": {
+        "X": 1,
+        "Y": 1,
+        "Z": 1
+      },
+      "escala_2c2_sobre_a0": {
+        "X": 1.0000000297941973,
+        "Y": 1.0000000308500678,
+        "Z": 1.0000000302784675
+      },
+      "r2_min_permutacion": 0.9888676229548248,
+      "existe": false,
+      "decision": "no_canonicos",
+      "t_s": null,
+      "rotacion": {
+        "c2": {
+          "X": {
+            "intercepto": -8.04180101886809e-08,
+            "coef_xyz": [
+              1.0186039879385393e-09,
+              0.5000000173221607,
+              -1.4063997983990481e-09
+            ],
+            "r2": 0.9999999999963337
+          },
+          "Y": {
+            "intercepto": -8.905985147236016e-08,
+            "coef_xyz": [
+              -1.253919494817339e-10,
+              3.1030872168470728e-09,
+              0.50000001441529
+            ],
+            "r2": 0.9999999999990611
+          },
+          "Z": {
+            "intercepto": -4.0800153645387854e-08,
+            "coef_xyz": [
+              0.5000000152537669,
+              1.549482147618007e-09,
+              -3.1690889207888103e-10
+            ],
+            "r2": 0.999999999999375
+          }
+        },
+        "c1": {
+          "X": {
+            "intercepto": -0.6961237321528716,
+            "coef_xyz": [
+              0.0005859649535075953,
+              1.0013099824719873,
+              -0.0017344449007001496
+            ],
+            "r2": 0.9997009729653888
+          },
+          "Y": {
+            "intercepto": 5.337351434195498,
+            "coef_xyz": [
+              0.0031430666820809238,
+              0.03433780037125512,
+              1.0270944685735475
+            ],
+            "r2": 0.9953327495938751
+          },
+          "Z": {
+            "intercepto": -1.0875069417451895,
+            "coef_xyz": [
+              1.0344591978498532,
+              -0.008739638563125362,
+              0.002360724640432819
+            ],
+            "r2": 0.9981004081136622
+          }
+        },
+        "c0": {
+          "X": {
+            "intercepto": 140841.607405059,
+            "coef_xyz": [
+              0.023160506833315758,
+              -2815.7411960786308,
+              0.020012475243144697
+            ],
+            "r2": 0.004739372902904049
+          },
+          "Y": {
+            "intercepto": -46189.22280070915,
+            "coef_xyz": [
+              0.0001456314369856932,
+              923.7797210552792,
+              1.0590824106381742
+            ],
+            "r2": 0.9554096908758137
+          },
+          "Z": {
+            "intercepto": -27714.19473271575,
+            "coef_xyz": [
+              1.1102708178809884,
+              554.2822565218853,
+              0.013061367310259628
+            ],
+            "r2": 0.9969956376008473
+          }
+        }
+      }
+    },
+    "discrepancias_flags": {
+      "es_swing": {
+        "bandera": "is_swing",
+        "n": 634161,
+        "discrepantes": 1141,
+        "pct_discrepantes": 0.1799,
+        "tabla": [
+          {
+            "derivada": "es_swing",
+            "derivada_valor": false,
+            "bandera": "is_swing",
+            "bandera_valor": false,
+            "pitch_call_h": "BallCalled",
+            "n": 225598
+          },
+          {
+            "derivada": "es_swing",
+            "derivada_valor": true,
+            "bandera": "is_swing",
+            "bandera_valor": true,
+            "pitch_call_h": "InPlay",
+            "n": 115946
+          },
+          {
+            "derivada": "es_swing",
+            "derivada_valor": true,
+            "bandera": "is_swing",
+            "bandera_valor": true,
+            "pitch_call_h": "Foul",
+            "n": 108797
+          },
+          {
+            "derivada": "es_swing",
+            "derivada_valor": false,
+            "bandera": "is_swing",
+            "bandera_valor": false,
+            "pitch_call_h": "StrikeCalled",
+            "n": 97407
+          },
+          {
+            "derivada": "es_swing",
+            "derivada_valor": true,
+            "bandera": "is_swing",
+            "bandera_valor": true,
+            "pitch_call_h": "StrikeSwinging",
+            "n": 71914
+          },
+          {
+            "derivada": "es_swing",
+            "derivada_valor": false,
+            "bandera": "is_swing",
+            "bandera_valor": false,
+            "pitch_call_h": "BallinDirt",
+            "n": 11308
+          },
+          {
+            "derivada": "es_swing",
+            "derivada_valor": false,
+            "bandera": "is_swing",
+            "bandera_valor": false,
+            "pitch_call_h": "HitByPitch",
+            "n": 2050
+          },
+          {
+            "derivada": "es_swing",
+            "derivada_valor": false,
+            "bandera": "is_swing",
+            "bandera_valor": true,
+            "pitch_call_h": "BallCalled",
+            "n": 463
+          },
+          {
+            "derivada": "es_swing",
+            "derivada_valor": false,
+            "bandera": "is_swing",
+            "bandera_valor": true,
+            "pitch_call_h": "StrikeCalled",
+            "n": 403
+          },
+          {
+            "derivada": "es_swing",
+            "derivada_valor": false,
+            "bandera": "is_swing",
+            "bandera_valor": true,
+            "pitch_call_h": "HitByPitch",
+            "n": 230
+          },
+          {
+            "derivada": "es_swing",
+            "derivada_valor": false,
+            "bandera": "is_swing",
+            "bandera_valor": true,
+            "pitch_call_h": "BallinDirt",
+            "n": 45
+          }
+        ]
+      },
+      "es_whiff": {
+        "bandera": "is_whiff",
+        "n": 634161,
+        "discrepantes": 0,
+        "pct_discrepantes": 0.0,
+        "tabla": [
+          {
+            "derivada": "es_whiff",
+            "derivada_valor": false,
+            "bandera": "is_whiff",
+            "bandera_valor": false,
+            "pitch_call_h": "BallCalled",
+            "n": 226061
+          },
+          {
+            "derivada": "es_whiff",
+            "derivada_valor": false,
+            "bandera": "is_whiff",
+            "bandera_valor": false,
+            "pitch_call_h": "InPlay",
+            "n": 115946
+          },
+          {
+            "derivada": "es_whiff",
+            "derivada_valor": false,
+            "bandera": "is_whiff",
+            "bandera_valor": false,
+            "pitch_call_h": "Foul",
+            "n": 108797
+          },
+          {
+            "derivada": "es_whiff",
+            "derivada_valor": false,
+            "bandera": "is_whiff",
+            "bandera_valor": false,
+            "pitch_call_h": "StrikeCalled",
+            "n": 97810
+          },
+          {
+            "derivada": "es_whiff",
+            "derivada_valor": true,
+            "bandera": "is_whiff",
+            "bandera_valor": true,
+            "pitch_call_h": "StrikeSwinging",
+            "n": 71914
+          },
+          {
+            "derivada": "es_whiff",
+            "derivada_valor": false,
+            "bandera": "is_whiff",
+            "bandera_valor": false,
+            "pitch_call_h": "BallinDirt",
+            "n": 11353
+          },
+          {
+            "derivada": "es_whiff",
+            "derivada_valor": false,
+            "bandera": "is_whiff",
+            "bandera_valor": false,
+            "pitch_call_h": "HitByPitch",
+            "n": 2280
+          }
+        ]
+      },
+      "es_contacto": {
+        "bandera": "is_contact",
+        "n": 634161,
+        "discrepantes": 1591,
+        "pct_discrepantes": 0.2509,
+        "tabla": [
+          {
+            "derivada": "es_contacto",
+            "derivada_valor": false,
+            "bandera": "is_contact",
+            "bandera_valor": false,
+            "pitch_call_h": "BallCalled",
+            "n": 225598
+          },
+          {
+            "derivada": "es_contacto",
+            "derivada_valor": true,
+            "bandera": "is_contact",
+            "bandera_valor": true,
+            "pitch_call_h": "InPlay",
+            "n": 115946
+          },
+          {
+            "derivada": "es_contacto",
+            "derivada_valor": true,
+            "bandera": "is_contact",
+            "bandera_valor": true,
+            "pitch_call_h": "Foul",
+            "n": 108797
+          },
+          {
+            "derivada": "es_contacto",
+            "derivada_valor": false,
+            "bandera": "is_contact",
+            "bandera_valor": false,
+            "pitch_call_h": "StrikeCalled",
+            "n": 97407
+          },
+          {
+            "derivada": "es_contacto",
+            "derivada_valor": false,
+            "bandera": "is_contact",
+            "bandera_valor": false,
+            "pitch_call_h": "StrikeSwinging",
+            "n": 71464
+          },
+          {
+            "derivada": "es_contacto",
+            "derivada_valor": false,
+            "bandera": "is_contact",
+            "bandera_valor": false,
+            "pitch_call_h": "BallinDirt",
+            "n": 11308
+          },
+          {
+            "derivada": "es_contacto",
+            "derivada_valor": false,
+            "bandera": "is_contact",
+            "bandera_valor": false,
+            "pitch_call_h": "HitByPitch",
+            "n": 2050
+          },
+          {
+            "derivada": "es_contacto",
+            "derivada_valor": false,
+            "bandera": "is_contact",
+            "bandera_valor": true,
+            "pitch_call_h": "BallCalled",
+            "n": 463
+          },
+          {
+            "derivada": "es_contacto",
+            "derivada_valor": false,
+            "bandera": "is_contact",
+            "bandera_valor": true,
+            "pitch_call_h": "StrikeSwinging",
+            "n": 450
+          },
+          {
+            "derivada": "es_contacto",
+            "derivada_valor": false,
+            "bandera": "is_contact",
+            "bandera_valor": true,
+            "pitch_call_h": "StrikeCalled",
+            "n": 403
+          },
+          {
+            "derivada": "es_contacto",
+            "derivada_valor": false,
+            "bandera": "is_contact",
+            "bandera_valor": true,
+            "pitch_call_h": "HitByPitch",
+            "n": 230
+          },
+          {
+            "derivada": "es_contacto",
+            "derivada_valor": false,
+            "bandera": "is_contact",
+            "bandera_valor": true,
+            "pitch_call_h": "BallinDirt",
+            "n": 45
+          }
+        ]
+      },
+      "es_bip": {
+        "bandera": "is_ball_in_play",
+        "n": 634161,
+        "discrepantes": 2,
+        "pct_discrepantes": 0.0003,
+        "tabla": [
+          {
+            "derivada": "es_bip",
+            "derivada_valor": false,
+            "bandera": "is_ball_in_play",
+            "bandera_valor": false,
+            "pitch_call_h": "BallCalled",
+            "n": 226060
+          },
+          {
+            "derivada": "es_bip",
+            "derivada_valor": true,
+            "bandera": "is_ball_in_play",
+            "bandera_valor": true,
+            "pitch_call_h": "InPlay",
+            "n": 115946
+          },
+          {
+            "derivada": "es_bip",
+            "derivada_valor": false,
+            "bandera": "is_ball_in_play",
+            "bandera_valor": false,
+            "pitch_call_h": "Foul",
+            "n": 108797
+          },
+          {
+            "derivada": "es_bip",
+            "derivada_valor": false,
+            "bandera": "is_ball_in_play",
+            "bandera_valor": false,
+            "pitch_call_h": "StrikeCalled",
+            "n": 97810
+          },
+          {
+            "derivada": "es_bip",
+            "derivada_valor": false,
+            "bandera": "is_ball_in_play",
+            "bandera_valor": false,
+            "pitch_call_h": "StrikeSwinging",
+            "n": 71913
+          },
+          {
+            "derivada": "es_bip",
+            "derivada_valor": false,
+            "bandera": "is_ball_in_play",
+            "bandera_valor": false,
+            "pitch_call_h": "BallinDirt",
+            "n": 11353
+          },
+          {
+            "derivada": "es_bip",
+            "derivada_valor": false,
+            "bandera": "is_ball_in_play",
+            "bandera_valor": false,
+            "pitch_call_h": "HitByPitch",
+            "n": 2280
+          },
+          {
+            "derivada": "es_bip",
+            "derivada_valor": false,
+            "bandera": "is_ball_in_play",
+            "bandera_valor": true,
+            "pitch_call_h": "BallCalled",
+            "n": 1
+          },
+          {
+            "derivada": "es_bip",
+            "derivada_valor": false,
+            "bandera": "is_ball_in_play",
+            "bandera_valor": true,
+            "pitch_call_h": "StrikeSwinging",
+            "n": 1
+          }
+        ]
+      },
+      "es_hbp": {
+        "bandera": "is_hit_by_pitch",
+        "n": 634161,
+        "discrepantes": 2280,
+        "pct_discrepantes": 0.3595,
+        "tabla": [
+          {
+            "derivada": "es_hbp",
+            "derivada_valor": false,
+            "bandera": "is_hit_by_pitch",
+            "bandera_valor": false,
+            "pitch_call_h": "BallCalled",
+            "n": 226061
+          },
+          {
+            "derivada": "es_hbp",
+            "derivada_valor": false,
+            "bandera": "is_hit_by_pitch",
+            "bandera_valor": false,
+            "pitch_call_h": "InPlay",
+            "n": 115946
+          },
+          {
+            "derivada": "es_hbp",
+            "derivada_valor": false,
+            "bandera": "is_hit_by_pitch",
+            "bandera_valor": false,
+            "pitch_call_h": "Foul",
+            "n": 108797
+          },
+          {
+            "derivada": "es_hbp",
+            "derivada_valor": false,
+            "bandera": "is_hit_by_pitch",
+            "bandera_valor": false,
+            "pitch_call_h": "StrikeCalled",
+            "n": 97810
+          },
+          {
+            "derivada": "es_hbp",
+            "derivada_valor": false,
+            "bandera": "is_hit_by_pitch",
+            "bandera_valor": false,
+            "pitch_call_h": "StrikeSwinging",
+            "n": 71914
+          },
+          {
+            "derivada": "es_hbp",
+            "derivada_valor": false,
+            "bandera": "is_hit_by_pitch",
+            "bandera_valor": false,
+            "pitch_call_h": "BallinDirt",
+            "n": 11353
+          },
+          {
+            "derivada": "es_hbp",
+            "derivada_valor": true,
+            "bandera": "is_hit_by_pitch",
+            "bandera_valor": false,
+            "pitch_call_h": "HitByPitch",
+            "n": 2280
+          }
+        ]
+      }
+    },
+    "dos_outs": {
+      "dos_outs": {
+        "n": 4763,
+        "pct_ultima_del_juego": 6.592,
+        "lanzamientos_por_media_entrada": {
+          "media": 15.107705227797606,
+          "mediana": 14.0,
+          "p10": 8.0,
+          "p90": 23.0
+        },
+        "pct_con_turno_incompleto": 9.469,
+        "turnos_incompletos_media": 0.09888725593113584,
+        "eventos_terminales_por_media_entrada": {
+          "K": 0.374,
+          "OUT_BIP": 1.579,
+          "SAC": 0.029,
+          "BB": 0.542,
+          "HBP": 0.081,
+          "ROE": 0.057
+        },
+        "outs_implicados_por_eventos_menos_OutsOnPlay": {
+          "-2": 3,
+          "-1": 129,
+          "0": 4585,
+          "1": 46
+        }
+      },
+      "tres_outs": {
+        "n": 31883,
+        "pct_ultima_del_juego": 5.228,
+        "lanzamientos_por_media_entrada": {
+          "media": 17.4830787567042,
+          "mediana": 16.0,
+          "p10": 10.0,
+          "p90": 27.0
+        },
+        "pct_con_turno_incompleto": 2.948,
+        "turnos_incompletos_media": 0.03004736066242198,
+        "eventos_terminales_por_media_entrada": {
+          "K": 0.899,
+          "OUT_BIP": 1.967,
+          "SAC": 0.055,
+          "BB": 0.41,
+          "HBP": 0.057,
+          "ROE": 0.046
+        },
+        "outs_implicados_por_eventos_menos_OutsOnPlay": {
+          "-3": 5,
+          "-2": 116,
+          "-1": 2467,
+          "0": 29118,
+          "1": 173,
+          "2": 3,
+          "3": 1
+        }
+      },
+      "outs_on_play_x_evento_terminal": [
+        {
+          "evento": "1B",
+          "OutsOnPlay": 0,
+          "n": 27675
+        },
+        {
+          "evento": "1B",
+          "OutsOnPlay": 1,
+          "n": 890
+        },
+        {
+          "evento": "1B",
+          "OutsOnPlay": 2,
+          "n": 13
+        },
+        {
+          "evento": "1B",
+          "OutsOnPlay": 3,
+          "n": 1
+        },
+        {
+          "evento": "2B",
+          "OutsOnPlay": 0,
+          "n": 7645
+        },
+        {
+          "evento": "2B",
+          "OutsOnPlay": 1,
+          "n": 151
+        },
+        {
+          "evento": "2B",
+          "OutsOnPlay": 2,
+          "n": 4
+        },
+        {
+          "evento": "3B",
+          "OutsOnPlay": 0,
+          "n": 699
+        },
+        {
+          "evento": "3B",
+          "OutsOnPlay": 1,
+          "n": 6
+        },
+        {
+          "evento": "BB",
+          "OutsOnPlay": 0,
+          "n": 15793
+        },
+        {
+          "evento": "BB",
+          "OutsOnPlay": 1,
+          "n": 29
+        },
+        {
+          "evento": "BB",
+          "OutsOnPlay": 2,
+          "n": 3
+        },
+        {
+          "evento": "BB",
+          "OutsOnPlay": 3,
+          "n": 4
+        },
+        {
+          "evento": "HBP",
+          "OutsOnPlay": 0,
+          "n": 2256
+        },
+        {
+          "evento": "HBP",
+          "OutsOnPlay": 1,
+          "n": 2
+        },
+        {
+          "evento": "HR",
+          "OutsOnPlay": 0,
+          "n": 4608
+        },
+        {
+          "evento": "HR",
+          "OutsOnPlay": 1,
+          "n": 6
+        },
+        {
+          "evento": "HR",
+          "OutsOnPlay": 2,
+          "n": 1
+        },
+        {
+          "evento": "HR",
+          "OutsOnPlay": 3,
+          "n": 1
+        },
+        {
+          "evento": "K",
+          "OutsOnPlay": 1,
+          "n": 30648
+        },
+        {
+          "evento": "NO_TERMINAL",
+          "OutsOnPlay": 0,
+          "n": 468839
+        },
+        {
+          "evento": "NO_TERMINAL",
+          "OutsOnPlay": 1,
+          "n": 1467
+        },
+        {
+          "evento": "NO_TERMINAL",
+          "OutsOnPlay": 2,
+          "n": 17
+        },
+        {
+          "evento": "NO_TERMINAL",
+          "OutsOnPlay": 3,
+          "n": 5
+        },
+        {
+          "evento": "OUT_BIP",
+          "OutsOnPlay": 0,
+          "n": 162
+        },
+        {
+          "evento": "OUT_BIP",
+          "OutsOnPlay": 1,
+          "n": 70179
+        },
+        {
+          "evento": "OUT_BIP",
+          "OutsOnPlay": 2,
+          "n": 217
+        },
+        {
+          "evento": "OUT_BIP",
+          "OutsOnPlay": 3,
+          "n": 2
+        },
+        {
+          "evento": "ROE",
+          "OutsOnPlay": 0,
+          "n": 1697
+        },
+        {
+          "evento": "ROE",
+          "OutsOnPlay": 1,
+          "n": 49
+        },
+        {
+          "evento": "ROE",
+          "OutsOnPlay": 2,
+          "n": 1
+        },
+        {
+          "evento": "SAC",
+          "OutsOnPlay": 0,
+          "n": 107
+        },
+        {
+          "evento": "SAC",
+          "OutsOnPlay": 1,
+          "n": 1817
+        },
+        {
+          "evento": "SAC",
+          "OutsOnPlay": 2,
+          "n": 8
+        }
+      ]
+    },
+    "verificacion_9p": {
+      "n": 635002,
+      "error_plato_x_ft": {
+        "mediana": 1.289709289626388,
+        "p99": 5.089944824599164
+      },
+      "error_plato_z_ft": {
+        "mediana": 0.4716866093420078,
+        "p99": 1.0554168292666994
+      },
+      "error_y_en_zonetime_ft": {
+        "mediana": 4.2740071303760905,
+        "p99": 5.3907996842617685
+      }
+    }
   }
 }
