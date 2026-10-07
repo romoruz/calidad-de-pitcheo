@@ -338,13 +338,41 @@ def matriz_diseno_dispersa(d: DisenoDensidad, ref_juego: int = 0) -> tuple[spars
     return X, {"cols_juego": pos_g, "n_juego": n_g - 1, "n_jk": n_j, "n_spline": ancho}
 
 
+def ajustar_lsmr(d: DisenoDensidad, y, tol: float = 1e-14, max_iter: int = 20000) -> dict:
+    """Mínimos cuadrados de la Prop. 2′ con LSMR disperso (Fong y Saunders 2011) sobre la matriz de diseño completa.
+
+    Mismo problema que `ajustar_alternando` (y sobre {δ_g} + {α_jk} + f_D), con la parametrización de rango completo de
+    `matriz_diseno_dispersa` (δ de un juego de referencia := 0) y columnas escaladas a norma 1 (precondicionador de
+    Jacobi). Devuelve las mismas claves salvo `iteraciones` (las de LSMR) y `cambio_final` (norma del residuo normal
+    relativa). δ y α quedan relativos al juego de referencia; el estimador los normaliza al final.
+    """
+    from scipy.sparse.linalg import lsmr
+    y = np.asarray(y, dtype=float)[d.usadas]
+    X, info = matriz_diseno_dispersa(d, ref_juego=0)
+    norma = np.sqrt(np.asarray(X.multiply(X).sum(axis=0)).ravel())
+    norma[norma == 0] = 1.0
+    Xs = X @ sparse.diags(1.0 / norma)
+    sol = lsmr(Xs, y, atol=tol, btol=tol, conlim=1e12, maxiter=max_iter)
+    b = sol[0] / norma
+    n_j = len(d.grupos)
+    pos = info["cols_juego"]
+    delta = np.where(pos >= 0, b[np.maximum(pos, 0)], 0.0)
+    alpha = b[info["n_juego"]:info["n_juego"] + n_j]
+    ajuste_f = X[:, info["n_juego"] + n_j:] @ b[info["n_juego"] + n_j:]
+    resid = y - X @ b
+    return {"delta": delta, "alpha": alpha, "ajuste_f": ajuste_f, "resid": resid, "iteraciones": int(sol[2]),
+            "convergio": bool(sol[1] in (1, 2)), "cambio_final": float(sol[4] / max(np.linalg.norm(y), 1e-300))}
+
+
 def estimador_densidad_juego(y, juego, lanzador_forma, S, estrato, cubeta=None, referencia: str = "No Altitude",
                              n_nudos: int = 3, grado: int = 3, n_min_por_col: int = 20, tol: float = 1e-10,
-                             max_iter: int = 5000, diseno: DisenoDensidad | None = None) -> dict:
+                             max_iter: int = 5000, diseno: DisenoDensidad | None = None,
+                             solver: str = "lsmr") -> dict:
     """Prop. 2′: δ_g por juego desde y = log(ρC) con efectos fijos de juego y lanzador×forma y f_D(S) por estrato.
 
     `y`: (n,) o (n, m) (p. ej. las columnas δ^D y δ^L comparten diseño). Se estima por proyecciones alternadas
-    dentro del conjunto conectado. **Normalización:** δ̄ sobre los juegos de la cubeta `referencia` := 0 (el
+    dentro del conjunto conectado, con `solver` = "lsmr" (LSMR disperso; por defecto, escala a 635k filas) o
+    "alternando" (proyecciones alternadas; referencia de equivalencia). **Normalización:** δ̄ sobre los juegos de la cubeta `referencia` := 0 (el
     nivel absoluto no está identificado). Los juegos sin cubeta se estiman pero no entran en la referencia.
     Devuelve `delta` (G, m), `alpha`, `resid` (n_usadas, m), `diseno`, `iteraciones`, `convergio`.
     """
@@ -359,7 +387,12 @@ def estimador_densidad_juego(y, juego, lanzador_forma, S, estrato, cubeta=None, 
         ok_y = np.isfinite(y2[:, j])
         if not ok_y.all():
             raise ValueError("y tiene nulos entre las filas usadas; filtra antes de llamar al estimador")
-        r = ajustar_alternando(d, y2[:, j], tol, max_iter)
+        if solver == "lsmr":
+            r = ajustar_lsmr(d, y2[:, j])
+        elif solver == "alternando":
+            r = ajustar_alternando(d, y2[:, j], tol, max_iter)
+        else:
+            raise ValueError(f"solver desconocido: {solver!r}")
         nivel = float(np.mean(r["delta"][en_ref]))
         deltas.append(r["delta"] - nivel)
         alphas.append(r["alpha"] + nivel)                    # δ + c, α − c deja el ajuste intacto

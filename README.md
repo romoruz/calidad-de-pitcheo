@@ -75,8 +75,39 @@ Sin datos reales: `uv run pitcheo f00 --sintetico 40 --out /tmp/f0` (todo, inclu
 va a `--out`; con `--sintetico` los comandos **nunca** escriben en `reports/`, donde viven los
 reportes reales).
 
+### Fase F2 — densidad del aire por juego desde la trayectoria
+
+En local, con `data/interim/pitches.parquet` (salida de F0):
+
+```bash
+bash scripts/fases/f02.sh
+# corre pytest, `pitcheo f02` (análisis + estudio de simulación) y la prueba de escala; escribe
+# data/interim/densidad_juego.parquet (por juego, fuera de git), reports/FASE_02.md (Bloque para el orquestador),
+# reports/fase_02.json, reports/f02_escala.json, docs/figuras/f2/ y reports/logs/f02_<fecha>.log;
+# sale con código != 0 si una compuerta (G2.1, G2.2, G2.3a, G2.3b, G2.4) falla, después de escribir el reporte.
+```
+
+Implementa las Props. 1, 2′ y 3″ de `docs/MODELO_MATEMATICO.md` §F2 y el ADR-017 (`docs/DECISIONES.md`):
+
+- **Solver.** LSMR disperso (Fong y Saunders 2011) sobre la matriz de diseño completa; equivale a las proyecciones alternadas
+  a ≤ 1e-8 en δ̂ y residuos (prueba de regresión en 5 000 lanzamientos, `tests/test_fisica_sintetica.py`). Config
+  `f02.solver: lsmr | alternando`.
+- **G2.1 es un estudio de simulación** pre-registrado: R = 10 réplicas (semillas 101–110, 150 juegos × ≈250 lanzamientos)
+  en paralelo con `joblib`, por nivel |sesgo relativo medio| + 1.96·MCSE < 1 %; reporta además SE empírico, RMSE y cobertura
+  del IC95 CR2. **No se ajustan umbrales, semillas ni tamaños a la vista del resultado**; si una compuerta falla, la fase se
+  detiene y se documenta en `docs/discrepancias/`.
+- **G2.3a / G2.3b.** G2.3a = Deming (pendiente ∈ [0.85, 1.15]). G2.3b = ĉ por parque con el detector ê (id de parque si se
+  declara `f02.columna_parque`; si no, parque latente por mezcla gaussiana 🔎), centrado en la mediana de su cubeta, Wald con
+  SE CR2 y Benjamini–Hochberg al 5 %; su potencia (≥ 0.80 para |c| = 0.02) y su tasa de falsos positivos (≤ 0.05) se miden en
+  una sintética con λ = 1.02 y τ = 1.01 inyectados en subconjuntos de 18 parques. Si `SpinAxis` resulta circular (inferido del
+  movimiento), G2.3b se declara **no evaluable**.
+- **Escala.** `uv run pitcheo f02 --escala 635000` genera ≈ 635 k lanzamientos sintéticos, corre el análisis completo y
+  reporta tiempo y RAM pico (`reports/f02_escala.json`).
+
+Sin datos reales: `uv run pitcheo f02 --sintetico 150 --out /tmp/f2` (todo va a `--out`).
+
 La CLI tiene un subcomando por fase (`pitcheo f00_0`, `f00`, `f01` … `f11`); las
-fases posteriores a F0 están pendientes.
+fases F3 en adelante están pendientes.
 
 ## Confidencialidad
 

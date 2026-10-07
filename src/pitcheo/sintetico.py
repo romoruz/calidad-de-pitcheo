@@ -54,6 +54,13 @@ CUBETAS_DEFECTO = {
     "Extreme Altitude": {"altitudes_m": [1921, 2192, 2232], "peso_juegos": 0.29},
 }
 
+# Escenario de G2.3b (ROADMAP F2.5b): 6 parques por cubeta → λ en 2, τ en 2 y 2 limpios por cubeta.
+CUBETAS_G23B = {
+    "No Altitude":      {"altitudes_m": [3, 10, 40, 60, 85, 120],              "peso_juegos": 0.46},
+    "Medium Altitude":  {"altitudes_m": [430, 532, 600, 680, 760, 820],        "peso_juegos": 0.25},
+    "Extreme Altitude": {"altitudes_m": [1921, 2050, 2192, 2232, 2300, 2400],  "peso_juegos": 0.29},
+}
+
 # Parámetros base por tipo de lanzamiento, en el marco de un DIESTRO.
 # magnus_z, magnus_x en ft/s^2 (break ~ 0.5 * magnus * ZoneTime^2 * 12 pulgadas).
 # magnus_x>0 = lado del brazo del diestro; para zurdos se invierte (I8).
@@ -865,13 +872,59 @@ def _raiz_pequena(c0, c1, c2) -> np.ndarray:
     return np.where(np.isfinite(t), t, np.nan)
 
 
+def _ajustar_bloque(r0, v0, omega_hat, omega_t, cd, rho, lam, tau, rng, dt: float, paso: int, sigma_pos_m: float):
+    """Integra un bloque, muestrea, añade ruido de posición y ajusta el 9P (polinomio de grado 2 por eje).
+
+    Devuelve (coef (m, 3, 3), t_vuelo (m,)): coeficientes c0..c2 por eje en ft y s sobre el reloj MEDIDO (escala τ)
+    y posiciones medidas (escala λ), y el tiempo de vuelo verdadero.
+    """
+    yp_m = Y_FRENTE_PLATO_FT * FT_M
+    _t, ys = _integrar_bloque(r0, v0, omega_hat, omega_t, cd, rho, 0.65, dt)
+    pos = np.moveaxis(ys[:3], 0, -1)                # (N, nt, 3) en m
+    coef = np.empty((pos.shape[0], 3, 3))
+    t_vuelo = np.empty(pos.shape[0])
+    for q in range(pos.shape[0]):
+        y_q = pos[q, :, 1]
+        cruza = np.flatnonzero(y_q <= yp_m)
+        fin = int(cruza[0]) if len(cruza) else len(y_q) - 1
+        idx = np.arange(0, fin + 1, paso)
+        t_meas = idx * dt * tau[q]
+        medido = lam[q] * pos[q, idx, :] / FT_M + rng.normal(0, sigma_pos_m / FT_M, (len(idx), 3))
+        coef[q] = np.polynomial.polynomial.polyfit(t_meas, medido, 2)
+        t_vuelo[q] = fin * dt
+    return coef, t_vuelo
+
+
+def esquema_calibracion_parques(cubetas: dict | None, semilla: int, lambda_escala: float = 1.02,
+                                tau_reloj: float = 1.01, fraccion: float = 1.0 / 3.0) -> dict:
+    """ROADMAP F2.5b: en cada cubeta, λ en ≈1/3 de los parques, τ en otro ≈1/3 y el resto limpio.
+
+    Devuelve {índice de parque: (λ, τ)} solo para los parques sesgados (el resto no aparece). Usa su propio flujo
+    aleatorio (semilla, 17) para no alterar la física de `generar_fisica`.
+    """
+    cubetas = cubetas or CUBETAS_DEFECTO
+    rg = np.random.default_rng([semilla, 17])
+    out, base = {}, 0
+    for spec in cubetas.values():
+        m = len(spec["altitudes_m"])
+        orden = rg.permutation(m)
+        k = max(1, round(fraccion * m))
+        for i in orden[:k]:
+            out[base + int(i)] = (lambda_escala, 1.0)
+        for i in orden[k:2 * k]:
+            out[base + int(i)] = (1.0, tau_reloj)
+        base += m
+    return out
+
+
 def generar_fisica(n_juegos: int = 45, lanzamientos_por_juego: int = 111, semilla: int = 2026,
                    niveles_rho: dict | None = None, cubetas: dict | None = None, sigma_pos_m: float = 0.015,
                    sigma_alpha: float = 0.05, sigma_cd_lanzamiento: float = 0.03, sigma_clima: float = 0.005,
                    sigma_parque: float = 0.0, n_staff: int = 8, p_local: float = 0.7, apariciones_por_juego: int = 9,
                    lambda_escala: float = 1.0, tau_reloj: float = 1.0, cubetas_sesgo=("Extreme Altitude",),
                    spinaxis_inferido: bool = False, anios=(2024, 2025, 2026), tasa_muestreo_hz: float = 100.0,
-                   bloque: int = 400) -> tuple[pl.DataFrame, dict]:
+                   bloque: int = 400, calibracion_parques: dict | None = None,
+                   n_jobs: int = 1) -> tuple[pl.DataFrame, dict]:
     """Sintética de F2 con física exacta: ρ conocida por juego, C_D y C_L realistas, ruido de posición y calibración sesgada.
 
     Cada lanzamiento se integra con `solve_ivp` (DOP853, rtol 1e-10):  r̈ = g − κ C_D ‖v‖ v + κ C_L ‖v‖² n̂, con
@@ -889,6 +942,9 @@ def generar_fisica(n_juegos: int = 45, lanzamientos_por_juego: int = 111, semill
     Calibración (Prop. 3′): en los juegos de `cubetas_sesgo` las posiciones se escalan por `lambda_escala` y los
     tiempos por `tau_reloj`, lo que deja el residuo c_g·g con c_g = λ/τ² − 1. `spinaxis_inferido=True` reemplaza
     `SpinAxis` por la dirección de la aceleración perpendicular medida (eje INFERIDO del movimiento).
+    `calibracion_parques` {índice de parque: (λ, τ)} aplica la calibración por PARQUE (ver
+    `esquema_calibracion_parques`) y sustituye a `cubetas_sesgo`. `n_jobs` > 1 integra los bloques en paralelo con
+    joblib (un flujo aleatorio hijo por bloque: determinista, pero otra realización que `n_jobs=1`).
 
     Devuelve (DataFrame con las columnas de F2, verdad). El DataFrame trae las columnas de `pitches.parquet` que
     usa F2: ids, `year`, `altitude_category_h`, `familia`, `pitcher_throws_r`, `excluir_modelo`, 9P, `PitchTrajectoryXc1`,
@@ -943,9 +999,15 @@ def generar_fisica(n_juegos: int = 45, lanzamientos_por_juego: int = 111, semill
     n = len(g_idx)
     rho_g = np.array([ji["rho"] for ji in juego_info])
     rho_i = rho_g[g_idx]
-    sesgado_g = np.array([ji["cubeta"] in cubetas_sesgo for ji in juego_info])
-    lam_i = np.where(sesgado_g[g_idx], lambda_escala, 1.0)
-    tau_i = np.where(sesgado_g[g_idx], tau_reloj, 1.0)
+    if calibracion_parques is None:
+        sesgado_g = np.array([ji["cubeta"] in cubetas_sesgo for ji in juego_info])
+        lam_g = np.where(sesgado_g, lambda_escala, 1.0)
+        tau_g = np.where(sesgado_g, tau_reloj, 1.0)
+    else:
+        lam_g = np.array([calibracion_parques.get(ji["parque"], (1.0, 1.0))[0] for ji in juego_info])
+        tau_g = np.array([calibracion_parques.get(ji["parque"], (1.0, 1.0))[1] for ji in juego_info])
+    c_juego = lam_g / tau_g**2 - 1.0
+    lam_i, tau_i = lam_g[g_idx], tau_g[g_idx]
 
     # --- estado de liberación, giro y coeficientes por lanzamiento
     par = np.array([_FORMAS_FISICA[formas[k]] for k in k_idx])
@@ -970,22 +1032,20 @@ def generar_fisica(n_juegos: int = 45, lanzamientos_por_juego: int = 111, semill
 
     # --- integración por bloques y ajuste 9P sobre posiciones con ruido
     dt, paso = 0.001, round(1000.0 / tasa_muestreo_hz)
-    yp_m = Y_FRENTE_PLATO_FT * FT_M
-    coef = np.empty((n, 3, 3))                      # [lanzamiento, orden c0..c2, eje x,y,z] en ft y s (reloj medido)
-    t_vuelo = np.empty(n)
-    for ini in range(0, n, bloque):
-        sl = slice(ini, min(ini + bloque, n))
-        _t, ys = _integrar_bloque(r0[sl], v0[sl], omega_hat[sl], omega_t[sl], cd[sl], rho_i[sl], 0.65, dt)
-        pos = np.moveaxis(ys[:3], 0, -1)            # (N, nt, 3) en m
-        for q in range(pos.shape[0]):
-            y_q = pos[q, :, 1]
-            cruza = np.flatnonzero(y_q <= yp_m)
-            fin = int(cruza[0]) if len(cruza) else len(y_q) - 1
-            idx = np.arange(0, fin + 1, paso)
-            t_meas = idx * dt * tau_i[ini + q]
-            medido = lam_i[ini + q] * pos[q, idx, :] / FT_M + rng.normal(0, sigma_pos_m / FT_M, (len(idx), 3))
-            coef[ini + q] = np.polynomial.polynomial.polyfit(t_meas, medido, 2)
-            t_vuelo[ini + q] = fin * dt
+    inicios = list(range(0, n, bloque))
+    sls = [slice(ini, min(ini + bloque, n)) for ini in inicios]
+    if n_jobs == 1:                                 # serie: un solo flujo del generador (reproduce la sintética histórica)
+        rngs = [rng] * len(sls)
+        salidas = [_ajustar_bloque(r0[sl], v0[sl], omega_hat[sl], omega_t[sl], cd[sl], rho_i[sl], lam_i[sl], tau_i[sl],
+                                   rg, dt, paso, sigma_pos_m) for sl, rg in zip(sls, rngs, strict=True)]
+    else:                                           # paralelo: un flujo hijo por bloque (determinista, otra realización)
+        from joblib import Parallel, delayed
+        rngs = rng.spawn(len(sls))
+        salidas = Parallel(n_jobs=n_jobs)(
+            delayed(_ajustar_bloque)(r0[sl], v0[sl], omega_hat[sl], omega_t[sl], cd[sl], rho_i[sl], lam_i[sl], tau_i[sl],
+                                     rg, dt, paso, sigma_pos_m) for sl, rg in zip(sls, rngs, strict=True))
+    coef = np.concatenate([o[0] for o in salidas])  # [lanzamiento, orden c0..c2, eje x,y,z] en ft y s (reloj medido)
+    t_vuelo = np.concatenate([o[1] for o in salidas])
     c0, c1, c2 = coef[:, 0, :], coef[:, 1, :], coef[:, 2, :]
     t50 = _raiz_pequena(c0[:, 1] - 50.0, c1[:, 1], c2[:, 1])           # instante en que y = 50 ft (reloj medido)
     r9 = c0 + c1 * t50[:, None] + c2 * t50[:, None] ** 2
@@ -1008,6 +1068,7 @@ def generar_fisica(n_juegos: int = 45, lanzamientos_por_juego: int = 111, semill
     df = pl.DataFrame({
         "game_anon_id": [f"game_{g + 1:06d}" for g in g_idx],
         "pitcher_anon_id": [f"pitcher_{j + 1:05d}" for j in j_idx],
+        "parque_id": [f"park_{juego_info[g]['parque'] + 1:02d}" for g in g_idx],
         "year": anio_i, "altitude_category_h": cub_i, "familia": [formas[k] for k in k_idx],
         "pitcher_throws_r": mano_r[j_idx], "excluir_modelo": np.zeros(n, dtype=bool),
         "x0": r9[:, 0], "y0": r9[:, 1], "z0": r9[:, 2], "vx0": v9[:, 0], "vy0": v9[:, 1], "vz0": v9[:, 2],
@@ -1020,8 +1081,10 @@ def generar_fisica(n_juegos: int = 45, lanzamientos_por_juego: int = 111, semill
         "juegos": [f"game_{g + 1:06d}" for g in range(n_juegos)],
         "cubeta_juego": [ji["cubeta"] for ji in juego_info], "parque_juego": [ji["parque"] for ji in juego_info],
         "rho_juego": rho_g, "delta_verdad": np.log(rho_g) - log_ref,
-        "alpha_j": alpha_j, "c_g": np.where(sesgado_g, lambda_escala / tau_reloj**2 - 1.0, 0.0),
-        "lambda": lambda_escala, "tau": tau_reloj, "cubetas_sesgo": tuple(cubetas_sesgo),
+        "alpha_j": alpha_j, "c_g": c_juego, "lambda": lambda_escala, "tau": tau_reloj,
+        "cubetas_sesgo": tuple(cubetas_sesgo) if calibracion_parques is None else (),
+        "parques": [{"cubeta": c, "altitud_m": a} for c, a in parques],
+        "calibracion_parques": {int(k): tuple(v) for k, v in (calibracion_parques or {}).items()},
         "niveles_rho": niveles, "sigma_pos_m": sigma_pos_m, "sigma_alpha": sigma_alpha,
         "t_s": -t50, "t_vuelo": t_vuelo, "n_lanzamientos": n, "spinaxis_inferido": spinaxis_inferido,
         "signo_magnus_x": SIGNO_MAGNUS_X,

@@ -14,7 +14,7 @@
 | F0.0 | ✅ cerrada | tag `fase00_0` |
 | F0 | ✅ cerrada (G0.1–G0.9) | merge `45f9f7c`, tag `fase00`; mecanismo U, `perdida_ignorable=false` |
 | F1 | ✅ cerrada (pre-registro H1–H6) | merge `b6a008c`, tag `fase01`; BH m=5, H5 por equivalencia (v2.8) |
-| F2 | 🟡 diseño revisado (Props. 1, 2′, 3″) + implementación en curso | rama `fase02`, sin PR; compuertas G2.1 (estudio de simulación), G2.2, G2.3a/b, G2.4 por implementar (Sonnet) |
+| F2 | 🟠 implementada; **detenida en la sintética por G2.3b** (FPR 0.167 > 0.05; G2.1, G2.2, G2.3a, G2.4 ✅) | rama `fase02`, sin PR; `docs/discrepancias/D02b.md` §4 — espera decisión del orquestador (conglomerado del SE de G2.3b); sin correr sobre datos reales |
 | F3 | ⚪ pendiente | diseño (Opus) tras F2 |
 | F4 / F5 | ⚪ pendientes (paralelizables) | dependen de F2–F3 |
 | F6–F11 | ⚪ pendientes | — |

@@ -19,8 +19,12 @@ fi
 # (2) Pruebas con datos sintéticos: deben pasar antes de tocar datos reales.
 uv run pytest -q
 
-# (3) F2 sobre los datos reales. Sale con código != 0 si una compuerta (G2.1-G2.4) falla,
-#     DESPUÉS de escribir el reporte. Corre también la sintética con física exacta (G2.1).
+# (3) Prueba de escala (≈635 k lanzamientos sintéticos): tiempo y RAM pico en ESTA máquina (reports/f02_escala.json).
+uv run pitcheo f02 --escala 635000
+
+# (4) F2 sobre los datos reales. Sale con código != 0 si una compuerta (G2.1, G2.2, G2.3a, G2.3b, G2.4) falla,
+#     DESPUÉS de escribir el reporte. Corre también el estudio de simulación de G2.1 (R = 10, semillas 101-110, en paralelo
+#     con joblib) y la sintética de calibración de G2.3b (ADR-017); ninguno se ajusta a la vista del resultado.
 uv run pitcheo f02
 
-echo "F2 lista. Revisa reports/FASE_02.md: Bloque para el orquestador, G2.2 (δ̄ por cubeta) y G2.3 (Deming)."
+echo "F2 lista. Revisa reports/FASE_02.md: Bloque para el orquestador, G2.2 (δ̄ por cubeta), G2.3a (Deming) y G2.3b (ĉ por parque)."

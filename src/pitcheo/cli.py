@@ -230,6 +230,13 @@ def cmd_f02(a, cfg):
     from . import fase02
 
     out = Path(a.out) if a.out else None
+    if a.escala:
+        res = fase02.prueba_escala(a.escala, cfg)
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+        destino = (out or cfg.ruta("reportes")) / "f02_escala.json"
+        fase02._json(res, destino)
+        print(f"\nprueba de escala -> {destino}")
+        return
     if a.sintetico:
         from .sintetico import generar_fisica
         out = out or (cfg.ruta("interim") / "sintetico")
@@ -240,7 +247,7 @@ def cmd_f02(a, cfg):
         if not ruta.exists():
             sys.exit(f"No existe {ruta} (salida de F0). En local córrelo con `bash scripts/fases/f00.sh`; "
                      "aquí usa `pitcheo f02 --sintetico N`.")
-        df = fase02.cargar_pitches(ruta)
+        df = fase02.cargar_pitches(ruta, cfg["f02"].get("columna_parque"))
     res = fase02.correr(
         cfg, df,
         ruta_densidad=(out / "densidad_juego.parquet") if out else cfg.ruta("densidad_juego"),
@@ -286,6 +293,8 @@ def main(argv=None):
     s = sp.add_parser("f02", help="densidad del aire por juego desde la trayectoria (Props. 1, 2′, 3′)")
     s.add_argument("--sintetico", type=int, default=0, metavar="N",
                    help="genera N juegos sintéticos con física exacta y corre F2 sobre ellos (no escribe en reports/)")
+    s.add_argument("--escala", type=int, default=0, metavar="N",
+                   help="prueba de escala: genera ≈N lanzamientos sintéticos, corre el análisis completo y reporta tiempo y RAM")
     s.add_argument("--out", default=None, help="redirige densidad_juego, reportes, logs y figuras a este directorio")
     s.set_defaults(f=cmd_f02)
 

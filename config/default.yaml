@@ -115,7 +115,8 @@ f02:
   n_nudos: 3                     # nudos internos del B-spline de S (fallback: menos nudos → lineal → constante)
   grado: 3
   n_min_por_col: 20              # lanzamientos mínimos por columna de la base antes de reducir la spline
-  tol_ap: 1.0e-10                # proyecciones alternadas: cambio máximo del ajuste para parar
+  solver: lsmr                   # lsmr (LSMR disperso, Fong y Saunders 2011) | alternando (Guimarães–Portugal; referencia)
+  tol_ap: 1.0e-10                # solver "alternando": cambio máximo del ajuste para parar
   max_iter_ap: 5000
   soporte_q: [0.025, 0.975]      # cuantiles de S por cubeta y estrato cuya intersección es el soporte común
   n_min_efectivo: 30             # juego con menos lanzamientos en el soporte común → baja confianza (🔎)
@@ -126,21 +127,32 @@ f02:
   altitud_cubeta_m: {No Altitude: 20, Medium Altitude: 532, Extreme Altitude: 2000}
   gmm_max_comp: 4
   gmm_n_init: 5
-  # SpinAxis medido o inferido del movimiento (Prop. 3′): umbrales de las dos verificaciones.
+  # SpinAxis medido o inferido del movimiento (Prop. 3′, prueba de circularidad obligatoria de ADR-017).
   spinaxis_desfase_min_grados: 1.0
   spinaxis_sd_min_ms2: 0.05
-  # Compuertas de §4-F2.
+  spinaxis_r2_max: 0.95          # R² de SpinAxis sobre las columnas de movimiento (dentro de lanzador×forma): ≥ → inferido
+  # G2.3b: ĉ_ê por parque. Id de parque de F0 si existe `columna_parque` (nombre de la columna en pitches.parquet); si no,
+  # parque latente (GMM de δ̂ᴰ por cubeta, 🔎). `parque_fuente`: auto | id | latente.
+  columna_parque: null
+  parque_fuente: auto
+  g23b_q: 0.05                   # FDR de Benjamini–Hochberg
+  g23b_min_parques: 3            # parques mínimos por cubeta para centrar en la mediana
+  # Compuertas de §4-F2 (ADR-017).
   gates:
-    g21_error_max: 0.01          # G2.1: error sintético de recuperación de ρ
+    g21_error_max: 0.01          # G2.1: por nivel, |sesgo relativo medio| + 1.96·MCSE < 1 % (R réplicas)
     g22_extreme: [-0.30, -0.15]  # G2.2 (b): media de δ en Extreme
     g22_componente: [-0.32, -0.20]   # G2.2 (c): componente de menor media de la mezcla de Extreme
-    g23_pendiente: [0.85, 1.15]  # G2.3: Deming de δ^L sobre δ^D
+    g23_pendiente: [0.85, 1.15]  # G2.3a: Deming de δ^L sobre δ^D
+    g23b_potencia_min: 0.80      # G2.3b: potencia para |c| = 0.02 (global y por tipo de sesgo)
+    g23b_fpr_max: 0.05           # G2.3b: tasa de falsos positivos en parques limpios
     g24_se_max: 0.03             # G2.4: mediana del SE CR2 de δ̂_g
-  # Sintética de F2 (generar_fisica): G2.1 y la tabla de escenarios que corre `pitcheo f02` junto a los datos reales.
+    g24_cobertura_min: 0.90      # G2.4: cobertura mínima del IC95 CR2 (sintética)
+  # Sintética de F2 (generar_fisica), PROTOCOLO PRE-REGISTRADO de ADR-017: no se ajusta a la vista del resultado.
   sintetica:
-    semillas: [11, 12, 13]
-    n_juegos: 45
-    lanzamientos_por_juego: 111
-    n_juegos_calibracion: 150    # los escenarios de λ y τ necesitan más juegos para el detector ê
+    semillas: [101, 102, 103, 104, 105, 106, 107, 108, 109, 110]   # R = 10 réplicas
+    n_juegos: 150                # juegos por réplica (G2.1)
+    lanzamientos_por_juego: 250
+    n_juegos_g23b: 300           # juegos por réplica del escenario de G2.3b (18 parques)
+    n_jobs: -1                   # réplicas en paralelo con joblib (el resultado no depende de esto)
     lambda_escala: 1.02
     tau_reloj: 1.01

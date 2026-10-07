@@ -24,7 +24,7 @@ import math
 
 import numpy as np
 import polars as pl
-from scipy import linalg, sparse
+from scipy import linalg, sparse, special
 
 from . import fisica
 from .fisica import G_SI
@@ -50,10 +50,11 @@ def preparar_datos(df: pl.DataFrame, y_plano_ft: float = fisica.Y_FRENTE_PLATO_F
     """
     req = ["game_anon_id", "pitcher_anon_id", "familia", "pitcher_throws_r", "year", "altitude_category_h",
            "excluir_modelo", *fisica._R0, *fisica._V0, *fisica._A0, "PitchTrajectoryXc1", "SpinRate", "SpinAxis"]
-    extra = [c for c in ("RelHeight", "PlateLocHeight") if c in df.columns]
+    extra = [c for c in ("RelHeight", "PlateLocHeight", "parque_id") if c in df.columns]
     t = df.select([*req, *extra]).with_columns(
         _txt(df, "game_anon_id").alias("game_anon_id"), _txt(df, "pitcher_anon_id").alias("pitcher_anon_id"),
-        _txt(df, "familia").alias("familia"), _txt(df, "altitude_category_h").alias("altitude_category_h"))
+        _txt(df, "familia").alias("familia"), _txt(df, "altitude_category_h").alias("altitude_category_h"),
+        *([_txt(df, "parque_id").alias("parque_id")] if "parque_id" in extra else []))
     conteo = {"filas_entrada": t.height}
 
     def filtrar(nombre: str, mascara: pl.Expr) -> None:
@@ -93,6 +94,8 @@ def preparar_datos(df: pl.DataFrame, y_plano_ft: float = fisica.Y_FRENTE_PLATO_F
         vec["sesgo_plateloc_z"] = t["PlateLocHeight"].to_numpy().astype(float) - z_p
     if "RelHeight" in extra:
         vec["rel_height"] = t["RelHeight"].to_numpy().astype(float)
+    if "parque_id" in extra:
+        d = d.with_columns(t["parque_id"].alias("parque"))
     conteo["filas_salida"] = d.height
     return {"d": d, "vec": vec, "conteo": conteo}
 
@@ -146,7 +149,8 @@ def estimar_densidad(d: pl.DataFrame, cfg_f02: dict, referencia: str = "No Altit
     u = dis.usadas
     res = fisica.estimador_densidad_juego(y[u], d["juego"].to_numpy()[u], jk[u], d["S"].to_numpy()[u],
                                           d["estrato"].to_numpy()[u], cub[u], referencia, *args,
-                                          tol=cfg_f02.get("tol_ap", 1e-10), max_iter=cfg_f02.get("max_iter_ap", 5000))
+                                          tol=cfg_f02.get("tol_ap", 1e-10), max_iter=cfg_f02.get("max_iter_ap", 5000),
+                                          solver=cfg_f02.get("solver", "lsmr"))
     dsg = res["diseno"]
     en_soporte, sop = soporte_comun(d.filter(pl.Series(u)), dsg, tuple(cfg_f02.get("soporte_q", (0.025, 0.975))))
     n_g = np.bincount(dsg.juego, minlength=len(dsg.juegos))
@@ -171,7 +175,7 @@ def se_cr2(diseno, resid: np.ndarray, conglomerado: np.ndarray, en_referencia: n
     densa inviable) cae a un CR0 aproximado (sin corrección de apalancamiento) y lo declara. No se usan grados de
     libertad de Satterthwaite: G2.4 solo pide el SE.
     """
-    n, m = resid.shape
+    n = resid.shape[0]
     n_g = len(diseno.juegos)
     ref = int(np.argmax(en_referencia))
     X, info = fisica.matriz_diseno_dispersa(diseno, ref_juego=ref)
@@ -181,22 +185,39 @@ def se_cr2(diseno, resid: np.ndarray, conglomerado: np.ndarray, en_referencia: n
     se_ing = sigma[None, :] / np.sqrt(n_juego)[:, None]
     if p > max_p:
         return {**_cr0_aprox(diseno, resid, conglomerado), "sigma_eta": sigma, "se_ingenuo": se_ing, "p": p}
-    xtx = (X.T @ X).toarray()
-    try:
-        c = linalg.cho_factor(xtx + 1e-12 * np.trace(xtx) / p * np.eye(p), lower=True, check_finite=False)
-        minv = linalg.cho_solve(c, np.eye(p), check_finite=False)
-    except linalg.LinAlgError:
-        minv = np.linalg.pinv(xtx, hermitian=True)
+    minv = _inversa_gram(X)
     pos = info["cols_juego"]
     R = np.zeros((n_g, p))
     ok = pos >= 0
     R[ok] = minv[pos[ok]]
     M = R - R[en_referencia].mean(axis=0)                           # (G, p): contraste δ_g − media_ref
+    var = _var_cr2(X, minv, resid, conglomerado, M)
+    return {"se": np.sqrt(var), "sigma_eta": sigma, "se_ingenuo": se_ing, "metodo": "CR2", "p": p}
+
+
+def _inversa_gram(X: sparse.csr_matrix) -> np.ndarray:
+    """(X'X)⁻¹ densa con un ridge mínimo (Cholesky); pinv si no es definida positiva."""
+    p = X.shape[1]
+    xtx = (X.T @ X).toarray()
+    try:
+        c = linalg.cho_factor(xtx + 1e-12 * np.trace(xtx) / p * np.eye(p), lower=True, check_finite=False)
+        return linalg.cho_solve(c, np.eye(p), check_finite=False)
+    except linalg.LinAlgError:
+        return np.linalg.pinv(xtx, hermitian=True)
+
+
+def _var_cr2(X: sparse.csr_matrix, minv: np.ndarray, resid: np.ndarray, conglomerado: np.ndarray,
+             M: np.ndarray) -> np.ndarray:
+    """Var CR2 (Bell–McCaffrey) de los contrastes C·β̂: Σ_c (M X_c' A_c e_c)², A_c = (I − H_cc)^{-1/2}.
+
+    `M` (q × p) es el contraste YA multiplicado por (X'X)⁻¹ (M = C·minv). `resid` (n, m) puede traer varias respuestas
+    con el mismo diseño; devuelve la varianza (q, m).
+    """
     orden = np.argsort(conglomerado, kind="stable")
     Xs, es = X[orden], resid[orden]
     cs = np.asarray(conglomerado)[orden]
     cortes = np.flatnonzero(np.r_[True, cs[1:] != cs[:-1], True])
-    var = np.zeros((n_g, m))
+    var = np.zeros((M.shape[0], resid.shape[1]))
     for a, b in itertools.pairwise(cortes):
         Xc = Xs[a:b]
         cols = np.unique(Xc.indices)
@@ -207,9 +228,9 @@ def se_cr2(diseno, resid: np.ndarray, conglomerado: np.ndarray, en_referencia: n
         w, v = np.linalg.eigh(np.eye(b - a) - h)
         inv_raiz = np.where(w > 1e-8, 1.0 / np.sqrt(np.clip(w, 1e-8, None)), 0.0)
         ajustado = (v * inv_raiz) @ (v.T @ es[a:b])                 # A_c e_c
-        s = M[:, cols] @ (Xd.T @ ajustado)                          # (G, m)
+        s = M[:, cols] @ (Xd.T @ ajustado)                          # (q, m)
         var += s**2
-    return {"se": np.sqrt(var), "sigma_eta": sigma, "se_ingenuo": se_ing, "metodo": "CR2", "p": p}
+    return var
 
 
 def _cr0_aprox(diseno, resid: np.ndarray, conglomerado: np.ndarray) -> dict:
@@ -339,8 +360,23 @@ def _circ_dif(a_deg: np.ndarray, b_deg: np.ndarray) -> np.ndarray:
     return (np.asarray(a_deg) - np.asarray(b_deg) + 180.0) % 360.0 - 180.0
 
 
+def _r2_dentro(y: np.ndarray, x: np.ndarray, grupos: np.ndarray) -> float:
+    """R² multivariado (suma de las columnas de y) de y sobre x tras restar la media por grupo (dentro de lanzador×forma)."""
+    _, gi = np.unique(grupos, return_inverse=True)
+    n_g = np.bincount(gi)
+
+    def centrar(m: np.ndarray) -> np.ndarray:
+        return m - np.column_stack([np.bincount(gi, m[:, k]) / n_g for k in range(m.shape[1])])[gi]
+
+    yc, xc = centrar(y), centrar(x)
+    beta = np.linalg.lstsq(xc, yc, rcond=None)[0]
+    sst = float(np.sum(yc**2))
+    return 1.0 - float(np.sum((yc - xc @ beta) ** 2)) / sst if sst > 0 else float("nan")
+
+
 def verificar_spinaxis_medido(spin_axis_deg: np.ndarray, a_tilde: np.ndarray, v_barra: np.ndarray,
-                              grupos_jk: np.ndarray, desfase_min_grados: float = 1.0, var_min_ms2: float = 0.05) -> dict:
+                              grupos_jk: np.ndarray, desfase_min_grados: float = 1.0, var_min_ms2: float = 0.05,
+                              r2_max: float = 0.95) -> dict:
     """¿`SpinAxis` es medido o inferido del movimiento? (ROADMAP §1.6 (1), docs/MODELO_MATEMATICO.md F2.4).
 
     (i) Se compara el eje con el que implica el movimiento: θ_mov = eje cuya sustentación n̂_M(θ) apunta a ã_⊥. Si
@@ -348,6 +384,10 @@ def verificar_spinaxis_medido(spin_axis_deg: np.ndarray, a_tilde: np.ndarray, v_
         Se elige el signo lateral σ ∈ {±1} que minimiza ese desfase (la convención del radar no está documentada).
     (ii) Con ê = v̂ × n̂_spin, la desviación estándar de ã·ê dentro de lanzador×forma debe superar `var_min_ms2` (m/s²):
         si es ≈ 0 el eje no aporta información independiente del movimiento.
+    (iii) Circularidad (ADR-017): R² de (sen θ, cos θ) de SpinAxis sobre las columnas de movimiento (sen θ_mov,
+        cos θ_mov), dentro de lanzador×forma. Si SpinAxis sale del movimiento el R² es ≈ 1 (≥ `r2_max`); con un eje
+        medido con su propio ruido queda bien por debajo (sintética: ≈ 0.53 medido contra ≈ 0.99 inferido). El criterio (i)
+        solo atrapa un eje derivado con la MISMA v̂ que usa F2; (ii) y (iii) atrapan los derivados con otra.
     Si cualquiera marca "inferido" el eje se declara inferido y el único detector de calibración es G2.3 (Deming).
     """
     from .sintetico import direccion_magnus
@@ -362,14 +402,18 @@ def verificar_spinaxis_medido(spin_axis_deg: np.ndarray, a_tilde: np.ndarray, v_
         if mejor is None or desv < mejor[0]:
             mejor = (desv, sg)
     desv, signo = mejor
+    th_mov = np.radians(np.degrees(np.arctan2(n_mov[:, 0] / signo, -n_mov[:, 2])) % 360.0)
+    th_obs = np.radians(np.asarray(spin_axis_deg, dtype=float))
+    r2 = _r2_dentro(np.column_stack([np.sin(th_obs), np.cos(th_obs)]), np.column_stack([np.sin(th_mov), np.cos(th_mov)]),
+                    grupos_jk)
     e_hat = np.cross(v_hat, direccion_magnus(spin_axis_deg, v_hat, signo))
     z = np.einsum("ij,ij->i", a_tilde, e_hat)
     _, gi = np.unique(grupos_jk, return_inverse=True)
     sd_z = float(np.std(z - (np.bincount(gi, z) / np.bincount(gi))[gi]))
-    inferido = bool(desv < desfase_min_grados or sd_z < var_min_ms2)
+    inferido = bool(desv < desfase_min_grados or sd_z < var_min_ms2 or r2 >= r2_max)
     return {"medido": not inferido, "signo_lateral": int(signo), "desfase_rms_grados": desv,
             "sd_a_por_e_dentro_jk_ms2": sd_z, "umbral_desfase_grados": desfase_min_grados,
-            "umbral_sd_ms2": var_min_ms2,
+            "umbral_sd_ms2": var_min_ms2, "r2_circularidad": r2, "umbral_r2": r2_max,
             "veredicto": ("SpinAxis medido: se usa el detector ê" if not inferido
                           else "SpinAxis INFERIDO del movimiento: el único detector es G2.3 (Deming)")}
 
@@ -398,6 +442,138 @@ def c_g_detector_e(spin_axis_deg: np.ndarray, a_tilde: np.ndarray, v_barra: np.n
     with np.errstate(invalid="ignore", divide="ignore"):
         c_crudo = sxz / sxx
     return {"c_g": c_crudo - np.nanmean(c_crudo[en_referencia]), "c_g_crudo": c_crudo, "sxx": sxx}
+
+
+# ==========================================================================
+# G2.3b: detector ê por parque con Wald (SE CR2) y Benjamini–Hochberg
+# ==========================================================================
+def benjamini_hochberg(p: np.ndarray, q: float = 0.05) -> np.ndarray:
+    """Rechazos con control de FDR al nivel `q` (Benjamini–Hochberg 1995). `p` (m,) → máscara booleana (m,)."""
+    p = np.asarray(p, dtype=float)
+    m = len(p)
+    if m == 0:
+        return np.zeros(0, dtype=bool)
+    orden = np.argsort(p)
+    ok = p[orden] <= q * np.arange(1, m + 1) / m
+    k = int(np.flatnonzero(ok).max()) + 1 if ok.any() else 0
+    rechazo = np.zeros(m, dtype=bool)
+    rechazo[orden[:k]] = True
+    return rechazo
+
+
+def detector_e_parques(spin_axis_deg: np.ndarray, a_tilde: np.ndarray, v_barra: np.ndarray, grupos_jk: np.ndarray,
+                       parque: np.ndarray, cubeta: np.ndarray, conglomerado: np.ndarray, signo_lateral: int,
+                       q: float = 0.05, min_parques: int = 3, max_p: int = 14000) -> dict:
+    """ĉ_ê por parque, centrado en la mediana de su cubeta, con Wald (SE CR2) y BH (G2.3b, ADR-017).
+
+    Modelo: ã·ê = c_parque·(g·ê) + β_{j,k} + ε sobre todos los lanzamientos con parque (id de F0 o parque latente);
+    β_{j,k} entra como dummies de lanzador×forma, de modo que las hat values de CR2 son las del modelo completo. Dentro
+    de cada cubeta con ≥ `min_parques` parques se resta la mediana de los ĉ (con la mediana de dos centrales si hay un
+    número par): el contraste es lineal en β, así que el SE CR2 incluye la covarianza con los parques que fijan la
+    mediana. El parque mediano (conteo impar) tiene contraste 0 y no se evalúa. Wald z = contraste/SE, valor p
+    normal de dos colas y BH al nivel `q` sobre todos los parques evaluados.
+
+    `parque` y `cubeta` por fila (None = fuera). Devuelve una fila por parque en `parques` y el método de SE.
+    """
+    from .sintetico import direccion_magnus
+    en = np.array([p is not None for p in parque])
+    v_hat = v_barra / np.linalg.norm(v_barra, axis=1)[:, None]
+    e_hat = np.cross(v_hat, direccion_magnus(spin_axis_deg, v_hat, signo_lateral))
+    z = np.einsum("ij,ij->i", a_tilde, e_hat)[en]
+    x = (-G_SI * e_hat[:, 2])[en]
+    par, jk, cub = (np.asarray(a)[en] for a in (parque, grupos_jk, cubeta))
+    cong = np.asarray(conglomerado)[en]
+    p_u, p_i = np.unique(par.astype(str), return_inverse=True)
+    k_u, k_i = np.unique(jk, return_inverse=True)
+    n, n_p, n_k = len(z), len(p_u), len(k_u)
+    filas = np.arange(n)
+    X = sparse.hstack([sparse.csr_matrix((x, (filas, p_i)), shape=(n, n_p)),
+                       sparse.csr_matrix((np.ones(n), (filas, k_i)), shape=(n, n_k))]).tocsr()
+    p_tot = n_p + n_k
+    cub_p = np.empty(n_p, dtype=object)
+    cub_p[p_i] = cub
+    metodo = "CR2"
+    if p_tot > max_p:                                         # respaldo: FWL + sandwich por conglomerado, sin apalancamiento
+        metodo = "CR0 (no cupo la inversa densa)"
+        xs, zs = _demedia(x, k_i), _demedia(z, k_i)
+        sxx = np.bincount(p_i, xs * xs, minlength=n_p)
+        beta = np.bincount(p_i, xs * zs, minlength=n_p) / sxx
+        e = zs - beta[p_i] * xs
+        c_u, c_i = np.unique(cong, return_inverse=True)
+        score = np.bincount(c_i * n_p + p_i, xs * e, minlength=len(c_u) * n_p).reshape(len(c_u), n_p)
+        cov_b = np.einsum("ci,cj->ij", score, score) / np.outer(sxx, sxx)
+        minv = None
+    else:
+        minv = _inversa_gram(X)
+        coef = minv @ (X.T @ z)
+        beta = coef[:n_p]
+        e = z - X @ coef
+    filas_out, evaluables = [], []
+    for c in sorted({c for c in cub_p if c is not None}):
+        idx = np.flatnonzero(cub_p == c)
+        if len(idx) < min_parques:
+            for i in idx:
+                filas_out.append({"parque": str(p_u[i]), "cubeta": str(c), "c_hat": float(beta[i]), "evaluable": False})
+            continue
+        orden = idx[np.argsort(beta[idx])]
+        w = np.zeros(n_p)
+        if len(orden) % 2:
+            w[orden[len(orden) // 2]] = 1.0
+        else:
+            w[orden[len(orden) // 2 - 1]] = w[orden[len(orden) // 2]] = 0.5
+        for i in idx:
+            r = -w.copy()
+            r[i] += 1.0
+            evaluables.append((i, c, r))
+    if evaluables:
+        C = np.zeros((len(evaluables), p_tot))
+        for k, (_, _, r) in enumerate(evaluables):
+            C[k, :n_p] = r
+        if minv is not None:
+            var = _var_cr2(X, minv, e[:, None], cong, C @ minv)[:, 0]
+        else:
+            var = np.einsum("ki,ij,kj->k", C[:, :n_p], cov_b, C[:, :n_p])
+        se = np.sqrt(var)
+        cen = np.array([r @ beta for _, _, r in evaluables])
+        with np.errstate(invalid="ignore", divide="ignore"):
+            zw = np.where(se > 0, cen / se, 0.0)
+        pv = np.where(se > 0, special.erfc(np.abs(zw) / math.sqrt(2.0)), 1.0)
+        rech = benjamini_hochberg(pv, q)
+        for (i, c, _), ce, s_, zz, pp, rr in zip(evaluables, cen, se, zw, pv, rech, strict=True):
+            filas_out.append({"parque": str(p_u[i]), "cubeta": str(c), "c_hat": float(beta[i]), "c_centrado": float(ce),
+                              "se": float(s_), "z": float(zz), "p": float(pp), "rechaza_bh": bool(rr), "evaluable": True})
+    return {"parques": filas_out, "metodo_se": metodo, "q": q, "n_parques": int(n_p)}
+
+
+def _demedia(v: np.ndarray, grupo: np.ndarray) -> np.ndarray:
+    return v - (np.bincount(grupo, v) / np.bincount(grupo))[grupo]
+
+
+def cobertura_ic95(delta_hat: np.ndarray, delta_verdad: np.ndarray, se: np.ndarray, z: float = 1.96) -> float:
+    """Fracción de juegos cuyo IC95 = δ̂ ± z·SE contiene a la δ verdadera."""
+    ok = np.isfinite(se) & (se > 0)
+    return float(np.mean(np.abs(delta_hat[ok] - delta_verdad[ok]) <= z * se[ok]))
+
+
+def etiquetas_parque_latente(delta_d: np.ndarray, cubeta_juego: np.ndarray, max_comp: int = 4, n_init: int = 5,
+                             semilla: int = 2026) -> np.ndarray:
+    """🔎 Parque latente por juego: componente de la mezcla gaussiana (BIC) de δ̂ᴰ dentro de su cubeta (argmax de la
+    probabilidad posterior). Etiqueta 'cubeta|k' con k por media creciente; None si el juego no tiene cubeta o la cubeta
+    tiene pocos juegos. Sustituye al id de parque cuando F0 no lo trae."""
+    from sklearn.mixture import GaussianMixture
+    cub = np.array([None if c is None else str(c) for c in cubeta_juego], dtype=object)
+    out = np.full(len(cub), None, dtype=object)
+    for c in sorted({x for x in cub if x is not None}):
+        m = np.flatnonzero(cub == c)
+        if len(m) < 8:
+            continue
+        mz = mezcla_bic(delta_d[m], max_comp, n_init, semilla)
+        k = mz["n_componentes"]
+        gm = GaussianMixture(k, n_init=n_init, random_state=semilla, reg_covar=1e-8).fit(delta_d[m][:, None])
+        rango = np.argsort(np.argsort(gm.means_.ravel()))
+        lab = rango[gm.predict(delta_d[m][:, None])]
+        out[m] = [f"{c}|{int(i)}" for i in lab]
+    return out
 
 
 def distribucion_por_cubeta(valores: np.ndarray, cubeta_juego: np.ndarray) -> dict:
