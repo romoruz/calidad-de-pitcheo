@@ -1,0 +1,42 @@
+{
+  "filas_entrada": 635002,
+  "filas_salida": 629820,
+  "juegos": {
+    "total": 2122,
+    "sin_cubeta": 6,
+    "baja_confianza": 4,
+    "confirmatorios": 2112
+  },
+  "gates": {
+    "G2.1": true,
+    "G2.2": false,
+    "G2.3a": false,
+    "G2.3b": true,
+    "G2.4": true
+  },
+  "provisional": [
+    "G2.2",
+    "G2.3a",
+    "G2.4"
+  ],
+  "detenido": true,
+  "prop2pp": {
+    "estimador": "IV",
+    "beta": [
+      -0.14752111299884346,
+      0.6175180710402713
+    ],
+    "se_beta": [
+      0.00833252920965591,
+      0.04013032137092153
+    ],
+    "adoptado": false
+  },
+  "segundos": 161.0,
+  "se_metodo": "CR2",
+  "segundos_sintetica": {
+    "g21": 49.5,
+    "staff": 2.0,
+    "g23b": 173.5
+  }
+}

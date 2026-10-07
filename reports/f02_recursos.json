@@ -38,6 +38,19 @@
       "comando": "uv run pytest -q",
       "hash_codigo": "b117525b18cbe8c2",
       "fecha": "2026-10-07T16:08:57+00:00"
+    },
+    "real": {
+      "segundos": 161.9,
+      "ram_pico_mb": 4028,
+      "cpu_pct_equipo": 30.3,
+      "cpu_pct_sistema": 35.5,
+      "cpu_segundos": 392.3,
+      "nucleos_logicos": 8,
+      "estado": "compuerta_fallida",
+      "codigo_salida": 2,
+      "comando": "uv run pitcheo f02 --etapa real",
+      "hash_codigo": "b117525b18cbe8c2",
+      "fecha": "2026-10-07T16:12:47+00:00"
     }
   }
 }
