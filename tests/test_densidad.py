@@ -187,3 +187,31 @@ def test_parques_latentes_separan_dos_componentes_por_cubeta():
     cub2 = cub.copy()
     cub2[:3] = None
     assert all(x is None for x in D.etiquetas_parque_latente(delta, cub2)[:3])
+
+
+# --------------------------------------------------------------------------
+# Fail-closed SpinAxis (ADR-018 §A)
+# --------------------------------------------------------------------------
+def test_fail_closed_nan_spinaxis_no_evaluable():
+    """Si > 50 % de SpinAxis son NaN, el eje queda no evaluable (medido=False, no_evaluable=True)."""
+    df, _ = N.generar_fisica(12, 60, 7)
+    P = D.preparar_datos(df)
+    sa = P["vec"]["spin_axis"].copy()
+    rng = np.random.default_rng(1)
+    sa[rng.random(len(sa)) < 0.6] = np.nan
+    chk = D.verificar_spinaxis_medido(sa, P["vec"]["a_tilde"], P["vec"]["v_barra"], P["d"]["lanzador_forma"].to_numpy())
+    assert chk["medido"] is False and chk.get("no_evaluable") is True
+    assert all(np.isnan(chk[k]) for k in ("desfase_rms_grados", "sd_a_por_e_dentro_jk_ms2", "r2_circularidad"))
+
+
+def test_fail_closed_perp_degenerada_filtra_sin_fallar():
+    """Filas con ã paralela a v̂ (perp ≈ 0) se descartan silenciosamente; mientras queden suficientes, se evalúa."""
+    df, _ = N.generar_fisica(12, 60, 7)
+    P = D.preparar_datos(df)
+    a_t = P["vec"]["a_tilde"].copy()
+    v = P["vec"]["v_barra"]
+    v_hat = v / np.linalg.norm(v, axis=1)[:, None]
+    a_t[::7] = 10.0 * v_hat[::7]                                                # ã = 10·v̂ ⇒ perp = 0 en 1/7 filas
+    chk = D.verificar_spinaxis_medido(P["vec"]["spin_axis"], a_t, v, P["d"]["lanzador_forma"].to_numpy())
+    assert chk["n_evaluado"] < chk["n_entrada"] and chk["medido"] is True       # las degeneradas se filtraron
+    assert np.isfinite(chk["desfase_rms_grados"]) and np.isfinite(chk["r2_circularidad"])

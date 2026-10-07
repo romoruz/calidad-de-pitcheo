@@ -164,3 +164,65 @@ def test_la_verdad_de_c_por_juego_sigue_al_parque():
         l, t = esq.get(parque, (1.0, 1.0))
         assert v["c_g"][g] == pytest.approx(l / t**2 - 1.0)
     assert set(np.round(np.unique(v["c_g"]), 4)) <= {0.0, 0.02, round(1 / 1.01**2 - 1, 4)}
+
+
+# --------------------------------------------------------------------------
+# Prop. 2″ (Reynolds): recuperación de β y de ρ (ADR-018)
+# --------------------------------------------------------------------------
+def test_sintetica_sin_beta_reproduce_bit_a_bit_la_anterior():
+    """Con `beta_D=beta_L=0` el generador debe ser idéntico a antes (compat ADR-017)."""
+    a, va = N.generar_fisica(8, 80, 7)
+    b, vb = N.generar_fisica(8, 80, 7, beta_D=0.0, beta_L=0.0)
+    assert a.equals(b) and np.array_equal(va["c_g"], vb["c_g"])
+    assert vb["beta_D"] == 0.0 and vb["beta_L"] == 0.0
+
+
+def test_estimador_reynolds_recupera_delta_beta_cuando_lo_impone_el_generador():
+    """Para β_D = −0.5 el `Δβ̂` entre con y sin Reynolds explícito debe aproximarse a −0.5 (±0.1)."""
+    cfg = {"n_nudos": 3, "grado": 3, "n_min_por_col": 20}
+    df0, _ = N.generar_fisica(60, 110, 51, beta_D=0.0)
+    df1, _ = N.generar_fisica(60, 110, 51, beta_D=-0.5)
+    r0 = D.estimar_reynolds(D.preparar_datos(df0)["d"], cfg, "No Altitude")
+    r1 = D.estimar_reynolds(D.preparar_datos(df1)["d"], cfg, "No Altitude")
+    assert abs((r1["beta"][0] - r0["beta"][0]) - (-0.5)) < 0.10               # Δβ̂ ≈ Δβ_true
+    # Con β_D = −0.5, el δ̄ bruto Extreme se atenúa y el corregido recupera cerca de la verdad barométrica log(0.76).
+    cub = np.array([c for c in r1["cubeta_juego"]])
+    bruto = r1["delta"][cub == "Extreme Altitude", 0].mean()
+    corregido = r1["delta_corregido"][cub == "Extreme Altitude", 0].mean()
+    verdad = np.log(0.76)
+    assert bruto > verdad + 0.05                                              # bruto está mucho más cerca de 0 que de −0.274
+    assert abs(corregido - verdad) < 0.15                                      # corregido reduce el error
+
+
+def test_sobreidentificacion_detecta_equivalencia_cuando_la_hay():
+    """Con β_D=β_L=0 la pendiente predicha ≈ 1; si la Deming observada es 1.0 ± 0.03, equivalencia se aprueba."""
+    cfg = {"n_nudos": 3, "grado": 3, "n_min_por_col": 20}
+    df, _ = N.generar_fisica(120, 150, 123, beta_D=0.0, beta_L=0.0)
+    r = D.estimar_reynolds(D.preparar_datos(df)["d"], cfg, "No Altitude")
+    sobre = D.sobreidentificacion_reynolds(r, 1.0, 0.03, tolerancia=0.10)
+    assert abs(sobre["pendiente_predicha"] - 1.0) < 0.1
+    sobre_mala = D.sobreidentificacion_reynolds(r, 1.5, 0.02, tolerancia=0.10)
+    assert not sobre_mala["equivalencia"]                                      # 0.5 fuera del margen
+
+
+# --------------------------------------------------------------------------
+# Normalización por año (ADR-018 §B)
+# --------------------------------------------------------------------------
+def test_normalizacion_por_anio_resetea_cero_por_cada_year():
+    """δ̄_{No Altitude, year=y} debe ser ≈ 0 ∀ year; en modo global solo la media sobre toda la ref es 0."""
+    cfg = {"n_nudos": 3, "grado": 3, "n_min_por_col": 20}
+    df, _ = N.generar_fisica(90, 110, 61)
+    d = D.preparar_datos(df)["d"]
+    est = D.estimar_densidad(d, cfg, "No Altitude", por_anio=True)
+    anio = est["res"]["anio_juego"]
+    delta_D = est["res"]["delta"][:, 0]
+    en_ref = est["res"]["en_referencia"]
+    for y in np.unique(anio):
+        m = en_ref & (anio == y)
+        if m.any():
+            assert abs(delta_D[m].mean()) < 1e-10                              # cada año queda en 0
+    est_g = D.estimar_densidad(d, cfg, "No Altitude", por_anio=False)
+    delta_g = est_g["res"]["delta"][:, 0]
+    assert abs(delta_g[est_g["res"]["en_referencia"]].mean()) < 1e-10          # global queda en 0 pero por año no en general
+    por_anio_global = [delta_g[en_ref & (anio == y)].mean() for y in np.unique(anio) if (en_ref & (anio == y)).any()]
+    assert max(abs(x) for x in por_anio_global) > 1e-6                         # con global, los años se separan

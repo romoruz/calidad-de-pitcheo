@@ -389,3 +389,75 @@ de **control de calidad de datos**, no hipótesis; F1 aún no ocurre.
 - **Consecuencias.** F2 (Sonnet) implementa estas compuertas; nada de esto se implementa en esta ronda del orquestador (solo
   docs + el experimento de D02b §3). G2.3b depende de que exista ID de parque o un GMM de parques latentes y de que
   `SpinAxis` sea medido. La corrida local de F2 queda a la espera de la implementación.
+
+---
+
+## ADR-018 — Prop. 2″ (Reynolds), normalización por año, fail-closed de SpinAxis y rediseño de G2.3b (ronda 3 de F2)
+
+- **Contexto.** La corrida sobre datos reales de ADR-017 (`reports/FASE_02.md` en 6a4d3ee) dejó cuatro hallazgos:
+  (i) `verificar_spinaxis_medido` reportó los tres criterios como `NaN` y, por `nan < 1.0 == False`, declaró el eje **medido**;
+      la máscara de validación no filtraba SpinAxis nulo ni vectores perpendiculares degenerados.
+  (ii) **Deming δᴸ sobre δᴰ = 1.514** (EE 0.019 por dos vías, z vs 1 = 26.6; `n = 2 112` juegos): muy fuera de la banda
+      [0.85, 1.15]. En paralelo, **δ̄ᴰ Extreme = −0.159**, mientras la predicción barométrica a 2 000 m es
+      log(ρ₂₀₀₀/ρ₀) ≈ −0.240. Ambos síntomas apuntan a la misma causa física: **atenuación por dependencia de los
+      coeficientes aerodinámicos en el número de Reynolds** (ley potencial local alrededor del drag crisis; Nathan 2008,
+      *Am. J. Phys.*). Si log C_c = f_c(S,k,h,year) + β_c · log Re + …, entonces δ̂_c = (1 + β_c) · log ρ_g; con
+      β_D ≈ −0.34 y β_L ≈ 0 se obtiene δ̂ᴸ/δ̂ᴰ = (1+β_L)/(1+β_D) ≈ 1.52, consistente con 1.514 observado.
+  (iii) El modelo de ADR-017 fuerza `mean(δ : No Altitude) = 0` globalmente, pero los juegos están **anidados en el año**:
+      cambios anuales (p. ej. pelota) actúan como un γ_year colineal con δ_g, y el nivel global absorbe su media.
+  (iv) G2.3b (ADR-017: mediana por cubeta, Wald + BH, cluster lanzador-dentro-del-juego) dio **FPR 0.167 (10/60)** en la
+      sintética; el diagnóstico (`docs/discrepancias/D02b.md` §4) atribuyó el exceso a dos cosas: el conglomerado trata
+      los juegos de un mismo lanzador como independientes aunque sus errores de α_{j,k} se correlacionan, y la mediana
+      por cubeta deja los contrastes de limpios por pares con signos opuestos.
+- **Decisión.**
+  1. **Fail-closed de SpinAxis** (A, fija (i)). Antes de aplicar los tres criterios se exige una máscara por fila:
+     `SpinAxis` finito, `v̄` finita y > 0, `ã` finita y norma de la perpendicular `l_perp` > 10⁻⁶ m/s². Si tras aplicarla
+     quedan < 100 filas, o < 50 % de la entrada, el eje se declara **no evaluable** (`no_evaluable = True`, `medido =
+     False`). Si algún criterio devuelve `NaN` tras el filtro, también se declara no evaluable. **G2.3b sobre datos reales
+     es siempre informativa (🔎), nunca compuerta**: su veredicto `n/e` se dispara también por `no_evaluable`, por eje
+     inferido (R² ≥ 0.95; umbral calibrado con el caso `spinaxis_inferido=True` de la sintética) o por falta de id de
+     parque (cae a parque latente por GMM, exploratorio). La **compuerta G2.3b vive en la sintética**; su chk se corre
+     dentro de cada réplica. Si la sintética sale inferida, la compuerta queda n/e, y se reporta.
+  2. **Normalización por año** (B, fija (iii)). `estimador_densidad_juego` acepta `anio_juego` por juego; impone
+     δ̄ _{referencia, year = y} := 0 **por cada año de la referencia** y expone `grupos_norm` (etiqueta por juego) y
+     `niveles_por_grupo` por respuesta. Un año sin juegos de referencia usa la media de los niveles disponibles
+     (fallback declarado). El SE CR2, `c_g_desde_diferencia` y `c_g_detector_e` aceptan `grupos_norm` y construyen el
+     contraste por grupo. Medias por cubeta: media de las medias por año ponderadas por juegos de la cubeta en el año;
+     contrastes contra la referencia: diferencia dentro del año con los mismos pesos. Los años se leen de `d["year"]`
+     (constante por juego). ADR-017 queda como `por_anio = false` (compat).
+  3. **Prop. 2″** (C, fija (ii)). Modelo ampliado `y_c = δ_g + α_{j,k} + f_c(S) + β_c · log‖v̄‖ + ε`. β_c se identifica
+     con la variación de log‖v̄‖ **dentro de lanzador×forma** (controlada por el spline de S y por las dummies de juego).
+     Ajuste por LSMR disperso con una columna extra (precondicionada); SE CR2 con conglomerado **lanzador × juego** para
+     β y para los contrastes de δ. Diagnóstico de colinealidad: R² de log‖v̄‖ sobre {dummies juego, lanzador×forma,
+     splines de S}. R² ≥ `tolerancia_r2_colinealidad` (default 0.98) ⇒ β no identificable, Prop. 2″ no adoptada.
+     **Sobreidentificación pre-fijada**: `|p − b| + 1.96 · √(Var(p) + Var(b)) < tolerancia_equivalencia` (default 0.10),
+     con `p = (1 + β̂_L) / (1 + β̂_D)` y `b` la pendiente de Deming observada. Var(p) por delta method sobre β̂_D y β̂_L;
+     se asume Cov(β̂_D, β̂_L) = 0 entre respuestas (conservador, η correlacionados). **Si pasa**: δ̃_c = δ̂_c / (1 + β̂_c),
+     SE con delta method CR2 sobre el contraste combinado, se adopta como **primario para G2.2 y G2.4**; la pendiente
+     de Deming sobre δ̃ debe estar cerca de 1 por construcción (reportada como diagnóstico). **Si no pasa** (o β no
+     identificado, o Prop. 2″ desactivada): δ̂ bruto sigue como primario (compuertas pueden fallar como en 6a4d3ee) y
+     se **DETIENE** la fase. Robustez: la versión no lineal de punto fijo (spline en log Re iterado) queda documentada
+     en MODELO_MATEMATICO §F2.3bis como aproximación de orden superior; no se adopta en esta ronda.
+  4. **G2.3b rediseñado** (D, fija (iv)). Sobre la sintética (único rol de G2.3b como compuerta):
+     - **Conglomerado = lanzador** (Cameron y Miller 2015, *J. Hum. Resour.*): el nivel más agregado donde los errores
+       siguen correlacionados; refleja que α_{j,k} de un lanzador se repite en todos sus juegos y parques.
+     - **Contraste leave-one-out** por parque: h_p = c_p − media(c_q : q ≠ p ∧ cubeta(q) = cubeta(p)). Lineal en {c_p},
+       la covarianza CR2 conjunta es exacta y el parque mediano con conteo impar deja de ser un caso especial.
+     - **t de Pustejovsky y Tipton (2018)**: df Satterthwaite usando las contribuciones de componentes CR2 por cluster,
+       df_PT ≈ (Σ_c s_c²)² / Σ_c s_c⁴ (aproximación conservadora de la fórmula exacta del paper); p-value t de dos colas.
+     - **BH 5 %** sobre los parques evaluables; potencia ≥ 0.80 (global y por tipo: λ=1.02, τ=1.01); FPR ≤ 0.05 en
+       parques limpios.
+     - **Sintética con Reynolds explícito** (D). `generar_fisica` acepta `beta_D`, `beta_L`: aplica una ley potencial a
+       C_D (C_L) sobre ρ·v. β_D = −0.30 por default en config (plausible para el drag crisis, Nathan 2008). Confirma que
+       sin corrección el estimador se atenúa y con corrección recupera ρ.
+     - **Semillas 201–210** (las 101–110 quedaron consumidas en D02b §4). Si se adoptara otro cambio a futuro (p. ej.
+       cambiar el cluster o un umbral de G2.3b), **otro bloque de semillas pre-registradas**.
+- **Alternativas.** Dejar las compuertas de ADR-017 y declarar que F2 falló en real: rechazado — hay una explicación
+  física simple (drag crisis) y un estimador identificable para corregirla. Añadir γ_year como columna explícita al
+  diseño: equivale a la normalización por año post-hoc elegida (menos columnas, misma información). Mantener el cluster
+  lanzador-dentro-del-juego en G2.3b: rechazado por el diagnóstico de D02b §4 (sd(z) = 1.28, no 1).
+- **Consecuencias.** Prop. 2″ es parte permanente de F2 cuando β esté identificado; los artefactos para F3 (`δ̃_g`, con
+  su SE) sustituyen a los antiguos `δ_g`. G2.3b sobre datos reales es siempre `n/e` (nunca ❌), consistente con el hecho
+  de que F0 no trae id de parque; la compuerta se evalúa en la sintética. La normalización por año no afecta a los
+  estimadores sintéticos de la antigua ronda 2 (modo global queda disponible como `por_anio: false`). La corrida real
+  queda a la espera: F2 (Rodrigo) corre `scripts/fases/f02.sh` con el código nuevo.

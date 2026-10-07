@@ -343,37 +343,93 @@ def error_recuperacion(s: dict) -> dict:
 
 
 def replica_g21(semilla: int, sc: dict, f02: dict) -> dict:
-    """Una réplica del estudio de simulación de G2.1: genera, estima δ̂ (LSMR) y su SE CR2, y compara con la verdad."""
+    """Una réplica del estudio de simulación de G2.1: genera, estima δ̂ y (opcional) δ̃ corregido por Reynolds (ADR-018).
+
+    Si `prop2pp.activa=True`, también estima β̂ y expone `delta_corregido` y `se_corregido` para que `resumen_g21`
+    pueda medir recuperación y cobertura sobre δ̃ (el **primario** en ADR-018 cuando la sintética tiene β explícito).
+    """
     from .sintetico import generar_fisica
     t0 = time.time()
     df, v = generar_fisica(sc["n_juegos"], sc["lanzamientos_por_juego"], semilla,
                            beta_D=sc.get("beta_D", 0.0), beta_L=sc.get("beta_L", 0.0))
     s = _estimar_sintetica(df, v, f02, con_se=True)
-    return {"semilla": semilla, "error": error_recuperacion(s), "n_lanzamientos": df.height,
-            "delta": s["delta"][:, 0], "verdad": s["verdad"], "se": s["se"]["se"][:, 0], "cubeta": s["cubeta"],
-            "sigma_eta": float(s["se"]["sigma_eta"][0]), "metodo_se": s["se"]["metodo"], "segundos": time.time() - t0}
+    out = {"semilla": semilla, "error": error_recuperacion(s), "n_lanzamientos": df.height,
+           "delta": s["delta"][:, 0], "verdad": s["verdad"], "se": s["se"]["se"][:, 0], "cubeta": s["cubeta"],
+           "sigma_eta": float(s["se"]["sigma_eta"][0]), "metodo_se": s["se"]["metodo"], "segundos": time.time() - t0}
+    if (f02.get("prop2pp") or {}).get("activa", True):
+        try:
+            r2pp = D.estimar_reynolds(s["d"], f02, f02.get("referencia", "No Altitude"),
+                                      por_anio=f02.get("por_anio", True))
+            # Alinear al orden de dsg (los dos pasan por construir_diseno con los mismos juegos; mapeamos por juego)
+            pos = {g: i for i, g in enumerate(r2pp["juegos"])}
+            juegos_est = s["dsg"].juegos
+            ix = np.array([pos[g] for g in juegos_est])
+            delta_tilde_D = r2pp["delta_corregido"][ix, 0]
+            se_tilde_D = r2pp["se_delta_corregido"][ix, 0]
+            err_c = {}
+            for c in CUBETAS[1:]:
+                m = s["cubeta"] == c
+                if m.any():
+                    err_c[c] = float(np.mean(np.exp(delta_tilde_D[m])) / np.mean(np.exp(s["verdad"][m])) - 1.0)
+            out.update({"beta_D": float(r2pp["beta"][0]), "beta_L": float(r2pp["beta"][1]),
+                        "se_beta_D": float(r2pp["se_beta"][0]), "se_beta_L": float(r2pp["se_beta"][1]),
+                        "r2_colinealidad_log_v": float(r2pp["r2_colinealidad_log_v"]),
+                        "error_corregido": err_c, "delta_corregido": delta_tilde_D, "se_corregido": se_tilde_D})
+        except (ValueError, np.linalg.LinAlgError) as exc:
+            out["error_reynolds"] = str(exc)
+    return out
 
 
-def resumen_g21(reps: list[dict], cota: float) -> dict:
-    """Medidas de Morris, White y Crowther (2019) sobre las R réplicas: sesgo relativo, MCSE, SE empírico, RMSE, cobertura."""
-    n_r = len(reps)
+def _resumen_niveles(reps: list[dict], cota: float, campo_err: str, campo_delta: str, campo_se: str) -> tuple[dict, float, int]:
     niveles, cubiertos, n_tot = {}, 0, 0
     for c in CUBETAS[1:]:
-        e = np.array([r["error"][c] for r in reps if c in r["error"]])
+        e = np.array([r[campo_err][c] for r in reps if campo_err in r and c in r[campo_err]])
+        if len(e) < 2:
+            niveles[c] = {"sesgo_rel": None, "mcse": None, "cota": None, "ok": False, "se_empirico": None,
+                          "rmse": None, "cobertura": None, "juegos": 0, "errores_por_replica": e.tolist()}
+            continue
         sesgo, mcse = float(e.mean()), float(e.std(ddof=1) / np.sqrt(len(e)))
-        err = np.concatenate([(r["delta"] - r["verdad"])[r["cubeta"] == c] for r in reps])
-        cov = np.concatenate([np.abs(r["delta"] - r["verdad"])[r["cubeta"] == c] <= 1.96 * r["se"][r["cubeta"] == c]
-                              for r in reps])
-        niveles[c] = {"sesgo_rel": sesgo, "mcse": mcse, "cota": abs(sesgo) + 1.96 * mcse, "ok": bool(abs(sesgo) + 1.96 * mcse < cota),
-                      "se_empirico": float(err.std(ddof=1)), "rmse": float(np.sqrt(np.mean(err**2))),
-                      "cobertura": float(cov.mean()), "juegos": len(err), "errores_por_replica": e.tolist()}
+        err = np.concatenate([(r[campo_delta] - r["verdad"])[r["cubeta"] == c] for r in reps if campo_delta in r])
+        cov = np.concatenate([np.abs(r[campo_delta] - r["verdad"])[r["cubeta"] == c] <= 1.96 * r[campo_se][r["cubeta"] == c]
+                              for r in reps if campo_se in r])
+        niveles[c] = {"sesgo_rel": sesgo, "mcse": mcse, "cota": abs(sesgo) + 1.96 * mcse,
+                      "ok": bool(abs(sesgo) + 1.96 * mcse < cota), "se_empirico": float(err.std(ddof=1)),
+                      "rmse": float(np.sqrt(np.mean(err**2))), "cobertura": float(cov.mean()),
+                      "juegos": len(err), "errores_por_replica": e.tolist()}
     for r in reps:
-        ok = np.isfinite(r["se"]) & (r["se"] > 0)
-        cubiertos += int(np.sum(np.abs(r["delta"] - r["verdad"])[ok] <= 1.96 * r["se"][ok]))
-        n_tot += int(ok.sum())
-    return {"R": n_r, "niveles": niveles, "cobertura": cubiertos / max(n_tot, 1), "juegos_total": n_tot,
-            "sigma_eta_medio": float(np.mean([r["sigma_eta"] for r in reps])),
-            "lanzamientos_por_replica": [r["n_lanzamientos"] for r in reps], "segundos_por_replica": [round(r["segundos"], 1) for r in reps]}
+        if campo_delta in r and campo_se in r:
+            ok = np.isfinite(r[campo_se]) & (r[campo_se] > 0)
+            cubiertos += int(np.sum(np.abs(r[campo_delta] - r["verdad"])[ok] <= 1.96 * r[campo_se][ok]))
+            n_tot += int(ok.sum())
+    return niveles, cubiertos, n_tot
+
+
+def resumen_g21(reps: list[dict], cota: float, usar_corregido: bool = False) -> dict:
+    """Medidas de Morris, White y Crowther (2019) sobre las R réplicas: sesgo relativo, MCSE, SE empírico, RMSE, cobertura.
+
+    `usar_corregido=True` evalúa sobre δ̃ (ADR-018: primario cuando Prop. 2″ está activa en el pipeline).
+    """
+    n_r = len(reps)
+    tiene_corregido = all("delta_corregido" in r for r in reps)
+    primario = "corregido" if (usar_corregido and tiene_corregido) else "bruto"
+    campos = {"corregido": ("error_corregido", "delta_corregido", "se_corregido"),
+              "bruto": ("error", "delta", "se")}[primario]
+    niveles, cubiertos, n_tot = _resumen_niveles(reps, cota, *campos)
+    out = {"R": n_r, "primario": primario, "niveles": niveles, "cobertura": cubiertos / max(n_tot, 1),
+           "juegos_total": n_tot, "sigma_eta_medio": float(np.mean([r["sigma_eta"] for r in reps])),
+           "lanzamientos_por_replica": [r["n_lanzamientos"] for r in reps],
+           "segundos_por_replica": [round(r["segundos"], 1) for r in reps]}
+    if tiene_corregido:
+        out["beta_D_medio"] = float(np.mean([r["beta_D"] for r in reps]))
+        out["beta_L_medio"] = float(np.mean([r["beta_L"] for r in reps]))
+        out["beta_D_sd"] = float(np.std([r["beta_D"] for r in reps], ddof=1))
+        out["beta_L_sd"] = float(np.std([r["beta_L"] for r in reps], ddof=1))
+        out["r2_colinealidad_log_v_medio"] = float(np.mean([r["r2_colinealidad_log_v"] for r in reps]))
+        # También reportamos el bruto para la demo de atenuación/corrección (ADR-018).
+        if primario == "corregido":
+            niv_br, cub_br, nt_br = _resumen_niveles(reps, cota, "error", "delta", "se")
+            out["bruto"] = {"niveles": niv_br, "cobertura": cub_br / max(nt_br, 1)}
+    return out
 
 
 def replica_g23b(semilla: int, sc: dict, f02: dict, con_calibracion: bool) -> dict:
@@ -436,7 +492,8 @@ def sintetica_f02(f02: dict, fis: dict) -> dict:
     nj = sc.get("n_jobs", -1)
     t0 = time.time()
     reps = Parallel(n_jobs=nj)(delayed(replica_g21)(sem, sc, f02) for sem in sc["semillas"])
-    g21 = resumen_g21(reps, f02["gates"]["g21_error_max"])
+    g21 = resumen_g21(reps, f02["gates"]["g21_error_max"],
+                      usar_corregido=(f02.get("prop2pp") or {}).get("activa", True))
     g21["semillas"] = list(sc["semillas"])
     g21["n_juegos"], g21["lanzamientos_por_juego"] = sc["n_juegos"], sc["lanzamientos_por_juego"]
     t1 = time.time()
@@ -808,18 +865,40 @@ def _sec_sintetica(sint: dict, f02: dict) -> list[str]:
           f"juegos × ≈{g21['lanzamientos_por_juego']} lanzamientos (≈{int(np.mean(g21['lanzamientos_por_replica'])):,} por réplica), "
           f"estimando log(ρ_nivel/ρ_No). Aprueba si, por nivel, |sesgo relativo medio| + 1.96·MCSE < "
           f"{100 * f02['gates']['g21_error_max']:.0f} %."), ""]
-    L += _tabla([{"nivel": c, "sesgo relativo medio": f"{100 * x['sesgo_rel']:+.3f} %", "MCSE": f"{100 * x['mcse']:.3f} %",
-                  "|sesgo| + 1.96·MCSE": f"{100 * x['cota']:.3f} %", "veredicto": "✓" if x["ok"] else "✗",
-                  "SE empírico δ̂": _f(x["se_empirico"]), "RMSE δ̂": _f(x["rmse"]), "cobertura IC95 CR2": f"{x['cobertura']:.3f}",
+    simb = "δ̃" if g21.get("primario") == "corregido" else "δ̂"
+    L += [(f"**Primario de G2.1 ({simb})**: " + ("Prop. 2″ adopta δ̃ = δ̂/(1+β̂) en el pipeline (ADR-018). "
+                                                    "Se reporta además el bruto como demo de atenuación."
+                                                    if g21.get("primario") == "corregido"
+                                                    else "δ̂ bruto (Prop. 2″ no activa o β no estimable).")), ""]
+    L += _tabla([{"nivel": c, "sesgo relativo medio": f"{100 * x['sesgo_rel']:+.3f} %" if x["sesgo_rel"] is not None else "—",
+                  "MCSE": f"{100 * x['mcse']:.3f} %" if x["mcse"] is not None else "—",
+                  "|sesgo| + 1.96·MCSE": f"{100 * x['cota']:.3f} %" if x["cota"] is not None else "—",
+                  "veredicto": "✓" if x["ok"] else "✗",
+                  f"SE empírico {simb}": _f(x["se_empirico"]), f"RMSE {simb}": _f(x["rmse"]),
+                  "cobertura IC95 CR2": f"{x['cobertura']:.3f}" if x["cobertura"] is not None else "—",
                   "juegos×réplicas": x["juegos"]} for c, x in g21["niveles"].items()],
-                ["nivel", "sesgo relativo medio", "MCSE", "|sesgo| + 1.96·MCSE", "veredicto", "SE empírico δ̂", "RMSE δ̂",
-                 "cobertura IC95 CR2", "juegos×réplicas"]) + [""]
-    alerta = " ⚠ **ALERTA: cobertura < 0.90, el SE CR2 subestima**" if g21["cobertura"] < 0.90 else ""
-    L += [(f"**Cobertura del IC95 CR2 de δ̂_g sobre todos los juegos × réplicas ({g21['juegos_total']:,}): "
-           f"{g21['cobertura']:.3f}**{alerta}. σ_η medio {g21['sigma_eta_medio']:.4f}. Errores por réplica (Medium / Extreme): "
-           + "; ".join(f"{100 * a:+.2f} % / {100 * b:+.2f} %" for a, b in zip(
-               g21["niveles"]["Medium Altitude"]["errores_por_replica"], g21["niveles"]["Extreme Altitude"]["errores_por_replica"],
-               strict=True)) + "."), ""]
+                ["nivel", "sesgo relativo medio", "MCSE", "|sesgo| + 1.96·MCSE", "veredicto", f"SE empírico {simb}",
+                 f"RMSE {simb}", "cobertura IC95 CR2", "juegos×réplicas"]) + [""]
+    if "bruto" in g21:
+        br = g21["bruto"]
+        L += [("**Demo de atenuación (sobre δ̂ bruto)**: con β_D explícito en el generador, el estimador sin corrección "
+               "se atenúa; δ̃ recupera. Fila por nivel:"), "",
+              *_tabla([{"nivel": c, "sesgo bruto": f"{100 * x['sesgo_rel']:+.3f} %" if x["sesgo_rel"] is not None else "—",
+                        "|sesgo|+1.96·MCSE bruto": f"{100 * x['cota']:.3f} %" if x["cota"] is not None else "—",
+                        "cobertura bruto": f"{x['cobertura']:.3f}" if x["cobertura"] is not None else "—",
+                        "RMSE bruto": _f(x["rmse"])} for c, x in br["niveles"].items()],
+                     ["nivel", "sesgo bruto", "|sesgo|+1.96·MCSE bruto", "cobertura bruto", "RMSE bruto"]), ""]
+    if "beta_D_medio" in g21:
+        L += [(f"**β̂ promedios en el estudio** (R = {g21['R']}): β̂_D = {g21['beta_D_medio']:+.3f} ± {g21['beta_D_sd']:.3f}, "
+               f"β̂_L = {g21['beta_L_medio']:+.3f} ± {g21['beta_L_sd']:.3f}. R² de colinealidad log‖v̄‖ medio = "
+               f"{g21['r2_colinealidad_log_v_medio']:.3f}. β_D verdadero del generador: {f02['sintetica'].get('beta_D', 0.0)}."), ""]
+    alerta = " ⚠ **ALERTA: cobertura < 0.90, el SE subestima**" if g21["cobertura"] < 0.90 else ""
+    L += [(f"**Cobertura del IC95 (CR2 o delta method CR2 según primario) de {simb}_g sobre todos los juegos × réplicas "
+           f"({g21['juegos_total']:,}): {g21['cobertura']:.3f}**{alerta}. σ_η medio (bruto) {g21['sigma_eta_medio']:.4f}. "
+           f"Errores por réplica (Medium / Extreme): "
+           + "; ".join(f"{100 * (a if a is not None else float('nan')):+.2f} % / {100 * (b if b is not None else float('nan')):+.2f} %" for a, b in zip(
+               g21["niveles"]["Medium Altitude"]["errores_por_replica"],
+               g21["niveles"]["Extreme Altitude"]["errores_por_replica"], strict=True)) + "."), ""]
     s = sint["staff"]
     L += [(f"**Planteles locales** (semilla {s['semilla']}): RMSE de δ̂ contra la verdad {s['rmse_sin_alpha']:.4f} sin α_{{j,k}} → "
            f"{s['rmse_con_alpha']:.4f} con α_{{j,k}} (Prop. 2′): el segundo efecto fijo elimina el sesgo del C_D medio del plantel."), ""]

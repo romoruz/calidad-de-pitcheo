@@ -14,7 +14,7 @@
 | F0.0 | ✅ cerrada | tag `fase00_0` |
 | F0 | ✅ cerrada (G0.1–G0.9) | merge `45f9f7c`, tag `fase00`; mecanismo U, `perdida_ignorable=false` |
 | F1 | ✅ cerrada (pre-registro H1–H6) | merge `b6a008c`, tag `fase01`; BH m=5, H5 por equivalencia (v2.8) |
-| F2 | 🟠 implementada; **detenida en la sintética por G2.3b** (FPR 0.167 > 0.05; G2.1, G2.2, G2.3a, G2.4 ✅) | rama `fase02`, sin PR; `docs/discrepancias/D02b.md` §4 — espera decisión del orquestador (conglomerado del SE de G2.3b); sin correr sobre datos reales |
+| F2 | 🟠 ronda 3 implementada (Prop. 2″ Reynolds, normalización por año, SpinAxis fail-closed, G2.3b con LOO+Pustejovsky–Tipton+cluster lanzador; ADR-018) | rama `fase02`, sin PR; `docs/discrepancias/D02c.md`; sintética 201–210 por correr; corrida real pendiente de `scripts/fases/f02.sh` (Rodrigo) |
 | F3 | ⚪ pendiente | diseño (Opus) tras F2 |
 | F4 / F5 | ⚪ pendientes (paralelizables) | dependen de F2–F3 |
 | F6–F11 | ⚪ pendientes | — |

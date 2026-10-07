@@ -211,6 +211,26 @@ componente conectado). Es el $\sigma_\eta$ que pide G2.4 y la escala de los SE.
 $\approx0.01$; el CR2 será algo mayor según la correlación intra-lanzador, y debe seguir bajo 0.03 contra
 una señal de 0.27.
 
+## F2.3bis Proposición 2″ (ADR-018) — corrección por Reynolds para la atenuación de $\hat\delta$
+
+Con `log C_c = f_c(S,k,h,\text{year}) + \beta_c\cdot\log\text{Re} + \ldots` y $\text{Re}\propto\rho\cdot v$:
+
+$$
+y_c = \log(\rho C_c) = (1+\beta_c)\cdot\log\rho_g + \beta_c\cdot\log\lVert\bar{\mathbf v}\rVert + f_c(S,k,h,\text{year}) + \alpha_{j,k} + \varepsilon.
+$$
+
+Las *dummies* de juego absorben $(1+\beta_c)\log\rho_g$, de modo que $\hat\delta^{\text{bruto}}_c = (1+\beta_c)\log\rho_g$ está **atenuado** cuando $\beta_c\ne0$. El coeficiente $\beta_c$ se identifica con la variación de $\log\lVert\bar{\mathbf v}\rVert$ **dentro de lanzador$\times$forma**, controlada por el *spline* de $S$. La colinealidad entre $\log\lVert\bar{\mathbf v}\rVert$ y $\log S = \log(r\omega)-\log\lVert\bar{\mathbf v}\rVert$ se cuantifica con $R^2(\log\lVert\bar{\mathbf v}\rVert\mid \text{juego}+\text{lanz}\times\text{forma}+\text{spline}(S))$; si $R^2\ge0.98$, $\beta_c$ **no está identificado**.
+
+**Estimador.** LSMR disperso con una columna extra para $\log\lVert\bar{\mathbf v}\rVert$; SE CR2 con conglomerado lanzador$\times$juego. $\hat\beta_c$, $\mathrm{SE}(\hat\beta_c)$, $\hat\delta_c$ (ya normalizado por año o global según `por_anio`), $\tilde\delta_c = \hat\delta_c/(1+\hat\beta_c)$ y $\mathrm{SE}(\tilde\delta)$ por el método delta sobre contrastes CR2 conjuntos (el contraste combinado es $C/(1+\hat\beta) - (\hat\delta/(1+\hat\beta)^2)\cdot e_\beta$).
+
+**Sobreidentificación pre-fijada.** Pendiente predicha $p = (1+\hat\beta_L)/(1+\hat\beta_D)$ frente a la Deming observada $b$: equivalencia si
+$$|p-b|+1.96\cdot\sqrt{\mathrm{Var}(p)+\mathrm{Var}(b)}<\text{tolerancia}=0{.}10,$$
+con $\mathrm{Var}(p)$ por delta method sobre $\hat\beta_D$ y $\hat\beta_L$ (se asume $\mathrm{Cov}(\hat\beta_D,\hat\beta_L)=0$ entre respuestas; conservador). **Si pasa**, $\tilde\delta$ se adopta como primario para G2.2 y G2.4; la pendiente de Deming sobre $\tilde\delta$ debería estar cerca de 1 por construcción. **Si no pasa**, Prop. 2″ se reporta como diagnóstico y la fase se detiene (`docs/discrepancias/D02c.md`).
+
+**Rango de referencia** (Nathan 2008, *The Effect of Spin on the Flight of a Baseball*, Am. J. Phys. 76(2)): para bolas de béisbol en la zona del *drag crisis* ($\text{Re}\sim 10^5$), $\beta_D\in[-0.4,-0.2]$ es plausible; $\beta_L$ apenas depende de Re.
+
+**Robustez (no adoptada en esta ronda).** Punto fijo iterativo: $f_c$ se reajusta como *spline* en $\log\text{Re}_i = \log\rho_g + \log\lVert\bar{\mathbf v}\rVert_i + \text{cte}$ en vez de un término lineal; converge al estimador lineal cuando $\beta_c$ es pequeño.
+
 ## F2.4 Proposición 3″ — robustez a sesgos de calibración (escala y reloj)
 
 (Revisión del orquestador para F2: la parte (b) **sustituye a la Prop. 3′(b)**; (a) y (c) se conservan. La
@@ -304,7 +324,13 @@ Además de la física, la sintética siembra un **efecto de lanzador** $\alpha_j
 los *staffs* **asignados a parques locales**: el modelo de un solo efecto fijo debe mostrar el sesgo de
 confusión ($\sim0.01$ en $\log\rho$) y la Prop. 2′ (juego + lanzador×forma) debe hacerlo desaparecer.
 
-### F2.5a G2.1 como **estudio de simulación** (decisión del orquestador; ADR-017)
+### F2.5aa Normalización por año (ADR-018)
+
+El modelo identifica $\delta$ hasta una constante aditiva **por año**: los juegos están anidados en year, así que un $\gamma_y$ constante por año es colineal con $\delta_g$. ADR-017 fijaba $\mathrm{mean}(\delta_g: g\in\text{No Altitude})=0$ **globalmente**, mezclando años con composiciones distintas si No Altitude cambia entre años (p. ej., pelota). ADR-018 impone en cambio
+$$\mathrm{mean}(\delta_g: g\in\text{No Altitude}\wedge\text{year}(g)=y)=0\quad\forall y,$$
+restando el nivel por año a cada $\delta_g$. Los años sin juegos de referencia (raros) usan la media de los niveles disponibles (fallback declarado). Las medias por cubeta son la media sobre años de $\bar\delta_{c,y}$ ponderada por el número de juegos de la cubeta en cada año; los contrastes contra la referencia usan los mismos pesos año a año. El SE CR2 toma el contraste correspondiente por grupo.
+
+## F2.5a G2.1 como **estudio de simulación** (decisión del orquestador; ADR-017)
 
 La corrida fallida de antecedente —error 1.253 % con 45 juegos y 3 semillas— era ruido muestral de una
 sintética chica (`docs/discrepancias/D02b.md` §1): el **sesgo** del estimador es $\approx+0.2\%$ (persiste sin
@@ -353,11 +379,11 @@ Deming.
 
 | compuerta | criterio | de dónde sale |
 |---|---|---|
-| **G2.1** | estudio de simulación (F2.5a): por nivel, $\lvert\text{sesgo rel. medio}\rvert+1.96\cdot\text{MCSE}<1\%$ ($R=10$, semillas 101–110, 150 juegos) | F2.5a; antecedente D02b §1 |
-| **G2.2** | orden $\bar\delta_{\text{No}}>\bar\delta_{\text{Medium}}>\bar\delta_{\text{Extreme}}$; $\bar\delta_{\text{Extreme}}\in[-0.30,-0.15]$; componente densa de *Extreme* en $[-0.32,-0.20]$ | F2.3 (medias por cubeta, parques latentes GMM+BIC 🔎) |
-| **G2.3a** | Deming $\delta^L$ sobre $\delta^D$: pendiente $\in[0.85,1.15]$ (proporcionalidad global) | F2.6, Prop. 3″ (ii) |
-| **G2.3b** | $\hat c_{\hat{\mathbf e}}$ por parque (ID de parque de F0, o parque latente GMM), centrado en la mediana de su cubeta; **Wald con SE CR2 + Benjamini–Hochberg al 5 %**. Potencia $\ge0.80$ para $\lvert c\rvert=0.02$ y FPR $\le0.05$ en parques limpios (F2.5b). **No evaluable si `SpinAxis` está inferido** (F2.4): queda solo G2.3a | F2.4, F2.5b |
-| **G2.4** | $\sigma_\eta$ medida y SE mediano **CR2** de $\hat\delta_g<0.03$; cobertura del IC95 CR2 $\gtrsim0.95$ (alerta $<0.90$) | F2.3 (CR2, lanzador dentro del juego); validada en F2.5a |
+| **G2.1** | estudio de simulación (F2.5a): por nivel, $\lvert\text{sesgo rel. medio}\rvert+1.96\cdot\text{MCSE}<1\%$ (ADR-018: $R=10$, **semillas 201–210**, 150 juegos; antes 101–110, consumidas en D02b §4) | F2.5a; D02b §4 |
+| **G2.2** | orden $\bar{\tilde\delta}_{\text{No}}>\bar{\tilde\delta}_{\text{Medium}}>\bar{\tilde\delta}_{\text{Extreme}}$; $\bar{\tilde\delta}_{\text{Extreme}}\in[-0.30,-0.15]$; componente densa de *Extreme* en $[-0.32,-0.20]$. **Primario sobre $\tilde\delta$ si Prop. 2″ pasa sobreidentificación (ADR-018)**, si no sobre $\hat\delta$ bruto | F2.3bis, F2.3 |
+| **G2.3a** | Deming $\tilde\delta^L$ sobre $\tilde\delta^D$ (primario cuando Prop. 2″ adopta; si no, sobre bruto): pendiente $\in[0.85,1.15]$ | F2.6, Prop. 3″ (ii), F2.3bis |
+| **G2.3b** | **Validación sintética del método** (ADR-018): $\hat c_{\hat{\mathbf e}}$ por parque con **contraste LOO** ($h_p=c_p-\mathrm{mean}(c_q:q\ne p\wedge\text{cubeta}(q)=\text{cubeta}(p))$), **cluster = lanzador**, **t de Pustejovsky y Tipton (2018)** + BH 5 %. Potencia $\ge0.80$ y FPR $\le0.05$ en parques limpios. **La aplicación a datos reales es 🔎 informativa, nunca compuerta**: si `SpinAxis` resulta inferido o no evaluable (fail-closed, ADR-018), o no hay id de parque, es `n/e` | F2.4, F2.5b, D02b §4 |
+| **G2.4** | $\sigma_\eta$ y SE mediano **CR2** de $\tilde\delta_g$ (si Prop. 2″ adopta; si no de $\hat\delta_g$) $<0.03$; cobertura del IC95 CR2 en la sintética $\ge0.90$ | F2.3 (CR2, lanzador dentro del juego); validada en F2.5a |
 
 **Si G2.2 falla con G2.3a/G2.3b aprobadas:** las cubetas no corresponden a la altitud supuesta. **Si G2.3a o
 G2.3b fallan:** sesgo de calibración específico de parque (Prop. 3″). Ambos van al orquestador. Un sesgo
