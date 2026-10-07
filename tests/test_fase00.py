@@ -271,15 +271,18 @@ def test_aplicar_config_reescribe_solo_las_cuatro_lineas(tmp_path):
     cfg.write_text(DEFAULT.read_text(encoding="utf-8"), encoding="utf-8")
     antes = cfg.read_text(encoding="utf-8")
     c0 = yaml.safe_load(antes)
-    assert c0["qa"]["mecanismo_outs"] == "mezcla" and c0["qa"]["perdida_ignorable"] is False   # valores de partida conservadores
-    r = fase00.aplicar_config(cfg, {"y_plano_ft": 0.0, "signo": 1}, "U", True)
+    assert c0["qa"]["mecanismo_outs"] in ("U", "L", "mezcla") and isinstance(c0["qa"]["perdida_ignorable"], bool)
+    # Se aplica un mecanismo distinto del vigente (F0 real dejó U) y la bandera contraria, para que cambien las 4 líneas.
+    nuevo_mec = "L" if c0["qa"]["mecanismo_outs"] != "L" else "mezcla"
+    nueva_ign = not c0["qa"]["perdida_ignorable"]
+    r = fase00.aplicar_config(cfg, {"y_plano_ft": 0.0, "signo": 1}, nuevo_mec, nueva_ign)
     despues = cfg.read_text(encoding="utf-8")
     assert r["cambio"] and set(r) == {"cambio", "y_plato_ft", "signo_plateloc_x", "mecanismo_outs", "perdida_ignorable"}
     dif = [(a, b) for a, b in zip(antes.splitlines(), despues.splitlines(), strict=True) if a != b]
     assert len(dif) == 4                                          # solo cambian esas cuatro líneas (comentarios intactos)
     c = yaml.safe_load(despues)
-    assert (c["fisica"]["signo_plateloc_x"], c["qa"]["mecanismo_outs"], c["qa"]["perdida_ignorable"]) == (1, "U", True)
-    assert fase00.aplicar_config(cfg, {"y_plano_ft": 0.0, "signo": 1}, "U", True) == {"cambio": False}   # idempotente
+    assert (c["fisica"]["signo_plateloc_x"], c["qa"]["mecanismo_outs"], c["qa"]["perdida_ignorable"]) == (1, nuevo_mec, nueva_ign)
+    assert fase00.aplicar_config(cfg, {"y_plano_ft": 0.0, "signo": 1}, nuevo_mec, nueva_ign) == {"cambio": False}   # idempotente
 
 
 def test_aplicar_config_acepta_cada_mecanismo_y_ignora_valores_invalidos(tmp_path):

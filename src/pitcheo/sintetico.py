@@ -36,6 +36,7 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
+from .fisica import A_BOLA, FT_M, G_SI, M_BOLA, R_BOLA, RPM_RADS, Y_FRENTE_PLATO_FT
 from .io import ColSpec, leer_diccionario
 
 FTPS_A_MPH = 3600.0 / 5280.0
@@ -795,3 +796,234 @@ def escribir_tres_formatos(df: pl.DataFrame, ruta_base: str | Path) -> dict:
         "filas": df.height,
         "columnas": df.width,
     }
+
+
+# ==========================================================================
+# F2 — física exacta con ρ conocida (solve_ivp DOP853) y calibración sesgada (Prop. 3′)
+# ==========================================================================
+# forma -> (rapidez mph, spin rpm, eficiencia de giro, SpinAxis de un diestro (°), C_D base, ángulo vertical de salida (°))
+_FORMAS_FISICA = {
+    "FF": (94.0, 2300.0, 0.92, 205.0, 0.340, 0.2),
+    "SI": (92.5, 2150.0, 0.85, 230.0, 0.350, -0.8),
+    "FC": (89.0, 2400.0, 0.50, 160.0, 0.345, -0.3),
+    "SL": (85.0, 2500.0, 0.35, 120.0, 0.360, -1.8),
+    "CU": (79.0, 2650.0, 0.75, 40.0, 0.370, -3.8),
+    "CH": (85.0, 1750.0, 0.85, 235.0, 0.355, -1.3),
+}
+NIVELES_RHO = {"No Altitude": 1.00, "Medium Altitude": 0.82, "Extreme Altitude": 0.76}   # × ρ0 (Prompt 1, §4-F2)
+RHO_0 = 1.2                                     # kg/m³: el nivel absoluto no importa (solo cocientes)
+SIGNO_MAGNUS_X = 1                              # n̂_M(θ) = (σ·sinθ, 0, −cosθ): convención de la sintética
+
+
+def direccion_magnus(spin_axis_deg, v_hat, signo_x: int = SIGNO_MAGNUS_X) -> np.ndarray:
+    """n̂ (n, 3): dirección de la sustentación implícita en `SpinAxis` y perpendicular a v̂.
+
+    180° = efecto hacia atrás (sustentación hacia arriba, +z), 0° = efecto hacia adelante (−z), ±90° = lateral. Se
+    proyecta fuera de v̂ y se normaliza. Es la dirección que usa la sintética y la que decodifica F2 para el
+    detector ê (el signo lateral σ lo fija F2 con los datos).
+    """
+    th = np.radians(np.asarray(spin_axis_deg, dtype=float))
+    n_m = np.column_stack([signo_x * np.sin(th), np.zeros_like(th), -np.cos(th)])
+    n = n_m - np.einsum("ij,ij->i", n_m, v_hat)[:, None] * v_hat
+    return n / np.linalg.norm(n, axis=1)[:, None]
+
+
+def _integrar_bloque(r0, v0, omega_hat, omega_t, cd, rho, t_max: float, dt: float):
+    """DOP853 (rtol 1e-10) para un bloque de lanzamientos a la vez. Devuelve (t, y) con y: (6, N, nt)."""
+    from scipy.integrate import solve_ivp
+
+    n = r0.shape[0]
+    kappa = (rho * A_BOLA / (2.0 * M_BOLA))                       # (N,)
+    g_vec = np.array([0.0, 0.0, -G_SI])[:, None]
+
+    def rhs(_t, s):
+        u = s.reshape(6, n)
+        v = u[3:]
+        sp = np.sqrt(np.sum(v * v, axis=0))
+        cd_t = cd * (1.0 + 0.2 * (sp / 40.0 - 1.0))                # dependencia mínima de Reynolds
+        s_giro = R_BOLA * omega_t / sp
+        cl = s_giro / (2.32 * s_giro + 0.4)                        # C_L = 1/(2.32 + 0.4/S) (Nathan)
+        cruz = np.cross(omega_hat, v.T).T                        # ω̂ × v: perpendicular a v
+        n_hat = cruz / np.sqrt(np.sum(cruz * cruz, axis=0))
+        acel = g_vec - kappa * cd_t * sp * v + kappa * cl * sp**2 * n_hat
+        return np.concatenate([v, acel]).ravel()
+
+    t_eval = np.arange(0.0, t_max + 1e-12, dt)
+    sol = solve_ivp(rhs, (0.0, t_max), np.concatenate([r0.T, v0.T]).ravel(), method="DOP853", t_eval=t_eval,
+                    rtol=1e-10, atol=1e-12)
+    return sol.t, sol.y.reshape(6, n, -1)
+
+
+def _raiz_pequena(c0, c1, c2) -> np.ndarray:
+    """Menor raíz positiva de c0 + c1·t + c2·t² = 0 (NaN si no hay)."""
+    with np.errstate(invalid="ignore", divide="ignore"):
+        disc = c1**2 - 4 * c2 * c0
+        raiz = np.sqrt(np.where(disc >= 0, disc, np.nan))
+        t1, t2 = (-c1 - raiz) / (2 * c2), (-c1 + raiz) / (2 * c2)
+        pos = lambda x: np.where(x > 0, x, np.inf)
+        t = np.minimum(pos(t1), pos(t2))
+    return np.where(np.isfinite(t), t, np.nan)
+
+
+def generar_fisica(n_juegos: int = 45, lanzamientos_por_juego: int = 111, semilla: int = 2026,
+                   niveles_rho: dict | None = None, cubetas: dict | None = None, sigma_pos_m: float = 0.015,
+                   sigma_alpha: float = 0.05, sigma_cd_lanzamiento: float = 0.03, sigma_clima: float = 0.005,
+                   sigma_parque: float = 0.0, n_staff: int = 8, p_local: float = 0.7, apariciones_por_juego: int = 9,
+                   lambda_escala: float = 1.0, tau_reloj: float = 1.0, cubetas_sesgo=("Extreme Altitude",),
+                   spinaxis_inferido: bool = False, anios=(2024, 2025, 2026), tasa_muestreo_hz: float = 100.0,
+                   bloque: int = 400) -> tuple[pl.DataFrame, dict]:
+    """Sintética de F2 con física exacta: ρ conocida por juego, C_D y C_L realistas, ruido de posición y calibración sesgada.
+
+    Cada lanzamiento se integra con `solve_ivp` (DOP853, rtol 1e-10):  r̈ = g − κ C_D ‖v‖ v + κ C_L ‖v‖² n̂, con
+    κ = ρA/2m, n̂ = ω̂ × v / ‖ω̂ × v‖, C_L = 1/(2.32 + 0.4/S) y C_D = c_D(forma)·exp(α_j + ε_i). La densidad entra SOLO
+    por κ (C_D y C_L son de la pelota y de la forma, no del parque). Luego se muestrea la trayectoria a
+    `tasa_muestreo_hz` entre la liberación y el plato, se le añade ruido gaussiano de `sigma_pos_m` por eje, y
+    **se reajusta un 9P de aceleración constante por mínimos cuadrados** (a, v0 y r0 en y0 = 50 ft, como Trackman;
+    el polinomio X↔y arranca en la liberación, de modo que t_s = (c1_X − v_y0)/a_y0 = −t50, ADR-010/014).
+
+    Estructura de la verdad (para detectar sesgos): ρ por nivel (`niveles_rho`, × ρ0), clima por juego, un efecto de
+    lanzador α_j (SD `sigma_alpha` en log C_D) y **staffs asignados a parques locales**: cada parque tiene su
+    plantel (`n_staff`), que lanza el `p_local` de los lanzamientos de sus juegos; los visitantes son los de los 3
+    parques siguientes (anillo). Así el C_D medio del plantel carga en el parque si no se modela α_{j,k}.
+
+    Calibración (Prop. 3′): en los juegos de `cubetas_sesgo` las posiciones se escalan por `lambda_escala` y los
+    tiempos por `tau_reloj`, lo que deja el residuo c_g·g con c_g = λ/τ² − 1. `spinaxis_inferido=True` reemplaza
+    `SpinAxis` por la dirección de la aceleración perpendicular medida (eje INFERIDO del movimiento).
+
+    Devuelve (DataFrame con las columnas de F2, verdad). El DataFrame trae las columnas de `pitches.parquet` que
+    usa F2: ids, `year`, `altitude_category_h`, `familia`, `pitcher_throws_r`, `excluir_modelo`, 9P, `PitchTrajectoryXc1`,
+    `SpinRate`, `SpinAxis`, `RelHeight`, `PlateLocSide`, `PlateLocHeight`.
+    """
+    rng = np.random.default_rng(semilla)
+    niveles = {**NIVELES_RHO, **(niveles_rho or {})}
+    cubetas = cubetas or CUBETAS_DEFECTO
+    parques = [(cub, alt) for cub, spec in cubetas.items() for alt in spec["altitudes_m"]]
+    n_p = len(parques)
+    rho_parque = np.array([RHO_0 * niveles[c] * np.exp(rng.normal(0, sigma_parque)) for c, _ in parques])
+    formas = list(_FORMAS_FISICA)
+
+    # --- planteles: lanzadores con mano, repertorio, efecto α_j y descuadre de rapidez
+    n_lanz = n_p * n_staff
+    mano_r = rng.random(n_lanz) < 0.72
+    alpha_j = rng.normal(0.0, sigma_alpha, n_lanz)
+    dv_j = rng.normal(0.0, 2.0, n_lanz)
+    uso = []
+    for _ in range(n_lanz):
+        k = int(rng.integers(3, 5))
+        elegidas = rng.choice(len(formas), size=k, replace=False)
+        w = np.zeros(len(formas))
+        w[elegidas] = rng.dirichlet(np.ones(k) * 2.0)
+        uso.append(w)
+    uso = np.array(uso)
+    staff = [np.arange(p * n_staff, (p + 1) * n_staff) for p in range(n_p)]
+
+    # --- juegos y apariciones (lanzador × juego)
+    nombres_cub = list(cubetas)
+    pesos = np.array([cubetas[c]["peso_juegos"] for c in nombres_cub], dtype=float)
+    pesos /= pesos.sum()
+    parques_de = {c: [i for i, (cc, _) in enumerate(parques) if cc == c] for c in nombres_cub}
+    g_idx, j_idx, k_idx = [], [], []
+    juego_info = []
+    for g in range(n_juegos):
+        cub = nombres_cub[rng.choice(len(nombres_cub), p=pesos)]
+        local = int(rng.choice(parques_de[cub]))
+        visita = (local + int(rng.integers(1, 4))) % n_p
+        clima = float(rng.normal(0.0, sigma_clima))
+        anio = int(anios[rng.integers(0, len(anios))])
+        juego_info.append({"parque": local, "cubeta": cub, "anio": anio, "rho": rho_parque[local] * np.exp(clima)})
+        n_loc = round(p_local * apariciones_por_juego)
+        quien = np.r_[rng.choice(staff[local], size=min(n_loc, n_staff), replace=False),
+                      rng.choice(staff[visita], size=min(apariciones_por_juego - n_loc, n_staff), replace=False)]
+        for j in quien:
+            n_l = max(8, int(rng.poisson(lanzamientos_por_juego / apariciones_por_juego)))
+            g_idx += [g] * n_l
+            j_idx += [int(j)] * n_l
+            k_idx += list(rng.choice(len(formas), size=n_l, p=uso[j]))
+    g_idx, j_idx, k_idx = (np.array(x) for x in (g_idx, j_idx, k_idx))
+    n = len(g_idx)
+    rho_g = np.array([ji["rho"] for ji in juego_info])
+    rho_i = rho_g[g_idx]
+    sesgado_g = np.array([ji["cubeta"] in cubetas_sesgo for ji in juego_info])
+    lam_i = np.where(sesgado_g[g_idx], lambda_escala, 1.0)
+    tau_i = np.where(sesgado_g[g_idx], tau_reloj, 1.0)
+
+    # --- estado de liberación, giro y coeficientes por lanzamiento
+    par = np.array([_FORMAS_FISICA[formas[k]] for k in k_idx])
+    mph = (par[:, 0] + dv_j[j_idx] + rng.normal(0, 1.2, n))
+    v_ms = mph * 0.44704
+    x_r = np.where(mano_r[j_idx], 1.0, -1.0) * np.abs(rng.normal(2.0, 0.4, n)) * FT_M
+    z_r = rng.normal(5.9, 0.3, n) * FT_M
+    y_r = rng.normal(54.5, 0.25, n) * FT_M
+    av = np.radians(par[:, 5] + rng.normal(0, 1.0, n))
+    ah = np.radians(rng.normal(0, 0.7, n)) - np.arctan2(x_r, y_r)
+    v0 = np.column_stack([v_ms * np.cos(av) * np.sin(ah), -v_ms * np.cos(av) * np.cos(ah), v_ms * np.sin(av)])
+    r0 = np.column_stack([x_r, y_r, z_r])
+    theta = par[:, 3] + rng.normal(0, 6.0, n)
+    theta = np.where(mano_r[j_idx], theta, 360.0 - theta) % 360.0
+    v_hat = v0 / np.linalg.norm(v0, axis=1)[:, None]
+    n0 = direccion_magnus(theta, v_hat)
+    omega_hat = np.cross(v_hat, n0)
+    spin_rpm = par[:, 1] * (1.0 + rng.normal(0, 0.04, n))
+    efic = np.clip(par[:, 2] + rng.normal(0, 0.04, n), 0.1, 1.0)
+    omega_t = efic * spin_rpm * RPM_RADS
+    cd = par[:, 4] * np.exp(alpha_j[j_idx] + rng.normal(0, sigma_cd_lanzamiento, n))
+
+    # --- integración por bloques y ajuste 9P sobre posiciones con ruido
+    dt, paso = 0.001, round(1000.0 / tasa_muestreo_hz)
+    yp_m = Y_FRENTE_PLATO_FT * FT_M
+    coef = np.empty((n, 3, 3))                      # [lanzamiento, orden c0..c2, eje x,y,z] en ft y s (reloj medido)
+    t_vuelo = np.empty(n)
+    for ini in range(0, n, bloque):
+        sl = slice(ini, min(ini + bloque, n))
+        _t, ys = _integrar_bloque(r0[sl], v0[sl], omega_hat[sl], omega_t[sl], cd[sl], rho_i[sl], 0.65, dt)
+        pos = np.moveaxis(ys[:3], 0, -1)            # (N, nt, 3) en m
+        for q in range(pos.shape[0]):
+            y_q = pos[q, :, 1]
+            cruza = np.flatnonzero(y_q <= yp_m)
+            fin = int(cruza[0]) if len(cruza) else len(y_q) - 1
+            idx = np.arange(0, fin + 1, paso)
+            t_meas = idx * dt * tau_i[ini + q]
+            medido = lam_i[ini + q] * pos[q, idx, :] / FT_M + rng.normal(0, sigma_pos_m / FT_M, (len(idx), 3))
+            coef[ini + q] = np.polynomial.polynomial.polyfit(t_meas, medido, 2)
+            t_vuelo[ini + q] = fin * dt
+    c0, c1, c2 = coef[:, 0, :], coef[:, 1, :], coef[:, 2, :]
+    t50 = _raiz_pequena(c0[:, 1] - 50.0, c1[:, 1], c2[:, 1])           # instante en que y = 50 ft (reloj medido)
+    r9 = c0 + c1 * t50[:, None] + c2 * t50[:, None] ** 2
+    v9 = c1 + 2 * c2 * t50[:, None]
+    a9 = 2 * c2
+    tp_rel = _raiz_pequena(c0[:, 1] - Y_FRENTE_PLATO_FT, c1[:, 1], c2[:, 1])
+    pos_plato = c0 + c1 * tp_rel[:, None] + c2 * tp_rel[:, None] ** 2
+
+    # --- columnas observables
+    spin_obs = spin_rpm * (1.0 + rng.normal(0, 0.01, n))
+    axis_obs = (theta + rng.normal(0, 3.0, n)) % 360.0
+    if spinaxis_inferido:
+        a_t = a9 * FT_M + np.array([0.0, 0.0, G_SI])
+        vh = v9 / np.linalg.norm(v9, axis=1)[:, None]
+        perp = a_t - np.einsum("ij,ij->i", a_t, vh)[:, None] * vh
+        nh = perp / np.linalg.norm(perp, axis=1)[:, None]
+        axis_obs = np.degrees(np.arctan2(nh[:, 0] / SIGNO_MAGNUS_X, -nh[:, 2])) % 360.0
+    anio_i = np.array([ji["anio"] for ji in juego_info])[g_idx]
+    cub_i = np.array([ji["cubeta"] for ji in juego_info])[g_idx]
+    df = pl.DataFrame({
+        "game_anon_id": [f"game_{g + 1:06d}" for g in g_idx],
+        "pitcher_anon_id": [f"pitcher_{j + 1:05d}" for j in j_idx],
+        "year": anio_i, "altitude_category_h": cub_i, "familia": [formas[k] for k in k_idx],
+        "pitcher_throws_r": mano_r[j_idx], "excluir_modelo": np.zeros(n, dtype=bool),
+        "x0": r9[:, 0], "y0": r9[:, 1], "z0": r9[:, 2], "vx0": v9[:, 0], "vy0": v9[:, 1], "vz0": v9[:, 2],
+        "ax0": a9[:, 0], "ay0": a9[:, 1], "az0": a9[:, 2], "PitchTrajectoryXc1": c1[:, 1],
+        "SpinRate": spin_obs, "SpinAxis": axis_obs, "RelHeight": c0[:, 2],
+        "PlateLocSide": -pos_plato[:, 0], "PlateLocHeight": pos_plato[:, 2],
+    })
+    log_ref = float(np.mean([np.log(ji["rho"]) for ji in juego_info if ji["cubeta"] == "No Altitude"]))
+    verdad = {
+        "juegos": [f"game_{g + 1:06d}" for g in range(n_juegos)],
+        "cubeta_juego": [ji["cubeta"] for ji in juego_info], "parque_juego": [ji["parque"] for ji in juego_info],
+        "rho_juego": rho_g, "delta_verdad": np.log(rho_g) - log_ref,
+        "alpha_j": alpha_j, "c_g": np.where(sesgado_g, lambda_escala / tau_reloj**2 - 1.0, 0.0),
+        "lambda": lambda_escala, "tau": tau_reloj, "cubetas_sesgo": tuple(cubetas_sesgo),
+        "niveles_rho": niveles, "sigma_pos_m": sigma_pos_m, "sigma_alpha": sigma_alpha,
+        "t_s": -t50, "t_vuelo": t_vuelo, "n_lanzamientos": n, "spinaxis_inferido": spinaxis_inferido,
+        "signo_magnus_x": SIGNO_MAGNUS_X,
+    }
+    return df, verdad

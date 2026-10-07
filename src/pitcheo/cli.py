@@ -2,7 +2,8 @@
 
     pitcheo f00_0   inspección de los tres formatos crudos + perfil vs diccionario
     pitcheo f00     ingesta, limpieza (ADR-002 a 007) y QA por identidades I1-I10
-    pitcheo f01 ... f11                                        (pendientes)
+    pitcheo f02     densidad del aire por juego desde la trayectoria (Props. 1, 2′, 3′)
+    pitcheo f01, f03 ... f11                                   (pendientes)
 
 Mismo patrón que `dtcoach` en Historia-de-un-entrenador.
 """
@@ -22,7 +23,6 @@ from .config import Config
 # Fases todavía no implementadas: subcomando -> (etiqueta ROADMAP, pista).
 _PENDIENTES = {
     "f01": "F1 — Pre-registro de hipótesis",
-    "f02": "F2 — Densidad del aire por juego desde la trayectoria",
     "f03": "F3 — Invariantes, eficiencia de giro y operador T",
     "f04": "F4 — Variable objetivo: pesos lineales, cadena de conteos, carry",
     "f05": "F5 — Arsenal, agrupamiento por forma y auditoría de fugas",
@@ -225,6 +225,34 @@ def cmd_f00(a, cfg):
         sys.exit(2)
 
 
+def cmd_f02(a, cfg):
+    """F2: densidad del aire por juego (Prop. 2′), compuertas G2.1-G2.4 y reporte."""
+    from . import fase02
+
+    out = Path(a.out) if a.out else None
+    if a.sintetico:
+        from .sintetico import generar_fisica
+        out = out or (cfg.ruta("interim") / "sintetico")
+        print(f"generando {a.sintetico} juegos sintéticos con física exacta ...", flush=True)
+        df, _ = generar_fisica(a.sintetico, cfg["f02"]["sintetica"]["lanzamientos_por_juego"], cfg["seed"])
+    else:
+        ruta = cfg.ruta("pitches")
+        if not ruta.exists():
+            sys.exit(f"No existe {ruta} (salida de F0). En local córrelo con `bash scripts/fases/f00.sh`; "
+                     "aquí usa `pitcheo f02 --sintetico N`.")
+        df = fase02.cargar_pitches(ruta)
+    res = fase02.correr(
+        cfg, df,
+        ruta_densidad=(out / "densidad_juego.parquet") if out else cfg.ruta("densidad_juego"),
+        rep_dir=(out / "reports") if out else cfg.ruta("reportes"),
+        log_dir=(out / "reports" / "logs") if out else cfg.ruta("logs"),
+        fig_dir=(out / "figuras" / "f2") if out else cfg.ruta("figuras") / "f2")
+    print(f"\nreporte -> {res['reporte']}")
+    if not res["ok"]:
+        print("\n[COMPUERTA FALLIDA] ver el Bloque para el orquestador en el reporte.")
+        sys.exit(2)
+
+
 def cmd_pendiente(a, cfg):
     etq = _PENDIENTES[a.cmd]
     print(f"[pendiente] `{a.cmd}` corresponde a {etq}.")
@@ -254,6 +282,12 @@ def main(argv=None):
                    help="redirige pitches, reportes, logs y figuras a este directorio (con --sintetico: "
                         "data/interim/sintetico)")
     s.set_defaults(f=cmd_f00)
+
+    s = sp.add_parser("f02", help="densidad del aire por juego desde la trayectoria (Props. 1, 2′, 3′)")
+    s.add_argument("--sintetico", type=int, default=0, metavar="N",
+                   help="genera N juegos sintéticos con física exacta y corre F2 sobre ellos (no escribe en reports/)")
+    s.add_argument("--out", default=None, help="redirige densidad_juego, reportes, logs y figuras a este directorio")
+    s.set_defaults(f=cmd_f02)
 
     for nombre, etq in _PENDIENTES.items():
         sp.add_parser(nombre, help=etq).set_defaults(f=cmd_pendiente)
