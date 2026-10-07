@@ -12,6 +12,7 @@ lanzamiento ni tablas por lanzador; el parquet por juego va a `data/interim/` (f
 from __future__ import annotations
 
 import json
+import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -21,6 +22,8 @@ import polars as pl
 
 from . import densidad as D
 from . import io
+
+RAIZ_REPO = Path(__file__).resolve().parents[2]
 
 CUBETAS = ["No Altitude", "Medium Altitude", "Extreme Altitude"]
 
@@ -168,6 +171,9 @@ def analizar(df: pl.DataFrame, f02: dict, fis: dict, semilla: int = 2026) -> dic
                                   None if sp_g is None else sp_g[conf], f02.get("gmm_max_comp", 4),
                                   f02.get("gmm_n_init", 5), semilla)
     mezcla_ext = latentes["mezclas"].get("Extreme Altitude")
+    mezcla_ext_L = (D.mezcla_bic(dl[conf & (cub == "Extreme Altitude")], f02.get("gmm_max_comp", 4),
+                                 f02.get("gmm_n_init", 5), semilla)
+                    if (conf & (cub == "Extreme Altitude")).sum() >= 8 else None)
     prediccion = D.predecir_cubeta(dd, cub, sin_cub)
 
     # --- Deming δ^L sobre δ^D (juegos confirmatorios) y SE
@@ -265,6 +271,7 @@ def analizar(df: pl.DataFrame, f02: dict, fis: dict, semilla: int = 2026) -> dic
                "se_ingenuo_D_mediana": float(np.median(se["se_ingenuo"][conf, 0])),
                "efecto_diseno_D": float(np.median(se["se"][conf, 0] / se["se_ingenuo"][conf, 0]))},
         "medias_por_cubeta": medias, "contrastes": mas, "barometrica": bar, "mezcla_extreme": mezcla_ext,
+        "mezcla_extreme_L": mezcla_ext_L,
         "latentes": latentes, "sin_cubeta_prediccion": prediccion, "deming": dem,
         "calibracion": {"kappa_medio": kappa_medio, "spinaxis": chk, "g23b_datos": g23b_real,
                         "c_dif_por_cubeta": D.distribucion_por_cubeta(c_dif[conf], cub[conf]),
@@ -362,9 +369,18 @@ def error_recuperacion(s: dict) -> dict:
     return out
 
 
-def _kw_g21(sc: dict) -> dict:
-    return {"n_juegos": sc["n_juegos"], "lanzamientos_por_juego": sc["lanzamientos_por_juego"],
-            "beta_D": sc.get("beta_D", 0.0), "beta_L": sc.get("beta_L", 0.0)}
+def _kw_g21(sc: dict, semilla: int) -> dict:
+    """kwargs de `generar_fisica` para una réplica de G2.1 (ADR-020): incluye calibración por parque (λ/τ en 1/3+1/3)
+    si `g21_calibracion=True`, por defecto False (compat ADR-019). El esquema por parque es determinista en la semilla.
+    """
+    from .sintetico import CUBETAS_G23B, esquema_calibracion_parques
+    kw = {"n_juegos": sc["n_juegos"], "lanzamientos_por_juego": sc["lanzamientos_por_juego"],
+          "beta_D": sc.get("beta_D", 0.0), "beta_L": sc.get("beta_L", 0.0)}
+    if sc.get("g21_calibracion", False):
+        kw["cubetas"] = CUBETAS_G23B
+        kw["calibracion_parques"] = esquema_calibracion_parques(
+            CUBETAS_G23B, semilla, sc.get("lambda_escala", 1.02), sc.get("tau_reloj", 1.01))
+    return kw
 
 
 def replica_g21(semilla: int, sc: dict, f02: dict, usar_cache: bool = True) -> dict:
@@ -377,16 +393,21 @@ def replica_g21(semilla: int, sc: dict, f02: dict, usar_cache: bool = True) -> d
     from . import cache_sint, recursos
     recursos.en_worker_un_hilo()
     t0 = time.time()
-    df, v, hit = cache_sint.generar_con_cache("g21", semilla, _kw_g21(sc), usar_cache)
+    df, v, hit = cache_sint.generar_con_cache("g21", semilla, _kw_g21(sc, semilla), usar_cache)
     s = _estimar_sintetica(df, v, f02, con_se=True)
     dsg, d, est = s["dsg"], s["d"], s["est"]
     u = est["mascara"]
     W = D.pesos_juego_lanzador(d["juego"].to_numpy()[u], d["lanzador"].to_numpy()[u], dsg.juegos)
     dd, dl = est["res"]["delta"][:, 0], est["res"]["delta"][:, 1]
     dem = D.deming(dd, dl, s["se"]["se"][:, 0], s["se"]["se"][:, 1], W)
-    out = {"semilla": semilla, "error": error_recuperacion(s), "n_lanzamientos": df.height, "cache": hit,
-           "delta": dd, "verdad": s["verdad"], "se": s["se"]["se"][:, 0], "cubeta": s["cubeta"],
-           "sigma_eta": float(s["se"]["sigma_eta"][0]), "metodo_se": s["se"]["metodo"],
+    err_L = {c: float(np.mean(np.exp(dl[(s["cubeta"] == c)])) / np.mean(np.exp(s["verdad"][s["cubeta"] == c])) - 1.0)
+             for c in CUBETAS[1:] if (s["cubeta"] == c).any()}
+    out = {"semilla": semilla, "error": error_recuperacion(s), "error_L": err_L,
+           "n_lanzamientos": df.height, "cache": hit,
+           "delta": dd, "delta_L": dl, "verdad": s["verdad"], "se": s["se"]["se"][:, 0],
+           "se_L": s["se"]["se"][:, 1], "cubeta": s["cubeta"],
+           "sigma_eta": float(s["se"]["sigma_eta"][0]), "sigma_eta_L": float(s["se"]["sigma_eta"][1]),
+           "metodo_se": s["se"]["metodo"],
            "deming_pendiente": float(dem["pendiente"]), "deming_se": float(dem["se_pendiente"])}
     if (f02.get("prop2pp") or {}).get("activa", True):
         try:
@@ -441,7 +462,7 @@ def _resumen_niveles(reps: list[dict], cota: float, campo_err: str, campo_delta:
     return niveles, cubiertos, n_tot
 
 
-def resumen_g21(reps: list[dict], cota: float, usar_corregido: bool = False) -> dict:
+def resumen_g21(reps: list[dict], cota: float, usar_corregido: bool = False, primario: str | None = None) -> dict:
     """Medidas de Morris, White y Crowther (2019) sobre las R réplicas: sesgo relativo, MCSE, SE empírico, RMSE, cobertura.
 
     `usar_corregido=True` evalúa sobre δ̃ (ADR-018/019: primario cuando Prop. 2″ está activa en el pipeline), con SE delta
@@ -449,8 +470,12 @@ def resumen_g21(reps: list[dict], cota: float, usar_corregido: bool = False) -> 
     """
     n_r = len(reps)
     tiene_corregido = all("delta_corregido" in r for r in reps)
-    primario = "corregido" if (usar_corregido and tiene_corregido) else "bruto"
+    tiene_L = all("delta_L" in r for r in reps)
+    if primario is None:
+        primario = ("L" if tiene_L and not usar_corregido else
+                    ("corregido" if (usar_corregido and tiene_corregido) else "bruto"))
     campos = {"corregido": ("error_corregido", "delta_corregido", "se_corregido"),
+              "L": ("error_L", "delta_L", "se_L"),
               "bruto": ("error", "delta", "se")}[primario]
     niveles, cubiertos, n_tot = _resumen_niveles(reps, cota, *campos)
     out = {"R": n_r, "primario": primario, "niveles": niveles, "cobertura": cubiertos / max(n_tot, 1),
@@ -523,8 +548,29 @@ def replica_g23b(semilla: int, sc: dict, f02: dict, con_calibracion: bool, usar_
         f["tipo"] = tipo.get(f["parque"], "limpio")
     W = D.pesos_juego_lanzador(d["juego"].to_numpy()[u], d["lanzador"].to_numpy()[u], dsg.juegos)
     dem = D.deming(res["delta"][:, 0], res["delta"][:, 1], s["se"]["se"][:, 0], s["se"]["se"][:, 1], W)
+    # Informativo ADR-020: sesgo por parque de δᴸ inducido por c_g contra κ̄·c (teoría de Prop. 3′).
+    kappa_medio = float(np.nanmean(D.kappa_sustentacion(vv["a_perp"], vv["l_perp"])))
+    parque_fila = d["parque"].to_numpy()[u].astype(object)
+    parques_u = np.unique(parque_fila)
+    pos_j = {g: i for i, g in enumerate(dsg.juegos)}
+    jl = d["juego"].to_numpy()[u]
+    par_juego = np.full(len(dsg.juegos), None, dtype=object)
+    for pk in parques_u:
+        js = np.unique(jl[parque_fila == pk])
+        for g in js:
+            par_juego[pos_j[g]] = pk
+    sesgo_L_vs_kc = []
+    for pk in parques_u:
+        c_true = c_park.get(str(pk), 0.0)
+        mask = par_juego == pk
+        if mask.any():
+            delta_L_pk = float(np.mean(res["delta"][mask, 1]))
+            sesgo_L_vs_kc.append({"parque": str(pk), "c_verdad": c_true, "kappa_medio_c": kappa_medio * c_true,
+                                  "delta_L_parque": delta_L_pk, "sesgo_L_vs_kc": delta_L_pk - kappa_medio * c_true,
+                                  "tipo": tipo.get(str(pk), "limpio")})
     return {"semilla": semilla, "parques": det["parques"], "spinaxis_medido": chk["medido"], "cache": hit,
             "deming": {k: dem[k] for k in ("pendiente", "intercepto", "se_pendiente", "z_pendiente_vs_1")},
+            "sesgo_L_vs_kc": sesgo_L_vs_kc, "kappa_medio": kappa_medio,
             "n_lanzamientos": df.height, "metodo_se": det["metodo_se"], "q": det["q"]}
 
 
@@ -552,6 +598,20 @@ def resumen_g23b(reps: list[dict]) -> dict:
     out["deming_pendientes"] = [round(r["deming"]["pendiente"], 4) for r in reps]
     out["lanzamientos_por_replica"] = [r["n_lanzamientos"] for r in reps]
     out["replicas_desde_cache"] = int(sum(bool(r.get("cache")) for r in reps))
+    # Informativo ADR-020: sesgo por parque de δᴸ inducido por c_g contra la predicción κ̄·c.
+    todas = [row for r in reps for row in r.get("sesgo_L_vs_kc", [])]
+    if todas:
+
+        sesgos = np.array([x["sesgo_L_vs_kc"] for x in todas])
+        kcs = np.array([x["kappa_medio_c"] for x in todas])
+        out["sesgo_L_vs_kc"] = {"n": len(todas), "kappa_medio": float(np.mean([r["kappa_medio"] for r in reps])),
+                                "sesgo_medio": float(sesgos.mean()), "sesgo_sd": float(sesgos.std(ddof=1)),
+                                "kc_medio": float(kcs.mean()), "kc_sd": float(kcs.std(ddof=1)),
+                                "corr": float(np.corrcoef(sesgos, kcs)[0, 1]) if sesgos.std() > 0 else float("nan"),
+                                "por_tipo": {t: {"n": sum(1 for x in todas if x["tipo"] == t),
+                                                  "sesgo_medio": float(np.mean([x["sesgo_L_vs_kc"] for x in todas if x["tipo"] == t])) if any(x["tipo"] == t for x in todas) else None,
+                                                  "kc_medio": float(np.mean([x["kappa_medio_c"] for x in todas if x["tipo"] == t])) if any(x["tipo"] == t for x in todas) else None}
+                                              for t in ("lambda", "tau", "limpio")}}
     return out
 
 
@@ -572,12 +632,12 @@ def sintetica_f02(f02: dict, fis: dict, recursos_cfg: dict | None = None, usar_c
     t0 = time.time()
     with recursos.config_paralelo(nj):
         reps = Parallel()(delayed(replica_g21)(sem, sc, f02, usar) for sem in sc["semillas"])
-    g21 = resumen_g21(reps, f02["gates"]["g21_error_max"], usar_corregido=(f02.get("prop2pp") or {}).get("activa", True))
+    g21 = resumen_g21(reps, f02["gates"]["g21_error_max"], primario=f02.get("g21_primario", "L"))
     g21["semillas"] = list(sc["semillas"])
     g21["n_juegos"], g21["lanzamientos_por_juego"] = sc["n_juegos"], sc["lanzamientos_por_juego"]
     t1 = time.time()
     # Planteles locales: δ̂ con y sin α_{j,k} en la primera semilla (diagnóstico de la Prop. 2′, no es compuerta).
-    df, v, _ = cache_sint.generar_con_cache("g21", sc["semillas"][0], _kw_g21(sc), usar)
+    df, v, _ = cache_sint.generar_con_cache("g21", sc["semillas"][0], _kw_g21(sc, sc["semillas"][0]), usar)
     con, sin = _estimar_sintetica(df, v, f02), _estimar_sintetica(df, v, f02, sin_alpha=True)
 
     atenuacion = 1.0 + sc.get("beta_D", 0.0)          # δ̂ bruto estima (1+β_D)·log ρ: se compara contra eso, no contra log ρ
@@ -691,53 +751,89 @@ def gates_sinteticos(sint: dict, g: dict) -> dict:
     return out
 
 
-def evaluar_gates(a: dict, sint: dict, g: dict, referencia: str = "No Altitude") -> dict:
-    """G2.1–G2.4 de ROADMAP §4-F2 / ADR-017/018/019 con las cifras medidas.
+def _ratio_D_sobre_L(mD: dict, mL: dict) -> dict:
+    """1+β_D por cubeta = δ̄ᴰ/δ̄ᴸ con SE delta de dos vías (asume Cov(δ̄ᴰ, δ̄ᴸ) ≈ 0: conservador, se declara)."""
+    L, D = mL.get("media"), mD.get("media")
+    sL, sD = mL.get("se"), mD.get("se")
+    if L in (None, 0.0) or D is None or sL is None or sD is None:
+        return {"ratio": None, "se": None}
+    import math
+    ratio = D / L
+    se = math.sqrt((sD / L) ** 2 + (D * sL / L ** 2) ** 2)
+    return {"ratio": float(ratio), "se": float(se)}
 
-    Datos reales: la equivalencia (1+β̂_L)/(1+β̂_D) contra la Deming observada (±0.10) decide qué es primario. Si pasa, δ̃
-    es primario para G2.2–G2.4. **Si no pasa, G2.2–G2.4 se reportan en bruto con 🔎 (`provisional`) y la fase se
-    DETIENE** (`correr` devuelve ok=False con `detenido`).
+
+def wald_igualdad_ratios(filas: list[dict]) -> dict:
+    """Wald de H0: todos los `ratio` son iguales, con SE independientes (conservador, se declara 🔎 porque la crisis de
+    arrastre es no lineal en Re: la igualdad es solo informativa). χ² con `k−1` g.l."""
+    from scipy import stats
+    xs = [(f["ratio"], f["se"]) for f in filas if f.get("ratio") is not None and f.get("se")]
+    if len(xs) < 2:
+        return {"chi2": None, "df": 0, "p": None, "nota": "menos de dos ratios evaluables"}
+    w = np.array([1.0 / se**2 for _, se in xs])
+    r = np.array([ri for ri, _ in xs])
+    mu = float(np.sum(w * r) / w.sum())
+    chi2 = float(np.sum(w * (r - mu) ** 2))
+    df = len(xs) - 1
+    return {"chi2": chi2, "df": df, "p": float(stats.chi2.sf(chi2, df)), "ratio_ponderado": mu}
+
+
+def evaluar_gates(a: dict, sint: dict, g: dict, referencia: str = "No Altitude") -> dict:
+    """G2.1–G2.4 con el canal de sustentación como primario (ADR-020, Prop. 2‴).
+
+    ρ̂_g/ρ_ref = exp(δ̂ᴸ_g) con β_L = 0 (Nathan 2008; Alaways y Hubbard 2001: C_L ≈ C_L(S), prácticamente sin Re). El canal
+    de arrastre es secundario: `1+β_D` por cubeta se **implica** del ratio de medias δ̄ᴰ/δ̄ᴸ (SE delta de dos vías) y G2.3a
+    exige que esté en [`g23a_1mas_beta_D`] en Medium y Extreme (consistencia física; crisis de arrastre, Nathan 2008). La
+    igualdad entre cubetas (Wald) se reporta como 🔎, no es compuerta.
+
+    El 2SLS de Prop. 2″ (ADR-019) queda como diagnóstico: su β̂_L contradecía la literatura (D02d) por una falla de
+    exclusión plausible dentro de lanzador (RelSpeed captura esfuerzo/eficiencia de giro; SpinAxis inferido impide
+    controlarlo). Se mantiene en el reporte pero **no decide la adopción**.
     """
     gates = {}
     sg = gates_sinteticos(sint, g)
     gates["G2.1"], gates["G2.3b"] = sg["G2.1"], sg["G2.3b"]
-    pp = a.get("prop2pp", {})
-    adoptado = bool(pp.get("adoptado"))
-    provisional = bool(pp.get("activada", True)) and not adoptado
-    prov = "🔎 PROVISIONAL (bruto; Prop. 2″ no pasa la equivalencia). " if provisional else ""
-    sufijo = " (sobre δ̃ corregido por Reynolds)" if adoptado else " (sobre δ̂ bruto)"
-    med_src = pp.get("medias_corregidas") if adoptado else a["medias_por_cubeta"]
-    mz_src = pp.get("mezcla_extreme_corregida") if adoptado else a.get("mezcla_extreme")
-    dem_src = pp.get("deming_corregido") if adoptado else a["deming"]
-    dn, dm_, de = (med_src[c]["delta_D"] for c in CUBETAS)
-    ok_orden = None not in (dn, dm_, de) and dn > dm_ > de
-    ok_b = de is not None and g["g22_extreme"][0] <= de <= g["g22_extreme"][1]
-    comp = mz_src["componentes"][0]["media"] if mz_src else None
+    med = a["medias_por_cubeta"]
+    # G2.2 sobre δᴸ (ADR-020): mismas bandas; el componente de menor media viene de la mezcla GMM sobre δᴸ.
+    nl, ml, el = (med[c]["delta_L"] for c in CUBETAS)
+    ok_orden = None not in (nl, ml, el) and nl > ml > el
+    ok_b = el is not None and g["g22_extreme"][0] <= el <= g["g22_extreme"][1]
+    mz = a.get("mezcla_extreme_L") or a.get("mezcla_extreme")
+    comp = mz["componentes"][0]["media"] if mz else None
     ok_c = comp is not None and g["g22_componente"][0] <= comp <= g["g22_componente"][1]
-    gates["G2.2"] = {"ok": bool(ok_orden and ok_b and ok_c), "provisional": provisional,
-                     "detalle": (prov + f"(a) orden estricto {'✓' if ok_orden else '✗'}: δ̄ No {dn:+.4f} > Medium "
-                                 f"{dm_:+.4f} > Extreme {de:+.4f} · (b) δ̄ Extreme ∈ {g['g22_extreme']}: {'✓' if ok_b else '✗'} · "
+    gates["G2.2"] = {"ok": bool(ok_orden and ok_b and ok_c),
+                     "detalle": (f"primario sobre δ̂ᴸ (ADR-020). (a) orden estricto {'✓' if ok_orden else '✗'}: δ̄ᴸ No {nl:+.4f} > Medium "
+                                 f"{ml:+.4f} > Extreme {el:+.4f} · (b) δ̄ᴸ Extreme ∈ {g['g22_extreme']}: {'✓' if ok_b else '✗'} · "
                                  f"(c) componente de menor media de la mezcla de Extreme "
                                  f"{'—' if comp is None else f'{comp:+.4f}'} ∈ {g['g22_componente']}: {'✓' if ok_c else '✗'}")
-                     if None not in (dn, dm_, de) else "sin juegos confirmatorios en alguna cubeta"}
-    lo, hi = g["g23_pendiente"]
-    gates["G2.3a"] = {"ok": dem_src is not None and lo <= dem_src["pendiente"] <= hi, "provisional": provisional,
-                      "detalle": (prov + f"Deming δ^L sobre δ^D{sufijo}: pendiente "
-                                  f"{dem_src['pendiente']:.3f} (EE dos vías {dem_src['se_pendiente']:.3f}) ∈ [{lo}, {hi}] · intercepto "
-                                  f"{dem_src['intercepto']:+.4f}") if dem_src else "no evaluable"}
-    s = a["se"]
-    if adoptado and pp.get("se_corregido_D_mediana") is not None:
-        se_med = pp["se_corregido_D_mediana"]
-        detalle_se = (f"σ_η (bruto) = {s['sigma_eta_D']:.4f} (D) / {s['sigma_eta_L']:.4f} (L) · SE mediano de δ̃_g (CR2 + delta "
-                      f"method con Var(β̂)) = {se_med:.4f} (límite {g['g24_se_max']}; método {s['metodo']})")
-    else:
-        se_med = s["se_cr2_D_mediana"]
-        detalle_se = (prov + f"σ_η = {s['sigma_eta_D']:.4f} (D) / {s['sigma_eta_L']:.4f} (L) · SE CR2 mediano de δ̂_g = "
-                      f"{se_med:.4f} (límite {g['g24_se_max']}; ingenuo {s['se_ingenuo_D_mediana']:.4f}, efecto de diseño "
-                      f"×{s['efecto_diseno_D']:.2f}) · método {s['metodo']}")
+                     if None not in (nl, ml, el) else "sin juegos confirmatorios en alguna cubeta"}
+    # G2.3a (ADR-020): consistencia física del canal D. 1+β_D implícito por cubeta = δ̄ᴰ/δ̄ᴸ con SE delta.
+    lo, hi = g["g23a_1mas_beta_D"]
+    ratios = {c: _ratio_D_sobre_L(med[c], med[c] | {"media": med[c]["delta_L"], "se": med[c]["se_L"]})
+              for c in CUBETAS}
+    for c in CUBETAS:
+        ratios[c] = _ratio_D_sobre_L({"media": med[c]["delta_D"], "se": med[c]["se_D"]},
+                                     {"media": med[c]["delta_L"], "se": med[c]["se_L"]})
+    ratios_eval = {c: ratios[c] for c in ("Medium Altitude", "Extreme Altitude")}
+    ok_r = all(r["ratio"] is not None and lo <= r["ratio"] <= hi for r in ratios_eval.values())
+    wald = wald_igualdad_ratios([{**ratios[c], "cubeta": c} for c in ratios_eval])
+    txt = " · ".join(f"{c.split()[0]}: 1+β̂_D = {r['ratio']:.3f} ± {r['se']:.3f}" if r["ratio"] is not None else f"{c}: —"
+                     for c, r in ratios_eval.items())
+    wald_txt = (f" · 🔎 Wald de igualdad entre cubetas (SE independientes, conservador): χ² = {wald['chi2']:.2f} "
+                f"(gl {wald['df']}, p = {wald['p']:.3f}; la crisis de arrastre es no lineal en Re)"
+                if wald.get("chi2") is not None else "")
+    gates["G2.3a"] = {"ok": bool(ok_r),
+                      "detalle": (f"consistencia física del canal D (ADR-020): 1+β_D implícito por cubeta ∈ [{lo}, {hi}] · "
+                                  f"{txt}{wald_txt}")}
+    a["prop2ppp"] = {"ratios_1_mas_beta_D": ratios, "wald_igualdad": wald}
+    # G2.4 sobre δ̂ᴸ (ADR-020): SE CR2 mediano del canal L < g24_se_max y cobertura ≥ g24_cobertura_min.
+    sdat = a["se"]
+    se_med_L = sdat["se_cr2_L_mediana"]
     cobg = sg["G2.4_cobertura"]
-    gates["G2.4"] = {"ok": bool(se_med < g["g24_se_max"] and cobg["ok"]), "provisional": provisional,
-                     "detalle": detalle_se + f" · {cobg['detalle']} {'✓' if cobg['ok'] else '✗'}"}
+    gates["G2.4"] = {"ok": bool(se_med_L < g["g24_se_max"] and cobg["ok"]),
+                     "detalle": (f"primario sobre δ̂ᴸ (ADR-020). σ_η = {sdat['sigma_eta_D']:.4f} (D) / {sdat['sigma_eta_L']:.4f} (L) · "
+                                 f"SE CR2 mediano de δ̂ᴸ_g = {se_med_L:.4f} (límite {g['g24_se_max']}; método {sdat['metodo']}) · "
+                                 f"{cobg['detalle']} {'✓' if cobg['ok'] else '✗'}")}
     return dict(sorted(gates.items()))
 
 
@@ -1066,8 +1162,22 @@ def _sec_sintetica(sint: dict, f02: dict) -> list[str]:
           (f"**Potencia (contaminados) {b['potencia']:.3f}** (mínimo {f02['gates']['g23b_potencia_min']}, global y por tipo) · "
            f"**FPR (limpios) {b['fpr']:.3f}** (cota {b['fpr_cota']:.4f}). Control sin calibración (todos los parques limpios, "
            f"mismas semillas): {nulo['limpio']['rechazos']} de {nulo['limpio']['n']} parques marcados, FPR {nulo['limpio']['tasa']:.3f}."), "",
-          (f"**G2.3a en la sintética (informativo):** pendiente de Deming media {b['deming_pendiente_medio']:.3f} con calibración "
-           f"por parque contra {nulo['deming_pendiente_medio']:.3f} sin ella; la banda [0.85, 1.15] no distingue ambas (D02b)."), ""]
+          (f"**G2.3a histórica en la sintética (informativo, ADR-017):** pendiente de Deming media {b['deming_pendiente_medio']:.3f} "
+           f"con calibración por parque contra {nulo['deming_pendiente_medio']:.3f} sin ella; la banda [0.85, 1.15] no distingue ambas "
+           "(D02b). Reemplazada por G2.3a de ADR-020 (consistencia física del canal D)."), ""]
+    inf = (b.get("sesgo_L_vs_kc") or {})
+    if inf.get("n"):
+        L += ["### 🔎 Informativo (ADR-020): sesgo por parque de δᴸ inducido por c_g contra la predicción κ̄·c", "",
+              (f"Prop. 3′ predice que el residuo de calibración c_g·g desplaza δᴸ en κ̄·c (κ̄ = {inf['kappa_medio']:.3f}; "
+               f"n = {inf['n']} parques × réplicas con calibración). Promedios y correlación observados:"),
+              "",
+              *_tabla([{"tipo": t,
+                        "n": inf["por_tipo"][t]["n"],
+                        "sesgo medio δᴸ por parque": _f(inf["por_tipo"][t]["sesgo_medio"], 4),
+                        "κ̄·c medio": _f(inf["por_tipo"][t]["kc_medio"], 4)} for t in ("lambda", "tau", "limpio")],
+                      ["tipo", "n", "sesgo medio δᴸ por parque", "κ̄·c medio"]), "",
+              (f"Correlación entre el sesgo de δᴸ por parque y κ̄·c = **{inf['corr']:.3f}**. No es compuerta; solo informa que "
+               "el canal L lleva el residuo c_g·g con la magnitud que predice Prop. 3′."), ""]
     return L
 
 
@@ -1156,6 +1266,84 @@ def firma_sintetica(f02: dict) -> str:
     sub = {k: f02.get(k) for k in CLAVES_SINT}
     h = hashlib.sha256(json.dumps(sub, sort_keys=True, default=str).encode()).hexdigest()[:16]
     return f"{h}-{recursos.hash_codigo()}"
+
+
+def _rama_actual() -> str:
+    import subprocess
+    r = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], check=False, capture_output=True, text=True, cwd=RAIZ_REPO)
+    return r.stdout.strip()
+
+
+def _ok(cmd: list[str]) -> tuple[int, str, str]:
+    import subprocess
+    r = subprocess.run(cmd, check=False, capture_output=True, text=True, cwd=RAIZ_REPO)
+    return r.returncode, r.stdout, r.stderr
+
+
+def correr_cerrar(cfg, rep_dir: Path) -> int:
+    """Etapa `cerrar` (ADR-020 R5): si TODAS las compuertas G2.1–G2.4 están ✅ en `reports/fase_02.json`, abre PR fase02→main,
+    hace **squash merge** y empuja un tag `fase02`. Si algún gate no es ✅, aborta sin tocar nada (código 2)."""
+    ruta_rep = (rep_dir / "fase_02.json") if (rep_dir / "fase_02.json").exists() else cfg.ruta("reportes") / "fase_02.json"
+    if not ruta_rep.exists():
+        print(f"[cerrar] falta {ruta_rep}: corre primero `--etapa real` sobre los datos reales.", file=sys.stderr)
+        return 2
+    try:
+        rep = json.loads(ruta_rep.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        print(f"[cerrar] {ruta_rep} corrupto: {exc}", file=sys.stderr)
+        return 2
+    gates = rep.get("gates", {})
+    requeridas = {"G2.1", "G2.2", "G2.3a", "G2.3b", "G2.4"}
+    faltan = requeridas - set(gates)
+    if faltan:
+        print(f"[cerrar] faltan compuertas en {ruta_rep}: {sorted(faltan)}. Abortando.", file=sys.stderr)
+        return 2
+    fallidas = [k for k in requeridas if not gates[k].get("ok")]
+    prov = [k for k in requeridas if gates[k].get("provisional")]
+    if fallidas or prov:
+        print(f"[cerrar] no todas las compuertas están ✅ (fallidas: {fallidas}; provisionales 🔎: {prov}). Abortando sin PR ni tag.",
+              file=sys.stderr)
+        return 2
+    rama = _rama_actual()
+    if rama != "fase02":
+        print(f"[cerrar] rama actual = {rama!r}; se esperaba `fase02`. Abortando.", file=sys.stderr)
+        return 2
+    import subprocess
+    if subprocess.run(["git", "diff", "--quiet"], check=False, cwd=RAIZ_REPO).returncode != 0 \
+            or subprocess.run(["git", "diff", "--cached", "--quiet"], check=False, cwd=RAIZ_REPO).returncode != 0:
+        print("[cerrar] working tree con cambios sin commitear. Abortando (commitea reports/ antes de cerrar).", file=sys.stderr)
+        return 2
+    print("[cerrar] empujando `fase02` ...")
+    rc, out, err = _ok(["git", "push", "-u", "origin", "fase02"])
+    if rc != 0:
+        print(f"[cerrar] git push falló: {err}", file=sys.stderr)
+        return rc
+    # Resumen para el cuerpo del PR
+    bloque = []
+    for k in sorted(requeridas):
+        bloque.append(f"- **{k}** ✅ {gates[k].get('detalle', '')}")
+    pr_body = "F2 compuertas G2.1–G2.4 todas en verde sobre datos reales (ADR-017/018/019/020).\n\n" + "\n".join(bloque)
+    print("[cerrar] abriendo PR fase02 → main ...")
+    rc, out, err = _ok(["gh", "pr", "create", "--base", "main", "--head", "fase02",
+                        "--title", "F2: densidad por juego (compuertas G2.1–G2.4 ✅)", "--body", pr_body])
+    if rc != 0 and "already exists" not in (out + err).lower():
+        print(f"[cerrar] gh pr create falló: {err}", file=sys.stderr)
+        return rc
+    rc, out, err = _ok(["gh", "pr", "merge", "fase02", "--squash", "--delete-branch=false"])
+    if rc != 0:
+        print(f"[cerrar] gh pr merge --squash falló: {err}", file=sys.stderr)
+        return rc
+    print("[cerrar] PR mergeada con squash. Creando tag `fase02` y empujándolo ...")
+    for cmd in (["git", "fetch", "origin", "main"],
+                ["git", "tag", "-a", "fase02", "-m", "F2 cerrada (ADR-020): compuertas G2.1-G2.4 ✅ en datos reales",
+                 "origin/main"],
+                ["git", "push", "origin", "refs/tags/fase02"]):
+        rc, out, err = _ok(cmd)
+        if rc != 0 and "already exists" not in (out + err).lower():
+            print(f"[cerrar] {' '.join(cmd)} falló: {err}", file=sys.stderr)
+            return rc
+    print("[cerrar] listo: PR squash merged en main y tag `fase02` empujado.")
+    return 0
 
 
 def correr_sintetica(cfg, rep_dir: Path, log_dir: Path, usar_cache: bool | None = None) -> dict:

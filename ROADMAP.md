@@ -1,7 +1,7 @@
 # ROADMAP MAESTRO — Stuff+ LMB calibrado por densidad del aire
 
 **Proyecto:** Hackathon ISAC 2026 · Reto Diablos Rojos · `romoruz/calidad-de-pitcheo`
-**Versión:** 2.10 (2.9 + decisiones F2: G2.1 como estudio de simulación, Prop. 3″, G2.3a/G2.3b; ADR-017)
+**Versión:** 2.11 (2.10 + ADR-020: Prop. 2‴ lift-primary; G2.3a → consistencia física del canal D; semillas 241–270; regla de doble canal para F3+)
 **Ruta local (clon del repo + datos):** `/home/rodrigo/calidad-de-pitcheo`
 **Regla:** solo el orquestador cambia este archivo. Claude Code lo lee, no lo edita.
 
@@ -14,7 +14,7 @@
 | F0.0 | ✅ cerrada | tag `fase00_0` |
 | F0 | ✅ cerrada (G0.1–G0.9) | merge `45f9f7c`, tag `fase00`; mecanismo U, `perdida_ignorable=false` |
 | F1 | ✅ cerrada (pre-registro H1–H6) | merge `b6a008c`, tag `fase01`; BH m=5, H5 por equivalencia (v2.8) |
-| F2 | 🟡 ronda 4 implementada (ADR-019): **compuertas sintéticas G2.1, G2.3b y cobertura de G2.4 ✅** (R=30, semillas 211–240); falta la etapa `real` (Rodrigo) | rama `fase02`, sin PR; `docs/discrepancias/D02c.md` §9–11; Prop. 2″ por 2SLS con RelSpeed (por ratificar); `bash scripts/fases/f02.sh --etapa real --cpu-max 300` |
+| F2 | 🟡 ronda 5 implementada (ADR-020, lift-primary): compuertas sintéticas G2.1 y cobertura de G2.4 sobre $\hat\delta^L$ (R=30, semillas 241–270); G2.3a → ratio $1+\beta_D$ por cubeta ∈ [0.30, 1.00]; falta la etapa `real` (Rodrigo) y `--etapa cerrar` | rama `fase02`, sin PR; `docs/discrepancias/D02d.md`; 2SLS = diagnóstico; `bash scripts/fases/f02.sh --etapa real --cpu-max 300 --commit` y luego `--etapa cerrar` |
 | F3 | ⚪ pendiente | diseño (Opus) tras F2 |
 | F4 / F5 | ⚪ pendientes (paralelizables) | dependen de F2–F3 |
 | F6–F11 | ⚪ pendientes | — |
@@ -880,6 +880,13 @@ Figuras a docs/figuras/f2/. reports/FASE_02.md con el Bloque para el orquestador
 ### F3 — Invariantes, eficiencia de giro y operador de traslación $T$
 
 **Modelo:** Opus (diseño) → Sonnet · **Duración:** 4–5 h
+
+**Regla de doble canal (ADR-020).** F2 entrega dos estimadores de densidad por juego: el **primario**
+$\hat\rho^L_g/\rho_{\text{ref}}=\exp(\hat\delta^L_g)$ (canal L con $\beta_L=0$) y la **sensibilidad** por cubeta
+$\tilde\rho^D_g=\hat\rho^L_g\cdot(1+\hat\beta_D(c(g)))$ con $1+\hat\beta_D(c)$ y su SE delta de ADR-020. F3 **corre todo su
+análisis dos veces**, una con $\hat\rho^L$ y otra con $\tilde\rho^D$, y reporta ambos en el `Bloque` y en las compuertas. Si el
+cambio de canal invierte el signo de una decisión (p. ej. una pendiente dentro de banda vs. fuera), F3 **se detiene** y escala
+al orquestador.
 
 **Objetivo.** Separar lo que es del lanzador (invariante a ρ) de lo que es del aire, y construir $T_{\rho\to\rho'}$.
 

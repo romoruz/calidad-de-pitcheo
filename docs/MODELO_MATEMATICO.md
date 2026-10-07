@@ -375,19 +375,37 @@ mide **proporcionalidad** global de los dos canales. Por la Prop. 3″ (ii) un s
 poco (se queda dentro de la banda, F2.5), así que la **detección por parque** la hace **G2.3b** (F2.7), no
 Deming.
 
-## F2.7 Mapa a las compuertas de F2
+## F2.7 Mapa a las compuertas de F2 (ADR-020: lift-primary)
+
+**Enmienda post-datos (ADR-020, Gelman y Loken 2013).** La corrida real con ADR-019 dio β̂_L^IV = +0.62 ± 0.04, lo que contradice
+$C_L\approx C_L(S)$ (Nathan 2008; Alaways y Hubbard 2001). La explicación identificable es falla de exclusión del instrumento
+`RelSpeed` dentro de lanzador (esfuerzo/eficiencia de giro correlacionados, SpinAxis inferido R² = 0.998; Angrist y Pischke 2009).
+Las compuertas se re-expresan sobre $\hat\delta^L$ (bruto, $\beta_L=0$); el 2SLS queda como diagnóstico 🔎. Las bandas de G2.2 y
+G2.4 no cambian; G2.3a se reemplaza por una compuerta de **consistencia física del canal D**. Semillas nuevas 241–270 (consumidas:
+101–110, 201–210, 211–240). Detalle en ADR-020 y en `docs/discrepancias/D02d.md`.
 
 | compuerta | criterio | de dónde sale |
 |---|---|---|
-| **G2.1** | estudio de simulación (F2.5a): por nivel, $\lvert\text{sesgo rel. medio}\rvert+1.96\cdot\text{MCSE}<1\%$ (ADR-019: sobre $\tilde\delta$, $R=30$, **semillas 211–240**, 150 juegos; consumidas: 101–110 en D02b §4 y 201–210 en D02c §8) | F2.5a; D02b §4 |
-| **G2.2** | orden $\bar{\tilde\delta}_{\text{No}}>\bar{\tilde\delta}_{\text{Medium}}>\bar{\tilde\delta}_{\text{Extreme}}$; $\bar{\tilde\delta}_{\text{Extreme}}\in[-0.30,-0.15]$; componente densa de *Extreme* en $[-0.32,-0.20]$. **Primario sobre $\tilde\delta$ si Prop. 2″ pasa sobreidentificación (ADR-018)**, si no sobre $\hat\delta$ bruto | F2.3bis, F2.3 |
-| **G2.3a** | Deming $\tilde\delta^L$ sobre $\tilde\delta^D$ (primario cuando Prop. 2″ adopta; si no, sobre bruto): pendiente $\in[0.85,1.15]$ | F2.6, Prop. 3″ (ii), F2.3bis |
-| **G2.3b** | **Validación sintética del método** (ADR-018): $\hat c_{\hat{\mathbf e}}$ por parque con **contraste LOO** ($h_p=c_p-\mathrm{mean}(c_q:q\ne p\wedge\text{cubeta}(q)=\text{cubeta}(p))$), **cluster = lanzador**, **t de Pustejovsky y Tipton (2018)** + BH 5 %. Potencia $\ge0.80$ (global y por tipo) y FPR $\le0.05+1.96\sqrt{0.05\cdot0.95/n_{\text{limpios}}}$ (Morris, White y Crowther 2019 §5.2; $0.082$ con $n=180$) con IC de Clopper–Pearson. **La aplicación a datos reales es 🔎 informativa, nunca compuerta**: si `SpinAxis` resulta inferido o no evaluable (fail-closed, ADR-018), o no hay id de parque, es `n/e` | F2.4, F2.5b, D02b §4 |
-| **G2.4** | $\sigma_\eta$ y SE mediano **CR2** de $\tilde\delta_g$ (si Prop. 2″ adopta; si no de $\hat\delta_g$) $<0.03$; cobertura del IC95 de $\tilde\delta$ en la sintética $\ge0.90$, con SE delta que incluye $\mathrm{Var}(\hat\beta)$ | F2.3 (CR2, lanzador dentro del juego); validada en F2.5a |
+| **G2.1** | estudio de simulación (F2.5a): por nivel, $\lvert\text{sesgo rel. medio}\rvert+1.96\cdot\text{MCSE}<1\%$, **sobre $\hat\delta^L$ bruto** ($\beta_L=0$). Generador: $\beta_D=-0.30$, $\beta_L=0$ y calibración por parque ($\lambda=1.02$ en 1/3, $\tau=1.01$ en otro 1/3 por cubeta). $R=30$, **semillas 241–270**, 150 juegos. Consumidas: 101–110 (D02b §4), 201–210 (D02c §8), 211–240 (ADR-019/D02c §10) | F2.5a; D02d |
+| **G2.2** | orden $\bar{\hat\delta}^L_{\text{No}}>\bar{\hat\delta}^L_{\text{Medium}}>\bar{\hat\delta}^L_{\text{Extreme}}$; $\bar{\hat\delta}^L_{\text{Extreme}}\in[-0.30,-0.15]$; componente densa de *Extreme* en $[-0.32,-0.20]$. **Primario sobre $\hat\delta^L$** (bandas sin cambio desde ADR-017) | F2.3, D02d |
+| **G2.3a** | **consistencia física del canal D** (ADR-020, sustituye Deming): $1+\hat\beta_D(c)=\bar{\hat\delta}^D(c)/\bar{\hat\delta}^L(c)$ (promedio ponderado por año, SE delta de dos vías con $\mathrm{Cov}=0$ conservador) **en $[0.30,1.00]$** en Medium y Extreme. **La igualdad entre cubetas (Wald $\chi^2_1$ sobre los ratios) es 🔎 informativa, no compuerta**: la crisis de arrastre (Nathan 2008) es no lineal en Re | ADR-020 §B; D02d §3 |
+| **G2.3b** | sin cambios respecto de ADR-018: $\hat c_{\hat{\mathbf e}}$ por parque con **contraste LOO**, **cluster lanzador**, **t de Pustejovsky y Tipton (2018)** + BH 5 %. Potencia $\ge0.80$ (global y por tipo) y FPR $\le0.05+1.96\sqrt{0.05\cdot0.95/n_{\text{limpios}}}$ (Morris, White y Crowther 2019 §5.2) con IC de Clopper–Pearson. **Validación sintética ya ✅ en ADR-019 D3; se reutiliza**. Aplicación a datos reales 🔎 informativa (n/e si `SpinAxis` inferido/no evaluable, fail-closed) | F2.4, F2.5b |
+| **G2.4** | $\sigma_\eta$ y SE mediano **CR2** de $\hat\delta^L_g$ $<0.03$; cobertura del IC95 de $\hat\delta^L$ en la sintética 241–270 $\ge0.90$ (banda sin cambio desde ADR-017) | F2.3 (CR2, lanzador dentro del juego) |
 
-**Si G2.2 falla con G2.3a/G2.3b aprobadas:** las cubetas no corresponden a la altitud supuesta. **Si G2.3a o
-G2.3b fallan:** sesgo de calibración específico de parque (Prop. 3″). Ambos van al orquestador. Un sesgo
-**uniforme** no dispara nada y no hace falta (Prop. 3″ (i): no confunde contrastes).
+**Diagnóstico 🔎 (no compuerta).** 2SLS con `RelSpeed` como instrumento de $\log\|\bar{\mathbf v}\|$ y la equivalencia Deming
+$(1+\hat\beta_L)/(1+\hat\beta_D)$ se reportan en el reporte real; su propósito es **diagnosticar endogeneidad y falla de exclusión**,
+no decidir. ADR-019 §C ("si pasa, $\tilde\delta$ es primario") queda **sobreseído**.
+
+**Nuevo informativo.** Sesgo por parque de $\hat\delta^L$ inducido por $c_g$ en la sintética 241–270, contra la predicción $\bar\kappa\cdot c$
+(Prop. 3′). Pendiente y $R^2$ se incluyen en el reporte y en D02d; no es compuerta.
+
+**Si G2.2 falla con G2.3a/G2.3b aprobadas:** las cubetas no corresponden a la altitud supuesta. **Si G2.3a falla** (ratio fuera de
+$[0.30,1.00]$): el canal D no es consistente con la crisis de arrastre; se registra y se detiene. **Si G2.3b falla:** sesgo de
+calibración específico de parque (Prop. 3″). Ambos van al orquestador. Un sesgo **uniforme** no dispara nada (Prop. 3″ (i)).
+
+**Doble canal hacia abajo (F3+).** El estimador primario de densidad corregida por parque es $\hat\rho^L_g/\rho_{\text{ref}}=\exp(\hat\delta^L_g)$.
+Como sensibilidad por cubeta se reporta $\tilde\rho^D_g=\hat\rho^L_g\cdot(1+\hat\beta_D(c(g)))$ con SE delta. F3 en adelante **debe**
+correr sus análisis con ambos y reportar los dos.
 
 **Ningún outcome entra en F2:** solo física por lanzamiento ($\mathbf r_0,\mathbf v_0,\mathbf a$,
 `SpinRate`, `SpinAxis`, forma, mano, año). Los `*_anon_id` entran como **efecto fijo lanzador×forma**

@@ -517,3 +517,56 @@ de **control de calidad de datos**, no hipótesis; F1 aún no ocurre.
   equivalencia pasa (frontera 0.031) y δ̃ recupera los niveles barométricos. **Pendiente:** la etapa `real` sobre los datos reales (Rodrigo).
 - **Por ratificar (orquestador):** (a) 2SLS con `RelSpeed` y S_rel en lugar de MCO (hallazgos 1–3); (b) equivalencia ±0.10 con 1.96·SE o TOST
   al 90 %; (c) que `real` falle cerrado a MCO si `RelSpeed` falta (β̂ sesgado a la baja, declarado en el reporte).
+
+---
+
+## ADR-020 — Prop. 2‴: canal de sustentación primario (ρ̂ᴸ con β_L = 0); el 2SLS del canal D queda como diagnóstico; nueva G2.3a de consistencia física
+
+- **Contexto.** La corrida sobre datos reales con ADR-019 (`reports/fase_02.json` en 6f8761c) ejecutó el 2SLS con `RelSpeed` como
+  instrumento de log‖v̄‖ y produjo **β̂_L = +0.62 ± 0.04** (primera etapa F = 2.1·10⁷; MCO: β̂_L = +0.38). Un β_L positivo tan grande
+  **contradice la literatura** del coeficiente de sustentación de la pelota de béisbol: C_L ≈ C_L(S) con una dependencia de Reynolds
+  despreciable en el rango típico (p. ej. Nathan 2008, *The Effect of Spin on the Flight of a Baseball*, Am. J. Phys. 76(2);
+  Alaways y Hubbard 2001, *Experimental Determination of Baseball Spin and Lift*, J. Sports Sci. 19). Tres canales explican el
+  valor empírico sin invocar un efecto físico que no existe:
+  1. **Falla de exclusión del instrumento dentro de lanzador** (Angrist y Pischke 2009, *Mostly Harmless Econometrics*, cap. 4):
+     `RelSpeed` no solo mueve el drag; a lanzador fijo capta **esfuerzo** (variaciones de salida máxima lanzamiento a lanzamiento) y
+     **eficiencia de giro** (correlación empírica entre velocidad de liberación y spin bajo esfuerzo). Esos canales entran en el error
+     estructural de la ecuación del canal L (y de C_D de alto Re) y rompen la exclusión del IV. Si log(RelSpeed) está correlacionado
+     con la parte de η_L no modelada, β̂_L^IV queda sesgado y no estima dC_L/d log Re.
+  2. **SpinAxis inferido impide controlarlo.** En los datos reales R²(SpinAxis | movimiento) dentro de lanzador×forma = **0.998**,
+     declarado inferido (ADR-018). No se puede añadir controles de eficiencia de giro independientes del movimiento.
+  3. **La sintética no tenía esa heterogeneidad.** El generador fija C_L = C_L(S) sin acoplamiento a esfuerzo, así que la validación
+     sintética del 2SLS no detectaba la falla.
+  Registrado en `docs/discrepancias/D02d.md`.
+- **Decisión.**
+  1. **ρ̂_g / ρ_ref := exp(δ̂ᴸ_g)** con β_L = 0 (Prop. 2‴). δ̂ᴸ es el estimador bruto del canal L; nada se ajusta a esa estimación.
+  2. **El canal D es secundario.** 1+β_D por cubeta se **implica** del ratio de medias ponderadas por año (ADR-018 §B):
+     `1+β̂_D (c) = δ̄ᴰ(c) / δ̄ᴸ(c)`, con SE delta de dos vías (Cov(δ̄ᴰ,δ̄ᴸ) ≈ 0; conservador, se declara).
+  3. **2SLS = diagnóstico 🔎.** Prop. 2″ (ADR-019) permanece en el reporte, pero **no decide la adopción**; sus β̂ se presentan como
+     diagnóstico de endogeneidad y de la falla de exclusión. ADR-019 §C ("si pasa la equivalencia, δ̃ es primario") queda sobreseído.
+  4. **Compuertas** (MODELO_MATEMATICO §F2.7 y `config/default.yaml`; **sin cambios en las bandas de G2.2 ni G2.4**):
+     - **G2.1** mide la recuperación de ρ con **δ̂ᴸ bruto**, mismo criterio Morris–White–Crowther (|sesgo relativo| + 1.96·MCSE < 1 %).
+       Semillas NUEVAS **241–270** (R = 30). **Consumidas** y no reusables: 101–110 (D02b §4), 201–210 (D02c §8) y 211–240
+       (D02c §10 / ADR-019). El generador corre con β_D = −0.30, β_L = 0 **y** calibración por parque (λ = 1.02 en 1/3 y τ = 1.01
+       en otro 1/3 por cubeta): el escenario incluye la realidad que ADR-018 §F2.5b probaba por separado.
+     - **G2.2** se evalúa sobre δ̂ᴸ, bandas de ADR-017.
+     - **G2.3a** sustituye a la Deming: **consistencia física del canal D**: 1+β_D implícito por cubeta ∈ **[0.30, 1.00]** en Medium
+       y en Extreme (margen amplio: la crisis de arrastre, Nathan 2008, pone a C_D en descenso con log Re pero no fija un valor).
+       La igualdad entre cubetas (Wald sobre los ratios) se reporta como 🔎, **no es compuerta**: la crisis es no lineal.
+     - **G2.3b sin cambios** (validación sintética con cluster lanzador + LOO + Pustejovsky–Tipton, ya ✅ en ADR-019; se reutiliza).
+     - **G2.4** se mide sobre **δ̂ᴸ**: SE CR2 mediano de δ̂ᴸ_g < 0.03 **y** cobertura ≥ 0.90 en la sintética 241–270.
+     - **Nuevo informativo:** sesgo por parque de δᴸ inducido por c_g, contra la predicción κ̄·c (Prop. 3′).
+  5. **Declaración explícita.** Esta es una **enmienda post-datos**: observar β̂_L = +0.62 motivó revisar el estimador. Como advierte
+     Gelman y Loken (2013, *The Garden of Forking Paths*), un cambio de método a la vista del resultado puede inflar la aparente
+     confianza; para mitigarlo se eligen **semillas nuevas** 241–270, se mantiene el criterio de G2.1 (1 %), se mantienen las bandas
+     de G2.2 y G2.4, y la enmienda queda registrada aquí y en D02d con la hipótesis identificable (falla de exclusión) y la
+     validación sintética independiente.
+  6. **Cadena hacia abajo.** F3 en adelante deben correr su análisis **primario con ρ̂ᴸ** y reportar **ρ̃ᴰ = ρ̂ᴸ · (1+β̂_D(c))** como
+     sensibilidad por cubeta (actualizado en ROADMAP §4-F3 y ADR). "Reportar ambos" es parte del contrato de las compuertas de F3+.
+- **Alternativas.** Mantener Prop. 2″ con un instrumento distinto (vy0 del 9P a 50 ft): descartado por razonamiento (acumula ya
+  parte del arrastre). Reparametrizar C_L en el estimador con un término explícito de "esfuerzo" (p. ej. SpinRate centrado por
+  lanzador): no identificable con SpinAxis inferido. Dejar la Deming como compuerta: sobreseído: el ratio 1.52 era síntoma de la
+  misma dependencia de Re en el canal D, no de un problema de calibración.
+- **Consecuencias.** F2 cierra en lift-primary. F3 arranca con la regla de doble canal. Los artefactos para F3+ son `ρ̂ᴸ` (primario,
+  con su SE CR2) y `1+β̂_D(c)` (SE delta). El 2SLS queda documentado en el reporte y en D02d como diagnóstico; su no uso para
+  decidir se registra con la referencia a Angrist y Pischke 2009 (falla de exclusión) y Gelman y Loken 2013 (enmienda post-datos).

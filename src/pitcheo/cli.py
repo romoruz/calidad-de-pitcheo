@@ -243,6 +243,8 @@ def cmd_f02(a, cfg):
     etapa = a.etapa
     if a.escala and etapa == "todo":
         etapa = "escala"
+    if etapa == "cerrar":
+        sys.exit(fase02.correr_cerrar(cfg, rep_dir))
     if etapa == "escala":
         n = a.escala or 635000
         destino = rep_dir / "f02_escala.json"
@@ -333,9 +335,9 @@ def main(argv=None):
     s = sp.add_parser("f02", help="densidad del aire por juego desde la trayectoria (Props. 1, 2′, 3′)")
     s.add_argument("--sintetico", type=int, default=0, metavar="N",
                    help="genera N juegos sintéticos con física exacta y corre F2 sobre ellos (no escribe en reports/)")
-    s.add_argument("--etapa", choices=["escala", "sintetica", "real", "todo"], default="todo",
-                   help="etapa a correr (ADR-019): escala | sintetica (estudio de simulación) | real (usa f02_sintetica.json) "
-                        "| todo (sintetica + real)")
+    s.add_argument("--etapa", choices=["escala", "sintetica", "real", "cerrar", "todo"], default="todo",
+                   help="etapa a correr (ADR-019/020): escala | sintetica | real (usa f02_sintetica.json) | "
+                        "cerrar (PR+squash+tag si gates reales ✅) | todo (sintetica + real)")
     s.add_argument("--escala", type=int, default=0, metavar="N",
                    help="atajo de --etapa escala: genera ≈N lanzamientos sintéticos, corre el análisis y reporta tiempo y RAM")
     s.add_argument("--reusar", action="store_true",

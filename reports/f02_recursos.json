@@ -1,17 +1,17 @@
 {
   "etapas": {
     "sintetica": {
-      "segundos": 226.2,
-      "ram_pico_mb": 1505,
-      "cpu_pct_equipo": 72.6,
-      "cpu_pct_sistema": 74.6,
-      "cpu_segundos": 657.0,
+      "segundos": 389.6,
+      "ram_pico_mb": 1570,
+      "cpu_pct_equipo": 73.4,
+      "cpu_pct_sistema": 75.6,
+      "cpu_segundos": 1143.4,
       "nucleos_logicos": 4,
-      "estado": "ok",
-      "codigo_salida": 0,
+      "estado": "compuerta_fallida",
+      "codigo_salida": 2,
       "comando": "uv run pitcheo f02 --etapa sintetica",
       "hash_codigo": "b117525b18cbe8c2",
-      "fecha": "2026-10-07T15:31:59+00:00"
+      "fecha": "2026-10-07T17:31:03+00:00"
     },
     "escala": {
       "segundos": 210.4,

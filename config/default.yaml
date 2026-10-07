@@ -150,7 +150,10 @@ f02:
   g23b_df: pustejovsky_tipton    # pustejovsky_tipton (ADR-018; t Satterthwaite por componentes CR2) | normal (compat)
   # Normalización δ̄ (ADR-018): por año (True, default) o por media global de la referencia (compat ADR-017).
   por_anio: true
-  # Prop. 2″ (ADR-018): corrección de atenuación por Reynolds.
+  # Canal primario del estudio de simulación de G2.1 (ADR-020): "L" sobre δ̂ᴸ bruto (β_L = 0); "corregido" o "bruto" por compat.
+  g21_primario: L
+  # Prop. 2″ (ADR-018/019): queda como diagnóstico de Reynolds; su β̂_L contradecía la literatura con falla de exclusión
+  # plausible dentro de lanzador (ADR-020 §Alternativas). `activa=true` solo imprime diagnósticos; ya NO decide la adopción.
   prop2pp:
     activa: true                # si False, solo se reporta como diagnóstico y no se adopta
     tolerancia_equivalencia: 0.10   # |p − b| + 1.96·SE(dif) < tolerancia ⇒ equivalencia aprobada
@@ -163,16 +166,21 @@ f02:
     g21_error_max: 0.01          # G2.1: por nivel, |sesgo relativo medio| + 1.96·MCSE < 1 % (R réplicas)
     g22_extreme: [-0.30, -0.15]  # G2.2 (b): media de δ en Extreme
     g22_componente: [-0.32, -0.20]   # G2.2 (c): componente de menor media de la mezcla de Extreme
-    g23_pendiente: [0.85, 1.15]  # G2.3a: Deming de δ^L sobre δ^D
+    g23_pendiente: [0.85, 1.15]  # (ADR-017; sobreseído por ADR-020: ya no es compuerta)
+    g23a_1mas_beta_D: [0.30, 1.00]  # G2.3a (ADR-020): 1+β_D implícito por cubeta en Medium y Extreme
     g23b_potencia_min: 0.80      # G2.3b: potencia para |c| = 0.02 (global y por tipo de sesgo)
     g23b_fpr_max: 0.05           # G2.3b: FPR nominal; la cota efectiva es 0.05 + 1.96·√(0.05·0.95/n_limpios) (ADR-019 D3)
     g24_se_max: 0.03             # G2.4: mediana del SE CR2 de δ̂_g
     g24_cobertura_min: 0.90      # G2.4: cobertura mínima del IC95 CR2 (sintética)
   # Sintética de F2 (generar_fisica), PROTOCOLO PRE-REGISTRADO de ADR-017: no se ajusta a la vista del resultado.
   sintetica:
-    # R = 30 réplicas, semillas NUEVAS 211-240 (ADR-019). CONSUMIDAS, no reusar: 101-110 (D02b §4) y 201-210 (D02c §8).
-    semillas: [211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230,
-               231, 232, 233, 234, 235, 236, 237, 238, 239, 240]
+    # R = 30 réplicas, semillas NUEVAS 241-270 (ADR-020). CONSUMIDAS, no reusar: 101-110 (D02b §4), 201-210 (D02c §8),
+    # 211-240 (D02c §10 / ADR-019).
+    semillas: [241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258, 259, 260,
+               261, 262, 263, 264, 265, 266, 267, 268, 269, 270]
+    # G2.1 (ADR-020): el escenario incluye calibración por parque (λ=1.02 en 1/3 y τ=1.01 en otro 1/3 por cubeta). Mide
+    # el canal L bruto (sin corregir Reynolds): mismo criterio Morris-White-Crowther sobre δ̂ᴸ.
+    g21_calibracion: true
     n_juegos: 150                # juegos por réplica (G2.1)
     lanzamientos_por_juego: 250
     n_juegos_g23b: 300           # juegos por réplica del escenario de G2.3b (18 parques)

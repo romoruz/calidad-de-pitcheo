@@ -72,19 +72,24 @@ def test_clopper_pearson_valores_conocidos():
     assert F2.clopper_pearson(10, 10)[1] == 1.0
 
 
-def _agregados(spinaxis_medido=True, se=0.009, pendiente=1.0, adoptado=True):
-    medias = {c: {"n": 20, "delta_D": v, "se_D": 0.005, "delta_L": v, "se_L": 0.01}
-              for c, v in zip(F2.CUBETAS, (0.0, -0.2, -0.28), strict=True)}
+def _agregados(spinaxis_medido=True, se=0.009, ratios=(0.60, 0.65), mezcla_extreme_L=-0.28):
+    """Agregados sintéticos para probar `evaluar_gates` con el canal L como primario (ADR-020).
+
+    `ratios` controla δ̄ᴰ por cubeta como `ratio · δ̄ᴸ`, de modo que 1+β_D ≈ ratio en Medium y Extreme. `se` es la mediana
+    del SE CR2 del canal L. `mezcla_extreme_L` fija la media del componente de menor media del GMM de δᴸ en Extreme.
+    """
+    delta_L = (0.0, -0.20, -0.28)
+    medias = {c: {"n": 20, "delta_D": delta_L[i] * (1.0 if c == "No Altitude" else ratios[i - 1]),
+                  "se_D": 0.005, "delta_L": delta_L[i], "se_L": 0.01}
+              for i, c in enumerate(F2.CUBETAS)}
     return {"medias_por_cubeta": medias, "mezcla_extreme": {"componentes": [{"media": -0.28}]},
-            "deming": {"pendiente": pendiente, "se_pendiente": 0.02, "intercepto": 0.0},
+            "mezcla_extreme_L": {"componentes": [{"media": mezcla_extreme_L}]},
+            "deming": {"pendiente": delta_L[2] / medias["Extreme Altitude"]["delta_D"] if medias["Extreme Altitude"]["delta_D"] else 1.0,
+                       "se_pendiente": 0.02, "intercepto": 0.0},
             "calibracion": {"spinaxis": {"medido": spinaxis_medido}},
-            "se": {"se_cr2_D_mediana": se, "sigma_eta_D": 0.05, "sigma_eta_L": 0.09, "se_ingenuo_D_mediana": 0.003,
-                   "efecto_diseno_D": 2.5, "metodo": "CR2"},
-            "juegos": {"confirmatorios": 100},
-            "prop2pp": ({"activada": True, "adoptado": True, "se_corregido_D_mediana": se, "medias_corregidas": medias,
-                         "mezcla_extreme_corregida": {"componentes": [{"media": -0.28}]},
-                         "deming_corregido": {"pendiente": pendiente, "se_pendiente": 0.02, "intercepto": 0.0}}
-                        if adoptado else {"activada": True, "adoptado": False})}
+            "se": {"se_cr2_D_mediana": se, "se_cr2_L_mediana": se, "sigma_eta_D": 0.05, "sigma_eta_L": 0.09,
+                   "se_ingenuo_D_mediana": 0.003, "efecto_diseno_D": 2.5, "metodo": "CR2"},
+            "juegos": {"confirmatorios": 100}, "prop2pp": {"activada": False, "adoptado": False}}
 
 
 GATES = Config.load()["f02"]["gates"]
@@ -99,8 +104,8 @@ def _sint(potencia=0.95, fpr=0.03, cobertura=0.94, sesgo=0.002, spinaxis_medido=
          "lambda": {"tasa": potencia, "rechazos": 19, "n": 20, "ic_clopper_pearson": [0.7, 0.99]},
          "tau": {"tasa": potencia, "rechazos": 19, "n": 20, "ic_clopper_pearson": [0.7, 0.99]},
          "limpio": {"tasa": fpr, "rechazos": round(fpr * n_lim), "n": n_lim, "ic_clopper_pearson": [0.0, 0.1]}}
-    return {"g21": {"R": 30, "semillas": list(range(211, 241)), "niveles": niveles, "cobertura": cobertura,
-                    "primario": "corregido"},
+    return {"g21": {"R": 30, "semillas": list(range(241, 271)), "niveles": niveles, "cobertura": cobertura,
+                    "primario": "L"},
             "g23b": {"con_calibracion": g}}
 
 
@@ -111,7 +116,9 @@ def test_gates_todo_bien_pasa():
 
 @pytest.mark.parametrize(("agr", "sint", "falla"), [
     ({}, {"sesgo": 0.0095}, "G2.1"),
-    ({"pendiente": 1.2}, {}, "G2.3a"),
+    ({"ratios": (0.20, 0.60)}, {}, "G2.3a"),             # 1+β_D Medium 0.20 fuera de [0.30, 1.00]
+    ({"ratios": (0.60, 1.05)}, {}, "G2.3a"),             # 1+β_D Extreme 1.05 fuera de [0.30, 1.00]
+    ({"mezcla_extreme_L": -0.15}, {}, "G2.2"),           # componente de menor media de Extreme fuera de banda
     ({}, {"potencia": 0.7}, "G2.3b"),
     ({}, {"fpr": 0.09}, "G2.3b"),
     ({"se": 0.035}, {}, "G2.4"),
@@ -128,14 +135,20 @@ def test_g23b_fpr_usa_la_cota_de_morris_white_crowther_y_no_0_05_a_secas():
     assert not F2.evaluar_gates(_agregados(), _sint(fpr=0.09), GATES)["G2.3b"]["ok"]
 
 
-def test_si_la_equivalencia_no_pasa_g22_g24_son_provisionales_en_bruto():
-    """ADR-019 E: sin adopción de Prop. 2″, G2.2/G2.3a/G2.4 llevan 🔎 y `provisional`; G2.1/G2.3b siguen siendo compuertas."""
-    g = F2.evaluar_gates(_agregados(adoptado=False), _sint(), GATES)
-    for k in ("G2.2", "G2.3a", "G2.4"):
-        assert g[k]["provisional"] and "🔎" in g[k]["detalle"]
-    assert not g["G2.1"].get("provisional") and not g["G2.3b"].get("provisional")
-    ok = F2.evaluar_gates(_agregados(adoptado=True), _sint(), GATES)
-    assert not any(v.get("provisional") for v in ok.values())
+def test_g23a_consistencia_fisica_del_canal_d_y_wald_informativo():
+    """ADR-020: 1+β_D = δ̄ᴰ/δ̄ᴸ por cubeta en [0.30, 1.00]; igualdad entre cubetas (Wald) solo informativa."""
+    g = F2.evaluar_gates(_agregados(ratios=(0.55, 0.65)), _sint(), GATES)
+    assert g["G2.3a"]["ok"] and "0.550" in g["G2.3a"]["detalle"] and "0.650" in g["G2.3a"]["detalle"]
+    # Ratios desiguales entre cubetas no tumban la compuerta: Wald es 🔎.
+    g2 = F2.evaluar_gates(_agregados(ratios=(0.40, 0.90)), _sint(), GATES)
+    assert g2["G2.3a"]["ok"] and "Wald" in g2["G2.3a"]["detalle"]
+    assert "crisis de arrastre" in g2["G2.3a"]["detalle"] or "🔎" in g2["G2.3a"]["detalle"]
+
+
+def test_ninguna_compuerta_es_provisional_bajo_adr020():
+    """ADR-020 sobresee la bandera `provisional` de ADR-019: lift-primary siempre; 2SLS es solo diagnóstico."""
+    g = F2.evaluar_gates(_agregados(), _sint(), GATES)
+    assert not any(v.get("provisional") for v in g.values())
 
 
 def test_g23b_real_inferido_no_hace_fallar_la_compuerta():
@@ -193,17 +206,6 @@ def test_etapas_sintetica_y_real_por_separado_y_firma_vieja(tmp_path):
         F2.cargar_sintetica(cfg["f02"], tmp_path / "otra")
 
 
-def test_correr_detiene_la_fase_si_la_equivalencia_no_pasa(tmp_path):
-    """ADR-019 E: con tolerancia imposible Prop. 2″ no se adopta → detenido, ok=False, G2.2–G2.4 en bruto con 🔎."""
-    cfg = _cfg_chico()
-    cfg["f02"]["prop2pp"]["tolerancia_equivalencia"] = 1e-9
-    res = F2.correr(cfg, _df_chico(), tmp_path / "d.parquet", tmp_path / "rep", tmp_path / "logs", tmp_path / "fig")
-    assert res["detenido"] and not res["ok"]
-    assert all(res["gates"][k]["provisional"] for k in ("G2.2", "G2.3a", "G2.4"))
-    md = (tmp_path / "rep" / "FASE_02.md").read_text(encoding="utf-8")
-    assert "FASE DETENIDA" in md and "🔎" in md
-
-
 def test_correr_de_punta_a_punta_en_chico(tmp_path):
     cfg = _cfg_chico()
     df = _df_chico()
@@ -218,3 +220,124 @@ def test_correr_de_punta_a_punta_en_chico(tmp_path):
     assert "pitcher_" not in md and "pitcher_" not in json.dumps(js)
     assert "delta_corregido_D" not in json.dumps(js)
     assert sorted(p.name for p in (tmp_path / "fig").iterdir()) == ["c_g_por_cubeta.png", "delta_por_cubeta.png", "deming_delta_L_vs_D.png"]
+
+
+# --------------------------------------------------------------------------
+# ADR-020: ratio D/L con SE delta, Wald informativo, resumen_g21(primario="L")
+# --------------------------------------------------------------------------
+def test_ratio_d_sobre_l_recupera_1_mas_beta_d_con_se_delta():
+    """1+β_D = δ̄ᴰ/δ̄ᴸ con SE delta (Cov=0, conservador). Para δ̄ᴰ=−0.1, δ̄ᴸ=−0.2 el ratio es 0.5 y SE conocido."""
+    r = F2._ratio_D_sobre_L({"media": -0.10, "se": 0.01}, {"media": -0.20, "se": 0.015})
+    assert r["ratio"] == pytest.approx(0.5)
+    import math
+    esperado = math.sqrt((0.01 / 0.20) ** 2 + (0.10 * 0.015 / 0.20 ** 2) ** 2)
+    assert r["se"] == pytest.approx(esperado)
+    assert F2._ratio_D_sobre_L({"media": -0.1, "se": None}, {"media": -0.2, "se": 0.01})["ratio"] is None
+    assert F2._ratio_D_sobre_L({"media": -0.1, "se": 0.01}, {"media": 0.0, "se": 0.01})["ratio"] is None
+
+
+def test_wald_igualdad_ratios_detecta_pero_no_tumba_g23a():
+    """Dos ratios iguales → χ² = 0, p = 1; diferentes con SE chicos → χ² grande, p ≈ 0."""
+    r = F2.wald_igualdad_ratios([{"ratio": 0.6, "se": 0.03}, {"ratio": 0.6, "se": 0.03}])
+    assert r["chi2"] == pytest.approx(0.0) and r["df"] == 1 and r["p"] == pytest.approx(1.0)
+    r2 = F2.wald_igualdad_ratios([{"ratio": 0.4, "se": 0.02}, {"ratio": 0.9, "se": 0.02}])
+    assert r2["chi2"] > 10 and r2["p"] < 1e-5
+    r3 = F2.wald_igualdad_ratios([{"ratio": 0.5, "se": 0.01}])
+    assert r3["chi2"] is None and r3["df"] == 0
+
+
+def test_resumen_g21_primario_L_usa_delta_L_y_error_L():
+    """ADR-020: con `primario="L"` el estudio G2.1 se evalúa sobre δ̂ᴸ bruto y errores de recuperación de ρ en el canal L."""
+    rng = np.random.default_rng(0)
+    reps = []
+    for k in range(5):
+        n = 60
+        cubeta = np.array([CUB[i % 2] for i in range(n)])
+        verdad = rng.normal(-0.2, 0.05, n)
+        delta_L = verdad + rng.normal(0, 0.005, n)
+        delta_D = 0.6 * verdad + rng.normal(0, 0.005, n)                        # bruto, con β_D ≈ −0.4
+        err_L = {c: float(np.mean(np.exp(delta_L[cubeta == c])) / np.mean(np.exp(verdad[cubeta == c])) - 1.0) for c in CUB}
+        err_D = {c: float(np.mean(np.exp(delta_D[cubeta == c])) / np.mean(np.exp(verdad[cubeta == c])) - 1.0) for c in CUB}
+        reps.append({"semilla": k, "error": err_D, "error_L": err_L, "n_lanzamientos": 100,
+                     "delta": delta_D, "delta_L": delta_L, "verdad": verdad,
+                     "se": np.full(n, 0.01), "se_L": np.full(n, 0.01), "cubeta": cubeta,
+                     "sigma_eta": 0.05, "sigma_eta_L": 0.09, "metodo_se": "CR2", "segundos": 1.0,
+                     "deming_pendiente": 1.0, "deming_se": 0.02, "cache": False})
+    rL = F2.resumen_g21(reps, 0.01, primario="L")
+    rD = F2.resumen_g21(reps, 0.01, primario="bruto")
+    assert rL["primario"] == "L" and rD["primario"] == "bruto"
+    assert abs(rL["niveles"][CUB[0]]["sesgo_rel"]) < 0.02
+    assert abs(rD["niveles"][CUB[0]]["sesgo_rel"]) > 5 * abs(rL["niveles"][CUB[0]]["sesgo_rel"])  # D bruto muy atenuado
+
+
+def test_kw_g21_incluye_calibracion_por_parque_cuando_se_activa():
+    """ADR-020: G2.1 opera sobre un escenario con λ/τ por parque (1/3+1/3). El esquema es determinista en la semilla."""
+    sc = {"n_juegos": 150, "lanzamientos_por_juego": 250, "beta_D": -0.3, "beta_L": 0.0,
+          "lambda_escala": 1.02, "tau_reloj": 1.01, "g21_calibracion": True}
+    kw = F2._kw_g21(sc, 241)
+    assert "cubetas" in kw and "calibracion_parques" in kw
+    from pitcheo import sintetico as N
+    assert kw["cubetas"] is N.CUBETAS_G23B
+    assert kw == F2._kw_g21(sc, 241)                                            # determinista
+    sin_cal = F2._kw_g21({**sc, "g21_calibracion": False}, 241)
+    assert "cubetas" not in sin_cal and "calibracion_parques" not in sin_cal
+
+
+# --------------------------------------------------------------------------
+# Etapa `cerrar` (ADR-020 R5): PR + squash + tag solo si todas las compuertas reales ✅
+# --------------------------------------------------------------------------
+def _escribe_rep(gates: dict, tmp_path):
+    (tmp_path / "fase_02.json").write_text(json.dumps({"gates": gates}), encoding="utf-8")
+    return tmp_path
+
+
+def test_correr_cerrar_aborta_sin_fase_02_json(tmp_path, capsys):
+    cfg = {"rutas": {"reportes": str(tmp_path / "rep")}}
+
+    class _Cfg(dict):
+        def ruta(self, k):
+            from pathlib import Path
+            return Path(self["rutas"][k])
+    assert F2.correr_cerrar(_Cfg(cfg), tmp_path / "x") == 2
+    assert "falta" in capsys.readouterr().err
+
+
+def test_correr_cerrar_aborta_si_hay_gate_rojo(tmp_path, capsys):
+    gates = {k: {"ok": True} for k in ("G2.1", "G2.2", "G2.3b", "G2.4")}
+    gates["G2.3a"] = {"ok": False}                                             # un rojo
+    _escribe_rep(gates, tmp_path)
+    assert F2.correr_cerrar(type("C", (dict,), {"ruta": lambda s, k: tmp_path})(), tmp_path) == 2
+    assert "no todas las compuertas" in capsys.readouterr().err
+
+
+def test_correr_cerrar_aborta_si_hay_gate_provisional(tmp_path, capsys):
+    gates = {k: {"ok": True} for k in ("G2.1", "G2.2", "G2.3a", "G2.3b", "G2.4")}
+    gates["G2.2"]["provisional"] = True                                         # 🔎
+    _escribe_rep(gates, tmp_path)
+    assert F2.correr_cerrar(type("C", (dict,), {"ruta": lambda s, k: tmp_path})(), tmp_path) == 2
+    assert "provisionales" in capsys.readouterr().err
+
+
+def test_correr_cerrar_llama_pr_squash_y_tag_cuando_todo_pasa(tmp_path, capsys, monkeypatch):
+    gates = {k: {"ok": True, "detalle": f"{k} ok"} for k in ("G2.1", "G2.2", "G2.3a", "G2.3b", "G2.4")}
+    _escribe_rep(gates, tmp_path)
+    monkeypatch.setattr(F2, "_rama_actual", lambda: "fase02")
+
+    import subprocess
+    llamadas = []
+
+    def _run(cmd, check=False, capture_output=False, text=False, cwd=None):
+        llamadas.append(cmd)
+        class R:
+            returncode, stdout, stderr = 0, "", ""
+        return R()
+    monkeypatch.setattr(subprocess, "run", _run)
+    rc = F2.correr_cerrar(type("C", (dict,), {"ruta": lambda s, k: tmp_path})(), tmp_path)
+    assert rc == 0
+    # El trabajo clave: git push, gh pr create, gh pr merge --squash, git tag fase02, git push del tag.
+    aplanado = [" ".join(c) for c in llamadas]
+    assert any("git push -u origin fase02" in c for c in aplanado)
+    assert any("gh pr create --base main --head fase02" in c for c in aplanado)
+    assert any("gh pr merge fase02 --squash" in c for c in aplanado)
+    assert any("git tag -a fase02" in c for c in aplanado)
+    assert any("git push origin refs/tags/fase02" in c for c in aplanado)

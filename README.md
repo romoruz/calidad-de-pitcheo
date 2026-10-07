@@ -81,9 +81,10 @@ En local, con `data/interim/pitches.parquet` (salida de F0). **Por etapas** (ADR
 físicos que debe quedar usable:
 
 ```bash
-bash scripts/fases/f02.sh --etapa real --cpu-max 300      # solo el análisis sobre los datos reales
-bash scripts/fases/f02.sh --etapa sintetica               # estudio de simulación (R = 30, semillas 211-240; usa la caché)
-bash scripts/fases/f02.sh                                 # todo: pruebas → escala (se salta si no cambió el código) → sintetica → real
+bash scripts/fases/f02.sh --etapa real --cpu-max 300 --commit  # solo el análisis sobre los datos reales (lift-primary, ADR-020)
+bash scripts/fases/f02.sh --etapa sintetica                    # estudio de simulación (R = 30, semillas 241-270; usa la caché)
+bash scripts/fases/f02.sh --etapa cerrar                       # si G2.1-G2.4 ✅ en real: PR → main, squash merge y tag fase02
+bash scripts/fases/f02.sh                                      # todo: pruebas → escala (se salta si no cambió el código) → sintetica → real
 # opciones: --cpu-max N (tope en % de un núcleo, vía systemd-run --user --scope si existe), --n-jobs N, --sin-cache, --commit
 ```
 
@@ -94,18 +95,20 @@ commitea si una etapa fue interrumpida o falló con error (una compuerta fallida
 La etapa `real` lee `reports/f02_sintetica.json` y exige que su firma (config + hash de `sintetico.py`/`fisica.py`) coincida.
 La sintética se cachea en `reports/cache/f02_sint/*.npz` (fuera de git; llave = config + semilla + hash del código).
 
-Implementa las Props. 1, 2′, 2″ y 3″ de `docs/MODELO_MATEMATICO.md` §F2 y los ADR-017 a 019 (`docs/DECISIONES.md`):
+Implementa las Props. 1, 2′, 2‴ y 3″ de `docs/MODELO_MATEMATICO.md` §F2 y los ADR-017 a **020** (`docs/DECISIONES.md`):
 
 - **Solver.** LSMR disperso (Fong y Saunders 2011); equivale a las proyecciones alternadas a ≤ 1e-8 (prueba de regresión).
-- **Prop. 2″ (Reynolds).** δ̂_c = (1+β_c)·log ρ atenúa la altitud; β_c se estima por **2SLS** con `RelSpeed` como instrumento de
-  log‖v̄‖ (MCO queda sesgado por endogeneidad, ADR-019) y δ̃_c = δ̂_c/(1+β̂_c). **En datos reales la equivalencia
-  (1+β̂_L)/(1+β̂_D) vs Deming (±0.10) decide**: si pasa, δ̃ es primario para G2.2–G2.4; si no, G2.2–G2.4 quedan en bruto con 🔎 y la
-  fase se **detiene**.
-- **G2.1 / G2.3b / cobertura de G2.4 son compuertas sintéticas** (R = 30, semillas 211–240; 101–110 y 201–210 consumidas).
-  G2.1: |sesgo|+1.96·MCSE < 1 % sobre δ̃. G2.3b: ĉ por parque con detector ê (contraste LOO, cluster lanzador, t de Pustejovsky y
-  Tipton, BH 5 %), potencia ≥ 0.80 y FPR ≤ 0.05 + 1.96·√(0.05·0.95/n_limpios) con IC de Clopper–Pearson; su aplicación a datos
-  reales es 🔎 informativa (n/e si `SpinAxis` es circular, NaN o no evaluable: fail-closed). **No se ajustan umbrales, semillas ni
-  tamaños a la vista del resultado**: si una compuerta falla, se detiene y se documenta en `docs/discrepancias/`.
+- **Prop. 2‴ lift-primary (ADR-020).** ρ̂_g/ρ_ref = exp(δ̂ᴸ_g) con β_L = 0. El canal D es secundario: 1+β_D por cubeta =
+  δ̄ᴰ/δ̄ᴸ (SE delta de dos vías). El 2SLS con `RelSpeed` como instrumento (Prop. 2″) **queda como diagnóstico 🔎**: la corrida real
+  (6f8761c) dio β̂_L^IV = +0.62, lo que contradice C_L ≈ C_L(S) (Nathan 2008) y se explica por falla de exclusión dentro de
+  lanzador (Angrist y Pischke 2009) con SpinAxis inferido (R² = 0.998, fail-closed). Enmienda post-datos (Gelman y Loken 2013;
+  salvaguardas: semillas nuevas 241–270, bandas de G2.2/G2.4 sin cambio). Detalle en `docs/discrepancias/D02d.md`.
+- **G2.1 / G2.3b / cobertura de G2.4 son compuertas sintéticas** (R = 30, semillas **241–270**; consumidas: 101–110, 201–210,
+  211–240). G2.1: |sesgo|+1.96·MCSE < 1 % sobre **δ̂ᴸ bruto**, con generador β_D=−0.30, β_L=0 y calibración por parque (λ=1.02 en
+  1/3, τ=1.01 en otro 1/3). G2.3a nueva: 1+β_D implícito por cubeta ∈ [0.30, 1.00] en Medium y Extreme (Wald de igualdad entre
+  cubetas 🔎 informativo). G2.3b sin cambios (reutiliza validación sintética de ADR-019). G2.4 sobre δ̂ᴸ (SE CR2 < 0.03 y
+  cobertura ≥ 0.90). **No se ajustan umbrales, semillas ni tamaños a la vista del resultado**: si una compuerta falla, se detiene
+  y se documenta en `docs/discrepancias/`.
 - **Normalización por año:** δ̄_{No Altitude, year} = 0 en cada año; medias y contrastes dentro del año y luego ponderados.
 - **Escala.** `uv run pitcheo f02 --etapa escala --escala 635000` (tiempo y RAM pico en `reports/f02_escala.json`).
 

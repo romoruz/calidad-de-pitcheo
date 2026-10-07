@@ -11,6 +11,8 @@
 #   sintetica  estudio de simulación de G2.1, G2.3b y cobertura de G2.4 (R = 30, semillas 211-240; reports/f02_sintetica.json).
 #              Usa la caché reports/cache/f02_sint/ (fuera de git) salvo --sin-cache.
 #   real       análisis sobre los datos reales + compuertas (lee reports/f02_sintetica.json; falla si falta o está vieja).
+#   cerrar     ADR-020 R5: solo si TODAS las compuertas G2.1–G2.4 están ✅ en reports/fase_02.json, abre PR fase02→main con
+#              squash merge, crea el tag `fase02` y empuja ambos. Si algún gate no es ✅, aborta sin tocar nada (código 2).
 #   todo       pruebas → escala → sintetica → real (default).
 #
 # Pensado para una laptop de 4 núcleos físicos / 8 hilos que debe quedar usable: `nice -n 10 ionice -c3`, joblib con
@@ -37,7 +39,7 @@ while [ $# -gt 0 ]; do
     *) echo "argumento desconocido: $1" >&2; exit 64 ;;
   esac
 done
-case "$ETAPA" in pruebas|escala|sintetica|real|todo) ;; *) echo "--etapa inválida: $ETAPA" >&2; exit 64 ;; esac
+case "$ETAPA" in pruebas|escala|sintetica|real|cerrar|todo) ;; *) echo "--etapa inválida: $ETAPA" >&2; exit 64 ;; esac
 
 # (1) Entorno fuera de la carpeta del repo.
 export UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-$HOME/.venvs/calidad-de-pitcheo}"
@@ -109,12 +111,14 @@ st_pruebas()   { run_etapa pruebas uv run pytest -q; }
 st_escala()    { run_etapa escala uv run pitcheo f02 --etapa escala --escala 635000 "$@" ${EXTRA[@]+"${EXTRA[@]}"}; }
 st_sintetica() { run_etapa sintetica uv run pitcheo f02 --etapa sintetica ${SINC[@]+"${SINC[@]}"} ${EXTRA[@]+"${EXTRA[@]}"}; }
 st_real()      { run_etapa real uv run pitcheo f02 --etapa real ${EXTRA[@]+"${EXTRA[@]}"}; }
+st_cerrar()    { run_etapa cerrar uv run pitcheo f02 --etapa cerrar; }
 
 case "$ETAPA" in
   pruebas)   st_pruebas ;;
   escala)    st_escala ;;
   sintetica) st_sintetica ;;
   real)      st_real ;;
+  cerrar)    st_cerrar ;;
   todo)
     st_pruebas || { echo "[f02] las pruebas fallaron: no se toca nada más." >&2; exit 1; }
     st_escala --reusar
