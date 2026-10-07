@@ -46,6 +46,17 @@ def _log_rho_baro(h_m: float, a: float = 2.25577e-5, b: float = 5.25588) -> floa
 # Análisis sobre un DataFrame por lanzamiento (datos reales de F0 o sintética)
 # ==========================================================================
 
+def _alinear_a(juegos_destino: np.ndarray, juegos_origen: np.ndarray, valores: np.ndarray) -> np.ndarray:
+    """Reordena `valores` (filas por `juegos_origen`) al orden de `juegos_destino`; NaN si el juego falta."""
+    pos = {g: i for i, g in enumerate(juegos_origen)}
+    out = np.full((len(juegos_destino),) + valores.shape[1:], np.nan)
+    for k, g in enumerate(juegos_destino):
+        i = pos.get(g)
+        if i is not None:
+            out[k] = valores[i]
+    return out
+
+
 def _media_por_anio_ponderada(delta: np.ndarray, mascara: np.ndarray, anio_g: np.ndarray,
                               W) -> dict:
     """δ̄ de una cubeta como media sobre años del `δ̄_year`, ponderada por juegos de la cubeta en cada año.
@@ -163,10 +174,11 @@ def analizar(df: pl.DataFrame, f02: dict, fis: dict, semilla: int = 2026) -> dic
     idx = np.flatnonzero(conf)
     dem = D.deming(dd[idx], dl[idx], se["se"][idx, 0], se["se"][idx, 1], W[idx]) if len(idx) > 5 else None
 
-    # --- Prop. 2″ (ADR-018): β̂_c de Reynolds, prueba de sobreidentificación y δ̃ corregido.
+    # --- Prop. 2″ (ADR-018/019): β̂_c de Reynolds (2SLS con RelSpeed si hay; MCO si no), sobreidentificación y δ̃.
     p2pp_cfg = f02.get("prop2pp", {}) or {}
     prop2pp: dict = {"activada": bool(p2pp_cfg.get("activa", True)), "adoptado": False}
     medias_corr = mezcla_ext_corr = deming_corr = None
+    dd_c = dl_c = se_c = None
     try:
         r2pp = D.estimar_reynolds(d, f02, referencia, por_anio=f02.get("por_anio", True))
         pend_obs = dem["pendiente"] if dem else float("nan")
@@ -177,28 +189,31 @@ def analizar(df: pl.DataFrame, f02: dict, fis: dict, semilla: int = 2026) -> dic
         identificable = r2pp["r2_colinealidad_log_v"] < r2_tope
         adoptado = bool(prop2pp["activada"] and sobre["equivalencia"] and identificable)
         prop2pp.update({"beta": r2pp["beta"].tolist(), "se_beta": r2pp["se_beta"].tolist(),
+                        "beta_mco": r2pp["beta_mco"].tolist(), "estimador": r2pp["estimador"], "s_exogena": r2pp["s_exogena"],
+                        "primera_etapa": r2pp["primera_etapa"], "n_instrumento_perdido": r2pp["n_instrumento_perdido"],
                         "r2_colinealidad_log_v": r2pp["r2_colinealidad_log_v"], "r2_tope": r2_tope,
                         "identificable": bool(identificable), "sobreidentificacion": sobre, "adoptado": adoptado,
-                        "iteraciones": r2pp["iteraciones"], "convergio": r2pp["convergio"],
-                        "n_lanzamientos": r2pp["n_lanzamientos"], "p_cr2": r2pp["p_cr2"]})
+                        "convergio": r2pp["convergio"], "n_lanzamientos": r2pp["n_lanzamientos"], "p_cr2": r2pp["p_cr2"]})
+        dd_c = _alinear_a(dsg.juegos, r2pp["juegos"], r2pp["delta_corregido"])[:, 0]
+        dl_c = _alinear_a(dsg.juegos, r2pp["juegos"], r2pp["delta_corregido"])[:, 1]
+        se_c = _alinear_a(dsg.juegos, r2pp["juegos"], r2pp["se_delta_corregido"])
         if adoptado:
-            dd_c = r2pp["delta_corregido"][:, 0]
-            dl_c = r2pp["delta_corregido"][:, 1]
-            se_c = r2pp["se_delta_corregido"]
+            conf_c = conf & np.isfinite(dd_c) & np.isfinite(dl_c)
             medias_corr = {}
             for c in CUBETAS:
-                m = _media_por_anio_ponderada(dd_c, conf & (cub == c), anio_juego_full, W)
-                ml = _media_por_anio_ponderada(dl_c, conf & (cub == c), anio_juego_full, W)
+                m = _media_por_anio_ponderada(dd_c, conf_c & (cub == c), anio_juego_full, W)
+                ml = _media_por_anio_ponderada(dl_c, conf_c & (cub == c), anio_juego_full, W)
                 medias_corr[c] = {"n": m["n"], "delta_D": m["media"], "se_D": m["se"],
                                   "delta_L": ml["media"], "se_L": ml["se"]}
-            mezcla_ext_corr = D.mezcla_bic(dd_c[conf & (cub == "Extreme Altitude")],
-                                           f02.get("gmm_max_comp", 4), f02.get("gmm_n_init", 5), semilla)                 if (conf & (cub == "Extreme Altitude")).sum() >= 8 else None
-            idx_c = np.flatnonzero(conf)
-            deming_corr = D.deming(dd_c[idx_c], dl_c[idx_c], se_c[idx_c, 0], se_c[idx_c, 1], W[idx_c])                 if len(idx_c) > 5 else None
+            mezcla_ext_corr = D.mezcla_bic(dd_c[conf_c & (cub == "Extreme Altitude")],
+                                           f02.get("gmm_max_comp", 4), f02.get("gmm_n_init", 5), semilla) \
+                if (conf_c & (cub == "Extreme Altitude")).sum() >= 8 else None
+            idx_c = np.flatnonzero(conf_c)
+            deming_corr = D.deming(dd_c[idx_c], dl_c[idx_c], se_c[idx_c, 0], se_c[idx_c, 1], W[idx_c]) \
+                if len(idx_c) > 5 else None
             prop2pp.update({"medias_corregidas": medias_corr, "mezcla_extreme_corregida": mezcla_ext_corr,
                             "deming_corregido": deming_corr,
-                            "delta_corregido_D": dd_c, "delta_corregido_L": dl_c,
-                            "se_delta_corregido": se_c})
+                            "se_corregido_D_mediana": float(np.nanmedian(se_c[conf_c, 0]))})
     except (ValueError, np.linalg.LinAlgError) as exc:
         prop2pp["error"] = str(exc)
 
@@ -232,6 +247,11 @@ def analizar(df: pl.DataFrame, f02: dict, fis: dict, semilla: int = 2026) -> dic
         "n_efectivo": est["n_efectivo"], "baja_confianza": baja, "delta_D": dd, "delta_L": dl,
         "se_cr2_D": se["se"][:, 0], "se_cr2_L": se["se"][:, 1], "se_ingenuo_D": se["se_ingenuo"][:, 0],
         "c_hat_dif": c_dif, "c_hat_e": c_e, "en_referencia": res["en_referencia"],
+        "delta_D_tilde": dd_c if dd_c is not None else np.full(n_g, np.nan),
+        "delta_L_tilde": dl_c if dl_c is not None else np.full(n_g, np.nan),
+        "se_tilde_D": se_c[:, 0] if se_c is not None else np.full(n_g, np.nan),
+        "se_tilde_L": se_c[:, 1] if se_c is not None else np.full(n_g, np.nan),
+        "prop2pp_adoptado": np.full(n_g, bool(prop2pp.get("adoptado"))),
         "rel_height_resid_ft": rh_g if rh_g is not None else np.full(n_g, np.nan),
         "sesgo_plateloc_z_ft": sp_g if sp_g is not None else np.full(n_g, np.nan)})
     agregados = {
@@ -342,41 +362,54 @@ def error_recuperacion(s: dict) -> dict:
     return out
 
 
-def replica_g21(semilla: int, sc: dict, f02: dict) -> dict:
-    """Una réplica del estudio de simulación de G2.1: genera, estima δ̂ y (opcional) δ̃ corregido por Reynolds (ADR-018).
+def _kw_g21(sc: dict) -> dict:
+    return {"n_juegos": sc["n_juegos"], "lanzamientos_por_juego": sc["lanzamientos_por_juego"],
+            "beta_D": sc.get("beta_D", 0.0), "beta_L": sc.get("beta_L", 0.0)}
 
-    Si `prop2pp.activa=True`, también estima β̂ y expone `delta_corregido` y `se_corregido` para que `resumen_g21`
-    pueda medir recuperación y cobertura sobre δ̃ (el **primario** en ADR-018 cuando la sintética tiene β explícito).
+
+def replica_g21(semilla: int, sc: dict, f02: dict, usar_cache: bool = True) -> dict:
+    """Una réplica del estudio de simulación de G2.1: genera (con caché), estima δ̂ y δ̃ (Prop. 2″, ADR-018/019).
+
+    Si `prop2pp.activa`, también estima β̂ (2SLS con RelSpeed) y expone `delta_corregido` y `se_corregido` (SE delta
+    method con Var(β̂)), de modo que `resumen_g21` mide recuperación y cobertura sobre δ̃, el primario. Calcula además la
+    Deming observada y la equivalencia (1+β̂_L)/(1+β̂_D) vs Deming **solo como información** (ADR-019).
     """
-    from .sintetico import generar_fisica
+    from . import cache_sint, recursos
+    recursos.en_worker_un_hilo()
     t0 = time.time()
-    df, v = generar_fisica(sc["n_juegos"], sc["lanzamientos_por_juego"], semilla,
-                           beta_D=sc.get("beta_D", 0.0), beta_L=sc.get("beta_L", 0.0))
+    df, v, hit = cache_sint.generar_con_cache("g21", semilla, _kw_g21(sc), usar_cache)
     s = _estimar_sintetica(df, v, f02, con_se=True)
-    out = {"semilla": semilla, "error": error_recuperacion(s), "n_lanzamientos": df.height,
-           "delta": s["delta"][:, 0], "verdad": s["verdad"], "se": s["se"]["se"][:, 0], "cubeta": s["cubeta"],
-           "sigma_eta": float(s["se"]["sigma_eta"][0]), "metodo_se": s["se"]["metodo"], "segundos": time.time() - t0}
+    dsg, d, est = s["dsg"], s["d"], s["est"]
+    u = est["mascara"]
+    W = D.pesos_juego_lanzador(d["juego"].to_numpy()[u], d["lanzador"].to_numpy()[u], dsg.juegos)
+    dd, dl = est["res"]["delta"][:, 0], est["res"]["delta"][:, 1]
+    dem = D.deming(dd, dl, s["se"]["se"][:, 0], s["se"]["se"][:, 1], W)
+    out = {"semilla": semilla, "error": error_recuperacion(s), "n_lanzamientos": df.height, "cache": hit,
+           "delta": dd, "verdad": s["verdad"], "se": s["se"]["se"][:, 0], "cubeta": s["cubeta"],
+           "sigma_eta": float(s["se"]["sigma_eta"][0]), "metodo_se": s["se"]["metodo"],
+           "deming_pendiente": float(dem["pendiente"]), "deming_se": float(dem["se_pendiente"])}
     if (f02.get("prop2pp") or {}).get("activa", True):
         try:
-            r2pp = D.estimar_reynolds(s["d"], f02, f02.get("referencia", "No Altitude"),
-                                      por_anio=f02.get("por_anio", True))
-            # Alinear al orden de dsg (los dos pasan por construir_diseno con los mismos juegos; mapeamos por juego)
-            pos = {g: i for i, g in enumerate(r2pp["juegos"])}
-            juegos_est = s["dsg"].juegos
-            ix = np.array([pos[g] for g in juegos_est])
-            delta_tilde_D = r2pp["delta_corregido"][ix, 0]
-            se_tilde_D = r2pp["se_delta_corregido"][ix, 0]
+            r2pp = D.estimar_reynolds(d, f02, f02.get("referencia", "No Altitude"), por_anio=f02.get("por_anio", True))
+            delta_tilde_D = _alinear_a(dsg.juegos, r2pp["juegos"], r2pp["delta_corregido"])[:, 0]
+            se_tilde_D = _alinear_a(dsg.juegos, r2pp["juegos"], r2pp["se_delta_corregido"])[:, 0]
             err_c = {}
             for c in CUBETAS[1:]:
-                m = s["cubeta"] == c
+                m = (s["cubeta"] == c) & np.isfinite(delta_tilde_D)
                 if m.any():
                     err_c[c] = float(np.mean(np.exp(delta_tilde_D[m])) / np.mean(np.exp(s["verdad"][m])) - 1.0)
+            sob = D.sobreidentificacion_reynolds(r2pp, dem["pendiente"], dem["se_pendiente"],
+                                                 tolerancia=(f02.get("prop2pp") or {}).get("tolerancia_equivalencia", 0.10))
             out.update({"beta_D": float(r2pp["beta"][0]), "beta_L": float(r2pp["beta"][1]),
                         "se_beta_D": float(r2pp["se_beta"][0]), "se_beta_L": float(r2pp["se_beta"][1]),
+                        "beta_mco_D": float(r2pp["beta_mco"][0]), "estimador": r2pp["estimador"],
+                        "equivalencia": {k: sob[k] for k in ("pendiente_predicha", "pendiente_observada", "frontera",
+                                                              "equivalencia")},
                         "r2_colinealidad_log_v": float(r2pp["r2_colinealidad_log_v"]),
                         "error_corregido": err_c, "delta_corregido": delta_tilde_D, "se_corregido": se_tilde_D})
         except (ValueError, np.linalg.LinAlgError) as exc:
             out["error_reynolds"] = str(exc)
+    out["segundos"] = time.time() - t0
     return out
 
 
@@ -389,16 +422,20 @@ def _resumen_niveles(reps: list[dict], cota: float, campo_err: str, campo_delta:
                           "rmse": None, "cobertura": None, "juegos": 0, "errores_por_replica": e.tolist()}
             continue
         sesgo, mcse = float(e.mean()), float(e.std(ddof=1) / np.sqrt(len(e)))
-        err = np.concatenate([(r[campo_delta] - r["verdad"])[r["cubeta"] == c] for r in reps if campo_delta in r])
-        cov = np.concatenate([np.abs(r[campo_delta] - r["verdad"])[r["cubeta"] == c] <= 1.96 * r[campo_se][r["cubeta"] == c]
-                              for r in reps if campo_se in r])
+        errs, covs = [], []
+        for r in reps:
+            if campo_delta in r and campo_se in r:
+                m = (r["cubeta"] == c) & np.isfinite(r[campo_delta]) & np.isfinite(r[campo_se]) & (r[campo_se] > 0)
+                errs.append((r[campo_delta] - r["verdad"])[m])
+                covs.append(np.abs(r[campo_delta] - r["verdad"])[m] <= 1.96 * r[campo_se][m])
+        err, cov = np.concatenate(errs), np.concatenate(covs)
         niveles[c] = {"sesgo_rel": sesgo, "mcse": mcse, "cota": abs(sesgo) + 1.96 * mcse,
                       "ok": bool(abs(sesgo) + 1.96 * mcse < cota), "se_empirico": float(err.std(ddof=1)),
                       "rmse": float(np.sqrt(np.mean(err**2))), "cobertura": float(cov.mean()),
                       "juegos": len(err), "errores_por_replica": e.tolist()}
     for r in reps:
         if campo_delta in r and campo_se in r:
-            ok = np.isfinite(r[campo_se]) & (r[campo_se] > 0)
+            ok = np.isfinite(r[campo_se]) & (r[campo_se] > 0) & np.isfinite(r[campo_delta])
             cubiertos += int(np.sum(np.abs(r[campo_delta] - r["verdad"])[ok] <= 1.96 * r[campo_se][ok]))
             n_tot += int(ok.sum())
     return niveles, cubiertos, n_tot
@@ -407,7 +444,8 @@ def _resumen_niveles(reps: list[dict], cota: float, campo_err: str, campo_delta:
 def resumen_g21(reps: list[dict], cota: float, usar_corregido: bool = False) -> dict:
     """Medidas de Morris, White y Crowther (2019) sobre las R réplicas: sesgo relativo, MCSE, SE empírico, RMSE, cobertura.
 
-    `usar_corregido=True` evalúa sobre δ̃ (ADR-018: primario cuando Prop. 2″ está activa en el pipeline).
+    `usar_corregido=True` evalúa sobre δ̃ (ADR-018/019: primario cuando Prop. 2″ está activa en el pipeline), con SE delta
+    method que incluye Var(β̂). Reporta además el bruto (demo de atenuación) y la equivalencia de pendientes (informativa).
     """
     n_r = len(reps)
     tiene_corregido = all("delta_corregido" in r for r in reps)
@@ -418,32 +456,58 @@ def resumen_g21(reps: list[dict], cota: float, usar_corregido: bool = False) -> 
     out = {"R": n_r, "primario": primario, "niveles": niveles, "cobertura": cubiertos / max(n_tot, 1),
            "juegos_total": n_tot, "sigma_eta_medio": float(np.mean([r["sigma_eta"] for r in reps])),
            "lanzamientos_por_replica": [r["n_lanzamientos"] for r in reps],
-           "segundos_por_replica": [round(r["segundos"], 1) for r in reps]}
+           "segundos_por_replica": [round(r["segundos"], 1) for r in reps],
+           "replicas_desde_cache": int(sum(bool(r.get("cache")) for r in reps)),
+           "deming_pendiente_medio": float(np.mean([r["deming_pendiente"] for r in reps]))}
     if tiene_corregido:
-        out["beta_D_medio"] = float(np.mean([r["beta_D"] for r in reps]))
-        out["beta_L_medio"] = float(np.mean([r["beta_L"] for r in reps]))
-        out["beta_D_sd"] = float(np.std([r["beta_D"] for r in reps], ddof=1))
-        out["beta_L_sd"] = float(np.std([r["beta_L"] for r in reps], ddof=1))
+        out["estimador_beta"] = reps[0]["estimador"]
+        for k in ("beta_D", "beta_L", "beta_mco_D"):
+            out[f"{k}_medio"] = float(np.mean([r[k] for r in reps]))
+            out[f"{k}_sd"] = float(np.std([r[k] for r in reps], ddof=1)) if n_r > 1 else None
+        out["se_beta_D_medio"] = float(np.mean([r["se_beta_D"] for r in reps]))
         out["r2_colinealidad_log_v_medio"] = float(np.mean([r["r2_colinealidad_log_v"] for r in reps]))
-        # También reportamos el bruto para la demo de atenuación/corrección (ADR-018).
+        out["equivalencia_informativa"] = {
+            "pasan": int(sum(r["equivalencia"]["equivalencia"] for r in reps)), "R": n_r,
+            "predicha_media": float(np.mean([r["equivalencia"]["pendiente_predicha"] for r in reps])),
+            "observada_media": float(np.mean([r["equivalencia"]["pendiente_observada"] for r in reps]))}
         if primario == "corregido":
             niv_br, cub_br, nt_br = _resumen_niveles(reps, cota, "error", "delta", "se")
             out["bruto"] = {"niveles": niv_br, "cobertura": cub_br / max(nt_br, 1)}
     return out
 
 
-def replica_g23b(semilla: int, sc: dict, f02: dict, con_calibracion: bool) -> dict:
+def clopper_pearson(k: int, n: int, alfa: float = 0.05) -> tuple[float, float]:
+    """IC exacto de Clopper–Pearson (1 − alfa) para una proporción k/n."""
+    from scipy import stats
+    if n == 0:
+        return float("nan"), float("nan")
+    lo = 0.0 if k == 0 else float(stats.beta.ppf(alfa / 2, k, n - k + 1))
+    hi = 1.0 if k == n else float(stats.beta.ppf(1 - alfa / 2, k + 1, n - k))
+    return lo, hi
+
+
+def cota_fpr(n_limpios: int, nominal: float = 0.05, z: float = 1.96) -> float:
+    """Cota de aceptación del FPR medido por simulación: nominal + z·√(nominal(1−nominal)/n) (Morris, White y Crowther
+    2019 §5.2: error Monte Carlo de una proporción). Con n = 180 limpios queda 0.0818."""
+    return nominal + z * float(np.sqrt(nominal * (1.0 - nominal) / max(n_limpios, 1)))
+
+
+def replica_g23b(semilla: int, sc: dict, f02: dict, con_calibracion: bool, usar_cache: bool = True) -> dict:
     """Una réplica del escenario de G2.3b: 18 parques; λ en 1/3 y τ en otro 1/3 de los de cada cubeta (o todos limpios)."""
-    from .sintetico import CUBETAS_G23B, esquema_calibracion_parques, generar_fisica
+    from . import cache_sint, recursos
+    from .sintetico import CUBETAS_G23B, esquema_calibracion_parques
+    recursos.en_worker_un_hilo()
     esq = (esquema_calibracion_parques(CUBETAS_G23B, semilla, sc["lambda_escala"], sc["tau_reloj"])
            if con_calibracion else {})
-    df, v = generar_fisica(sc["n_juegos_g23b"], sc["lanzamientos_por_juego"], semilla, cubetas=CUBETAS_G23B,
-                           calibracion_parques=esq, beta_D=sc.get("beta_D", 0.0), beta_L=sc.get("beta_L", 0.0))
+    kw = {"n_juegos": sc["n_juegos_g23b"], "lanzamientos_por_juego": sc["lanzamientos_por_juego"],
+          "cubetas": CUBETAS_G23B, "calibracion_parques": esq, "beta_D": sc.get("beta_D", 0.0),
+          "beta_L": sc.get("beta_L", 0.0)}
+    df, v, hit = cache_sint.generar_con_cache("g23b_cal" if con_calibracion else "g23b_nulo", semilla, kw, usar_cache)
     s = _estimar_sintetica(df, v, f02, con_se=True)
     est, dsg, d, vec, res = s["est"], s["dsg"], s["d"], s["vec"], s["est"]["res"]
     u = est["mascara"]
     jk = d["lanzador_forma"].to_numpy()[u]
-    cong_lanz = d["lanzador"].to_numpy()[u].astype(str)                                                        # ADR-018: cluster = lanzador para G2.3b
+    cong_lanz = d["lanzador"].to_numpy()[u].astype(str)                                    # ADR-018: cluster = lanzador
     vv = {k: x[u] for k, x in vec.items() if isinstance(x, np.ndarray) and len(x) == len(u)}
     chk = D.verificar_spinaxis_medido(vv["spin_axis"], vv["a_tilde"], vv["v_barra"], jk, f02.get("spinaxis_desfase_min_grados", 1.0),
                                       f02.get("spinaxis_sd_min_ms2", 0.05), f02.get("spinaxis_r2_max", 0.95),
@@ -459,49 +523,63 @@ def replica_g23b(semilla: int, sc: dict, f02: dict, con_calibracion: bool) -> di
         f["tipo"] = tipo.get(f["parque"], "limpio")
     W = D.pesos_juego_lanzador(d["juego"].to_numpy()[u], d["lanzador"].to_numpy()[u], dsg.juegos)
     dem = D.deming(res["delta"][:, 0], res["delta"][:, 1], s["se"]["se"][:, 0], s["se"]["se"][:, 1], W)
-    return {"semilla": semilla, "parques": det["parques"], "spinaxis_medido": chk["medido"],
+    return {"semilla": semilla, "parques": det["parques"], "spinaxis_medido": chk["medido"], "cache": hit,
             "deming": {k: dem[k] for k in ("pendiente", "intercepto", "se_pendiente", "z_pendiente_vs_1")},
             "n_lanzamientos": df.height, "metodo_se": det["metodo_se"], "q": det["q"]}
 
 
 def resumen_g23b(reps: list[dict]) -> dict:
-    """Potencia (parques contaminados rechazados por BH) y tasa de falsos positivos (parques limpios rechazados)."""
+    """Potencia (parques contaminados rechazados por BH) y FPR (parques limpios rechazados), con IC Clopper–Pearson."""
     filas = [f for r in reps for f in r["parques"] if f.get("evaluable")]
     out: dict = {"R": len(reps), "spinaxis_medido": all(r["spinaxis_medido"] for r in reps), "q": reps[0]["q"]}
     for nombre, sel in (("lambda", lambda f: f["tipo"] == "lambda"), ("tau", lambda f: f["tipo"] == "tau"),
                         ("limpio", lambda f: f["tipo"] == "limpio")):
         x = [f for f in filas if sel(f)]
-        out[nombre] = {"n": len(x), "rechazos": int(sum(f["rechaza_bh"] for f in x)),
-                       "tasa": float(np.mean([f["rechaza_bh"] for f in x])) if x else None,
+        k = int(sum(f["rechaza_bh"] for f in x))
+        lo, hi = clopper_pearson(k, len(x))
+        out[nombre] = {"n": len(x), "rechazos": k, "tasa": float(np.mean([f["rechaza_bh"] for f in x])) if x else None,
+                       "ic_clopper_pearson": [lo, hi],
                        "c_centrado_medio": float(np.mean([f["c_centrado"] for f in x])) if x else None,
                        "c_verdad_medio": float(np.mean([f["c_verdad"] for f in x])) if x else None,
                        "se_medio": float(np.mean([f["se"] for f in x])) if x else None}
     cont = [f for f in filas if f["tipo"] != "limpio"]
+    kc = int(sum(f["rechaza_bh"] for f in cont))
     out["potencia"] = float(np.mean([f["rechaza_bh"] for f in cont])) if cont else None
+    out["potencia_ic_clopper_pearson"] = list(clopper_pearson(kc, len(cont)))
     out["fpr"] = out["limpio"]["tasa"]
+    out["fpr_cota"] = cota_fpr(out["limpio"]["n"])
     out["deming_pendiente_medio"] = float(np.mean([r["deming"]["pendiente"] for r in reps]))
     out["deming_pendientes"] = [round(r["deming"]["pendiente"], 4) for r in reps]
     out["lanzamientos_por_replica"] = [r["n_lanzamientos"] for r in reps]
+    out["replicas_desde_cache"] = int(sum(bool(r.get("cache")) for r in reps))
     return out
 
 
-def sintetica_f02(f02: dict, fis: dict) -> dict:
-    """Estudio de simulación de G2.1 (R réplicas, semillas fijas), escenario de G2.3b y cobertura del IC95 CR2 (ADR-017)."""
+def sintetica_f02(f02: dict, fis: dict, recursos_cfg: dict | None = None, usar_cache: bool | None = None) -> dict:
+    """Estudio de simulación de G2.1 (R réplicas, semillas fijas), escenario de G2.3b y cobertura (ADR-017/018/019).
+
+    Réplicas en paralelo con `recursos.n_jobs` workers de loky (BLAS a 1 hilo en cada uno; nunca -1) y caché en disco de
+    la sintética por réplica (`recursos.cache`, llave = config + semilla + hash del código).
+    """
     from joblib import Parallel, delayed
+
+    from . import cache_sint, recursos
+    rc = recursos_cfg or {}
     sc = f02["sintetica"]
-    nj = sc.get("n_jobs", -1)
+    nj = recursos.n_jobs_seguro({"recursos": rc})
+    usar = rc.get("cache", True) if usar_cache is None else usar_cache
+    recursos.limitar_principal(int(rc.get("blas_hilos_principal", 4)))
     t0 = time.time()
-    reps = Parallel(n_jobs=nj)(delayed(replica_g21)(sem, sc, f02) for sem in sc["semillas"])
-    g21 = resumen_g21(reps, f02["gates"]["g21_error_max"],
-                      usar_corregido=(f02.get("prop2pp") or {}).get("activa", True))
+    with recursos.config_paralelo(nj):
+        reps = Parallel()(delayed(replica_g21)(sem, sc, f02, usar) for sem in sc["semillas"])
+    g21 = resumen_g21(reps, f02["gates"]["g21_error_max"], usar_corregido=(f02.get("prop2pp") or {}).get("activa", True))
     g21["semillas"] = list(sc["semillas"])
     g21["n_juegos"], g21["lanzamientos_por_juego"] = sc["n_juegos"], sc["lanzamientos_por_juego"]
     t1 = time.time()
     # Planteles locales: δ̂ con y sin α_{j,k} en la primera semilla (diagnóstico de la Prop. 2′, no es compuerta).
-    from .sintetico import generar_fisica
-    df, v = generar_fisica(sc["n_juegos"], sc["lanzamientos_por_juego"], sc["semillas"][0],
-                           beta_D=sc.get("beta_D", 0.0), beta_L=sc.get("beta_L", 0.0))
+    df, v, _ = cache_sint.generar_con_cache("g21", sc["semillas"][0], _kw_g21(sc), usar)
     con, sin = _estimar_sintetica(df, v, f02), _estimar_sintetica(df, v, f02, sin_alpha=True)
+
     def rmse(x):
         return float(np.sqrt(np.mean((x["delta"][:, 0] - x["verdad"]) ** 2)))
 
@@ -510,56 +588,122 @@ def sintetica_f02(f02: dict, fis: dict) -> dict:
     t2 = time.time()
     g23b = {}
     for etq, cal in (("con_calibracion", True), ("nulo", False)):
-        rr = Parallel(n_jobs=nj)(delayed(replica_g23b)(sem, sc, f02, cal) for sem in sc["semillas"])
+        with recursos.config_paralelo(nj):
+            rr = Parallel()(delayed(replica_g23b)(sem, sc, f02, cal, usar) for sem in sc["semillas"])
         g23b[etq] = resumen_g23b(rr)
     t3 = time.time()
-    return {"g21": g21, "staff": staff, "g23b": g23b,
+    return {"g21": g21, "staff": staff, "g23b": g23b, "n_jobs": nj, "cache": bool(usar), "hash_codigo": recursos.hash_codigo(),
             "segundos": {"g21": round(t1 - t0, 1), "staff": round(t2 - t1, 1), "g23b": round(t3 - t2, 1)}}
 
 
 # ==========================================================================
 # Prueba de escala: ~635 k lanzamientos sintéticos con el pipeline completo
 # ==========================================================================
-def prueba_escala(n_lanzamientos: int, cfg, n_jobs: int = -1) -> dict:
-    """Genera ~`n_lanzamientos` sintéticos (física exacta, bloques en paralelo) y corre `analizar`: tiempo y RAM pico."""
-    import resource
+def escala_vigente(ruta: Path) -> bool:
+    """¿Existe `ruta` (reports/f02_escala.json) hecha con el mismo hash de código? (`--etapa todo` la salta entonces)."""
+    from . import recursos
+    try:
+        return json.loads(Path(ruta).read_text(encoding="utf-8")).get("hash_codigo") == recursos.hash_codigo()
+    except (OSError, ValueError):
+        return False
 
+
+def prueba_escala(n_lanzamientos: int, cfg, n_jobs: int | None = None) -> dict:
+    """Genera ~`n_lanzamientos` sintéticos (física exacta, bloques en paralelo) y corre `analizar`: tiempo y RAM pico.
+
+    RAM pico = máximo del proceso principal MÁS sus hijos (psutil, incluye los workers de generación).
+    """
+    from . import recursos
     from .sintetico import generar_fisica
     f02, fis = cfg["f02"], cfg["fisica"]
-    lpj = f02["sintetica"]["lanzamientos_por_juego"]
+    nj = recursos.n_jobs_seguro(cfg, n_jobs)
+    recursos.limitar_principal(int((cfg.get("recursos") or {}).get("blas_hilos_principal", 4)))
+    sc = f02["sintetica"]
+    lpj = sc["lanzamientos_por_juego"]
     n_juegos = max(round(n_lanzamientos / lpj), 10)
-    t0 = time.time()
-    df, _ = generar_fisica(n_juegos, lpj, 4242, n_jobs=n_jobs, sigma_parque=0.01)
-    t_gen = time.time() - t0
-    rss_gen = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
-    t1 = time.time()
-    r = analizar(df, f02, fis, cfg["seed"])
-    t_ana = time.time() - t1
+    with recursos.medir_arbol() as m_gen, recursos.config_paralelo(nj):
+        df, _ = generar_fisica(n_juegos, lpj, 4242, n_jobs=nj, sigma_parque=0.01, beta_D=sc.get("beta_D", 0.0),
+                               beta_L=sc.get("beta_L", 0.0))
+    with recursos.medir_arbol() as m_ana:
+        r = analizar(df, f02, fis, cfg["seed"])
     a = r["agregados"]
-    return {"lanzamientos": df.height, "juegos": n_juegos, "segundos_generacion": round(t_gen, 1),
-            "segundos_analisis": round(t_ana, 1), "ram_pico_mb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0),
-            "ram_pico_tras_generar_mb": round(rss_gen), "se_metodo": a["se"]["metodo"], "p_cr2": a["se"]["p"],
-            "juegos_conectados": a["conectado"]["juegos_conectados"],
-            "iteraciones_solver": [x["iteraciones"] for x in a["ajuste"]], "convergio": [x["convergio"] for x in a["ajuste"]]}
+    g, an = m_gen.resultado(), m_ana.resultado()
+    return {"lanzamientos": df.height, "juegos": n_juegos, "n_jobs": nj, "hash_codigo": recursos.hash_codigo(),
+            "segundos_generacion": g["segundos"], "segundos_analisis": an["segundos"],
+            "ram_pico_mb": max(g["ram_pico_mb"], an["ram_pico_mb"]), "ram_pico_generacion_mb": g["ram_pico_mb"],
+            "ram_pico_analisis_mb": an["ram_pico_mb"], "cpu_pct_equipo_generacion": g["cpu_pct_equipo"],
+            "cpu_pct_equipo_analisis": an["cpu_pct_equipo"],
+            "se_metodo": a["se"]["metodo"], "p_cr2": a["se"]["p"], "juegos_conectados": a["conectado"]["juegos_conectados"],
+            "iteraciones_solver": [x["iteraciones"] for x in a["ajuste"]], "convergio": [x["convergio"] for x in a["ajuste"]],
+            "prop2pp_estimador": a["prop2pp"].get("estimador")}
 
 
 # ==========================================================================
 # Compuertas
 # ==========================================================================
-def evaluar_gates(a: dict, sint: dict, g: dict, referencia: str = "No Altitude") -> dict:
-    """G2.1–G2.4 de ROADMAP §4-F2 / ADR-017 con las cifras medidas."""
-    gates = {}
+def gates_sinteticos(sint: dict, g: dict) -> dict:
+    """Compuertas que se miden SOLO en la sintética (ADR-018/019): G2.1, G2.3b y la cobertura de G2.4.
+
+    - G2.1: por nivel, |sesgo relativo medio| + 1.96·MCSE < `g21_error_max`, sobre δ̃ (primario si Prop. 2″ activa).
+    - G2.3b: potencia ≥ `g23b_potencia_min` (global y por tipo) y FPR ≤ 0.05 + 1.96·√(0.05·0.95/n_limpios) (Morris, White
+      y Crowther 2019 §5.2; con n = 180 limpios, 0.0818); se reportan los IC de Clopper–Pearson. No evaluable si SpinAxis
+      resulta inferido en la sintética (fail-closed).
+    - Cobertura de G2.4: IC95 sobre δ̃ con SE delta method (incluye Var(β̂)) ≥ `g24_cobertura_min`.
+    La equivalencia de pendientes (Prop. 2″) en la sintética es solo informativa y no entra aquí.
+    """
+    out = {}
     g21 = sint["g21"]
-    peor = max(g21["niveles"].values(), key=lambda x: x["cota"])
-    gates["G2.1"] = {"ok": all(x["ok"] for x in g21["niveles"].values()),
-                     "detalle": "estudio de simulación, R = {R} réplicas (semillas {s0}–{s1}), |sesgo relativo medio| + 1.96·MCSE por nivel < {cota:.0f} %: ".format(
-                         R=g21["R"], s0=g21["semillas"][0], s1=g21["semillas"][-1], cota=100 * g["g21_error_max"])
-                     + " · ".join(f"{c.split()[0]} {100 * x['sesgo_rel']:+.3f} % + 1.96×{100 * x['mcse']:.3f} % = {100 * x['cota']:.3f} %"
-                                  f" {'✓' if x['ok'] else '✗'}" for c, x in g21["niveles"].items())
-                     + f" (peor nivel {100 * peor['cota']:.3f} %)"}
+    sim = "δ̃" if g21.get("primario") == "corregido" else "δ̂"
+    niv = g21["niveles"]
+    ok21 = all(x["ok"] for x in niv.values())
+    peor = max((x["cota"] for x in niv.values() if x["cota"] is not None), default=float("nan"))
+    out["G2.1"] = {"ok": bool(ok21),
+                   "detalle": "estudio de simulación sobre {sim}, R = {R} réplicas (semillas {s0}–{s1}), |sesgo relativo medio| + 1.96·MCSE por nivel < {cota:.0f} %: ".format(
+                       sim=sim, R=g21["R"], s0=g21["semillas"][0], s1=g21["semillas"][-1], cota=100 * g["g21_error_max"])
+                   + " · ".join(f"{c.split()[0]} {100 * x['sesgo_rel']:+.3f} % + 1.96×{100 * x['mcse']:.3f} % = {100 * x['cota']:.3f} %"
+                                f" {'✓' if x['ok'] else '✗'}" for c, x in niv.items() if x["cota"] is not None)
+                   + f" (peor nivel {100 * peor:.3f} %)"}
+    b = sint["g23b"]["con_calibracion"]
+    p_min = g["g23b_potencia_min"]
+    f_cota = b.get("fpr_cota", g["g23b_fpr_max"])
+    pot_l, pot_t = b["lambda"]["tasa"], b["tau"]["tasa"]
+    ok_det = (b["potencia"] is not None and pot_l is not None and pot_t is not None and b["fpr"] is not None
+              and b["potencia"] >= p_min and pot_l >= p_min and pot_t >= p_min and b["fpr"] <= f_cota)
+    lo_f, hi_f = b["limpio"]["ic_clopper_pearson"]
+    lo_p, hi_p = b["potencia_ic_clopper_pearson"]
+    det_txt = (f"detector ê por parque (validación SINTÉTICA del método; LOO + cluster lanzador + Pustejovsky–Tipton + BH "
+               f"{100 * b['q']:.0f} %), {b['R']} réplicas × 18 parques: potencia {b['potencia']:.3f} "
+               f"(IC95 CP [{lo_p:.3f}, {hi_p:.3f}]; λ=1.02: {pot_l:.3f}, {b['lambda']['rechazos']}/{b['lambda']['n']}; "
+               f"τ=1.01: {pot_t:.3f}, {b['tau']['rechazos']}/{b['tau']['n']}; mínimo {p_min}) · FPR en parques limpios "
+               f"{b['fpr']:.3f} ({b['limpio']['rechazos']}/{b['limpio']['n']}; IC95 CP [{lo_f:.3f}, {hi_f:.3f}]; cota "
+               f"0.05 + 1.96·√(0.05·0.95/{b['limpio']['n']}) = {f_cota:.4f}). La aplicación a datos reales es 🔎 informativa.")
+    if not b.get("spinaxis_medido", True):
+        out["G2.3b"] = {"ok": True, "no_evaluable": True,
+                        "detalle": "NO EVALUABLE: SpinAxis en la SINTÉTICA resulta inferido (fail-closed, ADR-018)"}
+    else:
+        out["G2.3b"] = {"ok": bool(ok_det), "detalle": det_txt}
+    cob = g21["cobertura"]
+    out["G2.4_cobertura"] = {"ok": bool(cob >= g["g24_cobertura_min"]), "valor": cob,
+                             "detalle": f"cobertura del IC95 de {sim}_g (SE delta method con Var(β̂)) en la sintética {cob:.3f} "
+                                        f"(mínimo {g['g24_cobertura_min']})"}
+    return out
+
+
+def evaluar_gates(a: dict, sint: dict, g: dict, referencia: str = "No Altitude") -> dict:
+    """G2.1–G2.4 de ROADMAP §4-F2 / ADR-017/018/019 con las cifras medidas.
+
+    Datos reales: la equivalencia (1+β̂_L)/(1+β̂_D) contra la Deming observada (±0.10) decide qué es primario. Si pasa, δ̃
+    es primario para G2.2–G2.4. **Si no pasa, G2.2–G2.4 se reportan en bruto con 🔎 (`provisional`) y la fase se
+    DETIENE** (`correr` devuelve ok=False con `detenido`).
+    """
+    gates = {}
+    sg = gates_sinteticos(sint, g)
+    gates["G2.1"], gates["G2.3b"] = sg["G2.1"], sg["G2.3b"]
     pp = a.get("prop2pp", {})
     adoptado = bool(pp.get("adoptado"))
-    sufijo = " (sobre δ̃ corregido por Reynolds, ADR-018)" if adoptado else " (sobre δ̂ bruto)"
+    provisional = bool(pp.get("activada", True)) and not adoptado
+    prov = "🔎 PROVISIONAL (bruto; Prop. 2″ no pasa la equivalencia). " if provisional else ""
+    sufijo = " (sobre δ̃ corregido por Reynolds)" if adoptado else " (sobre δ̂ bruto)"
     med_src = pp.get("medias_corregidas") if adoptado else a["medias_por_cubeta"]
     mz_src = pp.get("mezcla_extreme_corregida") if adoptado else a.get("mezcla_extreme")
     dem_src = pp.get("deming_corregido") if adoptado else a["deming"]
@@ -568,51 +712,30 @@ def evaluar_gates(a: dict, sint: dict, g: dict, referencia: str = "No Altitude")
     ok_b = de is not None and g["g22_extreme"][0] <= de <= g["g22_extreme"][1]
     comp = mz_src["componentes"][0]["media"] if mz_src else None
     ok_c = comp is not None and g["g22_componente"][0] <= comp <= g["g22_componente"][1]
-    gates["G2.2"] = {"ok": bool(ok_orden and ok_b and ok_c),
-                     "detalle": (f"{sufijo.strip()}. (a) orden estricto {'✓' if ok_orden else '✗'}: δ̄ No {dn:+.4f} > Medium "
+    gates["G2.2"] = {"ok": bool(ok_orden and ok_b and ok_c), "provisional": provisional,
+                     "detalle": (prov + f"(a) orden estricto {'✓' if ok_orden else '✗'}: δ̄ No {dn:+.4f} > Medium "
                                  f"{dm_:+.4f} > Extreme {de:+.4f} · (b) δ̄ Extreme ∈ {g['g22_extreme']}: {'✓' if ok_b else '✗'} · "
                                  f"(c) componente de menor media de la mezcla de Extreme "
                                  f"{'—' if comp is None else f'{comp:+.4f}'} ∈ {g['g22_componente']}: {'✓' if ok_c else '✗'}")
                      if None not in (dn, dm_, de) else "sin juegos confirmatorios en alguna cubeta"}
     lo, hi = g["g23_pendiente"]
-    gates["G2.3a"] = {"ok": dem_src is not None and lo <= dem_src["pendiente"] <= hi,
-                      "detalle": (f"Deming δ^L sobre δ^D{sufijo}: pendiente "
+    gates["G2.3a"] = {"ok": dem_src is not None and lo <= dem_src["pendiente"] <= hi, "provisional": provisional,
+                      "detalle": (prov + f"Deming δ^L sobre δ^D{sufijo}: pendiente "
                                   f"{dem_src['pendiente']:.3f} (EE dos vías {dem_src['se_pendiente']:.3f}) ∈ [{lo}, {hi}] · intercepto "
                                   f"{dem_src['intercepto']:+.4f}") if dem_src else "no evaluable"}
-    b = sint["g23b"]["con_calibracion"]
-    p_min, f_max = g["g23b_potencia_min"], g["g23b_fpr_max"]
-    pot_l, pot_t = b["lambda"]["tasa"], b["tau"]["tasa"]
-    ok_det = (b["potencia"] is not None and pot_l is not None and pot_t is not None and b["fpr"] is not None
-              and b["potencia"] >= p_min and pot_l >= p_min and pot_t >= p_min and b["fpr"] <= f_max)
-    det_txt = (f"detector ê por parque (validación SINTÉTICA del método, ADR-018; Pustejovsky–Tipton + BH {100 * b['q']:.0f} %), "
-               f"{b['R']} réplicas × 18 parques: potencia {b['potencia']:.3f} (λ=1.02: {pot_l:.3f}, {b['lambda']['rechazos']}/"
-               f"{b['lambda']['n']}; τ=1.01: {pot_t:.3f}, {b['tau']['rechazos']}/{b['tau']['n']}; mínimo {p_min}) · "
-               f"FPR en parques limpios {b['fpr']:.3f} ({b['limpio']['rechazos']}/{b['limpio']['n']}; máximo {f_max}). "
-               f"La aplicación a datos reales es 🔎 informativa (ver reporte).")
-    if not b.get("spinaxis_medido", True):
-        gates["G2.3b"] = {"ok": True, "no_evaluable": True,
-                          "detalle": "NO EVALUABLE: SpinAxis en la SINTÉTICA resulta inferido (fail-closed, ADR-018)"}
-    else:
-        gates["G2.3b"] = {"ok": bool(ok_det), "detalle": det_txt}
     s = a["se"]
-    cob = sint["g21"]["cobertura"]
-    ok_cob = cob >= g["g24_cobertura_min"]
-    if adoptado and pp.get("se_delta_corregido") is not None:
-        se_c = pp["se_delta_corregido"]
-        n_juego = a["juegos"]["confirmatorios"]
-        # mediana de SE de δ̃_D sobre juegos confirmatorios: aproximamos con la mediana sobre todo (los no-conf son pocos)
-        se_med = float(np.median(se_c[:, 0])) if n_juego else float("nan")
-        detalle_se = (f"σ_η (bruto) = {s['sigma_eta_D']:.4f} (D) / {s['sigma_eta_L']:.4f} (L) · SE CR2 mediano de "
-                      f"**δ̃**_g (corregido Reynolds) = {se_med:.4f} (límite {g['g24_se_max']}; método {s['metodo']}; "
-                      f"delta method sobre β̂_D y β̂_L)")
+    if adoptado and pp.get("se_corregido_D_mediana") is not None:
+        se_med = pp["se_corregido_D_mediana"]
+        detalle_se = (f"σ_η (bruto) = {s['sigma_eta_D']:.4f} (D) / {s['sigma_eta_L']:.4f} (L) · SE mediano de δ̃_g (CR2 + delta "
+                      f"method con Var(β̂)) = {se_med:.4f} (límite {g['g24_se_max']}; método {s['metodo']})")
     else:
         se_med = s["se_cr2_D_mediana"]
-        detalle_se = (f"σ_η = {s['sigma_eta_D']:.4f} (D) / {s['sigma_eta_L']:.4f} (L) · SE CR2 mediano de δ̂_g = "
-                      f"{se_med:.4f} (límite {g['g24_se_max']}; ingenuo {s['se_ingenuo_D_mediana']:.4f}, "
-                      f"efecto de diseño ×{s['efecto_diseno_D']:.2f}) · método {s['metodo']}")
-    gates["G2.4"] = {"ok": bool(se_med < g["g24_se_max"] and ok_cob),
-                     "detalle": detalle_se + f" · cobertura del IC95 CR2 en la sintética {cob:.3f} (mínimo "
-                                             f"{g['g24_cobertura_min']}) {'✓' if ok_cob else '✗'}"}
+        detalle_se = (prov + f"σ_η = {s['sigma_eta_D']:.4f} (D) / {s['sigma_eta_L']:.4f} (L) · SE CR2 mediano de δ̂_g = "
+                      f"{se_med:.4f} (límite {g['g24_se_max']}; ingenuo {s['se_ingenuo_D_mediana']:.4f}, efecto de diseño "
+                      f"×{s['efecto_diseno_D']:.2f}) · método {s['metodo']}")
+    cobg = sg["G2.4_cobertura"]
+    gates["G2.4"] = {"ok": bool(se_med < g["g24_se_max"] and cobg["ok"]), "provisional": provisional,
+                     "detalle": detalle_se + f" · {cobg['detalle']} {'✓' if cobg['ok'] else '✗'}"}
     return dict(sorted(gates.items()))
 
 
@@ -753,19 +876,30 @@ def _sec_deming_se(a: dict) -> list[str]:
 
 def _sec_prop2pp(a: dict) -> list[str]:
     pp = a.get("prop2pp") or {}
-    L = ["## Prop. 2″ (ADR-018): corrección de atenuación por Reynolds", ""]
+    L = ["## Prop. 2″ (ADR-018/019): corrección de atenuación por Reynolds", ""]
     if not pp or "beta" not in pp:
         L += [f"_No evaluable: {pp.get('error', 'falta Prop. 2″')}_", ""]
         return L
     bD, bL = pp["beta"]
     sbD, sbL = pp["se_beta"]
     sob = pp["sobreidentificacion"]
-    L += [(f"Modelo `y_c = δ_g + α_jk + f_c(S) + β_c · log‖v̄‖ + ε` ajustado por LSMR disperso con conglomerado "
-           f"lanzador×juego para el SE CR2. **β̂_D = {bD:+.3f} ± {sbD:.3f}**, **β̂_L = {bL:+.3f} ± {sbL:.3f}**. "
-           f"R² de log‖v̄‖ sobre {{dummies de juego, lanzador×forma, splines de S}} = **{pp['r2_colinealidad_log_v']:.3f}** "
+    pe = pp.get("primera_etapa")
+    est_txt = ("2SLS con log(RelSpeed) como instrumento de log‖v̄‖ (la rapidez en la liberación se mide antes del vuelo y es "
+               "exógena al arrastre del propio lanzamiento; con MCO, log‖v̄‖ queda correlacionado con el error porque un C_D "
+               "mayor frena más: sesgo de endogeneidad, ADR-019)" + ("; spline de S con S_rel = rω/RelSpeed (exógena)"
+                                                                       if pp.get("s_exogena") else "; spline de S con S = rω/v̄")
+               if pp.get("estimador") == "IV"
+               else "**MCO** (no hay `RelSpeed` utilizable: β̂ puede estar sesgado a la baja por endogeneidad, ADR-019)")
+    L += [(f"Modelo `y_c = δ_g + α_jk + f_c(S) + β_c · log‖v̄‖ + ε`; estimador: {est_txt}. SE: sándwich CR2 por lanzador×juego "
+           f"sobre la segunda etapa con residuo estructural. **β̂_D = {bD:+.3f} ± {sbD:.3f}**, **β̂_L = {bL:+.3f} ± {sbL:.3f}** "
+           f"(MCO sin instrumento, diagnóstico: β̂_D = {pp['beta_mco'][0]:+.3f}, β̂_L = {pp['beta_mco'][1]:+.3f}). "
+           + (f"Primera etapa: corr. parcial {pe['corr_parcial']:.3f}, F = {pe['F']:,.0f} (instrumento fuerte si F > 10). "
+              if pe else "")
+           + f"R² de log‖v̄‖ sobre {{dummies de juego, lanzador×forma, splines de S}} = **{pp['r2_colinealidad_log_v']:.3f}** "
            f"(tope {pp['r2_tope']}; identificable: {'✓' if pp['identificable'] else '✗ β no identificado por colinealidad'})."),
           "",
-          ("**Prueba de sobreidentificación** (pendiente predicha vs Deming observada, equivalencia ±tol):"), "",
+          ("**Prueba de sobreidentificación** (pendiente predicha vs Deming observada, equivalencia ±tol; en datos reales "
+           "DECIDE qué es primario):"), "",
           *_tabla([{"pendiente predicha (1+β_L)/(1+β_D)": _f(sob["pendiente_predicha"], 3),
                     "Deming observada": _f(sob["pendiente_observada"], 3),
                     "diferencia": _f(sob["diferencia"], 3),
@@ -775,8 +909,8 @@ def _sec_prop2pp(a: dict) -> list[str]:
                     "equivalencia": "✓" if sob["equivalencia"] else "✗"}],
                   ["pendiente predicha (1+β_L)/(1+β_D)", "Deming observada", "diferencia", "SE(diferencia)",
                    "|dif|+1.96·SE", "tolerancia", "equivalencia"]), "",
-          (f"**Adopción (ADR-018):** {'✓ δ̃ = δ/(1+β̂) adoptados como primarios (G2.2 y G2.4 sobre δ̃)' if pp['adoptado'] else '✗ no adoptados: se reportan como diagnóstico; G2.2 y G2.4 sobre δ bruto'}. "
-           f"Iteraciones LSMR: D {pp['iteraciones'][0]}, L {pp['iteraciones'][1]}; convergió: {pp['convergio']}."), ""]
+          (f"**Adopción (ADR-019):** {'✓ δ̃ = δ/(1+β̂) es primario para G2.2–G2.4' if pp['adoptado'] else '✗ NO adoptado: G2.2–G2.4 se reportan en bruto con 🔎 (provisional) y la fase SE DETIENE'}. "
+           f"Convergió: {pp['convergio']}."), ""]
     if pp["adoptado"] and pp.get("medias_corregidas"):
         mc = pp["medias_corregidas"]
         mb = a["medias_por_cubeta"]
@@ -857,88 +991,123 @@ def _sec_latentes(a: dict) -> list[str]:
 
 def _sec_sintetica(sint: dict, f02: dict) -> list[str]:
     g21, sc = sint["g21"], f02["sintetica"]
-    L = ["## Sintética con física exacta: estudio de simulación de G2.1 (ADR-017)", "",
-         (f"`solve_ivp` DOP853 (rtol 1e-10), ρ conocida en 3 niveles (1.00, 0.82, 0.76·ρ₀), C_D y C_L realistas, ruido de "
-          f"posición, 9P de aceleración constante ajustado por mínimos cuadrados, efecto de lanzador α_j (SD 0.05 en log C_D) "
-          f"con planteles asignados a parques locales. **Protocolo pre-registrado** (Morris, White y Crowther 2019): "
-          f"R = {g21['R']} réplicas independientes, semillas {g21['semillas'][0]}–{g21['semillas'][-1]}, {g21['n_juegos']} "
+    simb = "δ̃" if g21.get("primario") == "corregido" else "δ̂"
+    L = ["## Sintética con física exacta: estudio de simulación de G2.1 (ADR-017/019)", "",
+         (f"`solve_ivp` DOP853 (rtol 1e-10), ρ conocida en 3 niveles (1.00, 0.82, 0.76·ρ₀), **C_D = C_D(Re) con ley potencial pura "
+          f"(pendiente local en log Re = β_D = {sc.get('beta_D', 0.0)}, sin ningún otro término en v; ADR-019 D1)**, C_L(S) sin Re "
+          f"(β_L = {sc.get('beta_L', 0.0)}), ruido de posición, 9P de aceleración constante por mínimos cuadrados, efecto de "
+          f"lanzador α_j (SD 0.05 en log C_D) con planteles asignados a parques locales. **Protocolo pre-registrado** "
+          f"(Morris, White y Crowther 2019): R = {g21['R']} réplicas independientes, semillas {g21['semillas'][0]}–"
+          f"{g21['semillas'][-1]} (**las semillas 101–110 y 201–210 están consumidas**: D02b §4 y D02c §8), {g21['n_juegos']} "
           f"juegos × ≈{g21['lanzamientos_por_juego']} lanzamientos (≈{int(np.mean(g21['lanzamientos_por_replica'])):,} por réplica), "
           f"estimando log(ρ_nivel/ρ_No). Aprueba si, por nivel, |sesgo relativo medio| + 1.96·MCSE < "
-          f"{100 * f02['gates']['g21_error_max']:.0f} %."), ""]
-    simb = "δ̃" if g21.get("primario") == "corregido" else "δ̂"
-    L += [(f"**Primario de G2.1 ({simb})**: " + ("Prop. 2″ adopta δ̃ = δ̂/(1+β̂) en el pipeline (ADR-018). "
-                                                    "Se reporta además el bruto como demo de atenuación."
-                                                    if g21.get("primario") == "corregido"
-                                                    else "δ̂ bruto (Prop. 2″ no activa o β no estimable).")), ""]
+          f"{100 * f02['gates']['g21_error_max']:.0f} %. Réplicas leídas de la caché: {g21.get('replicas_desde_cache', 0)} "
+          f"de {g21['R']}."), "",
+         (f"**Primario de G2.1 ({simb})**: " + ("δ̃ = δ̂/(1+β̂) con β̂ por 2SLS (Prop. 2″, ADR-018/019); se reporta además el bruto como "
+                                                "demostración de la atenuación." if g21.get("primario") == "corregido"
+                                                else "δ̂ bruto (Prop. 2″ no activa o β no estimable).")), ""]
     L += _tabla([{"nivel": c, "sesgo relativo medio": f"{100 * x['sesgo_rel']:+.3f} %" if x["sesgo_rel"] is not None else "—",
                   "MCSE": f"{100 * x['mcse']:.3f} %" if x["mcse"] is not None else "—",
                   "|sesgo| + 1.96·MCSE": f"{100 * x['cota']:.3f} %" if x["cota"] is not None else "—",
                   "veredicto": "✓" if x["ok"] else "✗",
                   f"SE empírico {simb}": _f(x["se_empirico"]), f"RMSE {simb}": _f(x["rmse"]),
-                  "cobertura IC95 CR2": f"{x['cobertura']:.3f}" if x["cobertura"] is not None else "—",
+                  "cobertura IC95": f"{x['cobertura']:.3f}" if x["cobertura"] is not None else "—",
                   "juegos×réplicas": x["juegos"]} for c, x in g21["niveles"].items()],
                 ["nivel", "sesgo relativo medio", "MCSE", "|sesgo| + 1.96·MCSE", "veredicto", f"SE empírico {simb}",
-                 f"RMSE {simb}", "cobertura IC95 CR2", "juegos×réplicas"]) + [""]
+                 f"RMSE {simb}", "cobertura IC95", "juegos×réplicas"]) + [""]
     if "bruto" in g21:
         br = g21["bruto"]
-        L += [("**Demo de atenuación (sobre δ̂ bruto)**: con β_D explícito en el generador, el estimador sin corrección "
-               "se atenúa; δ̃ recupera. Fila por nivel:"), "",
+        L += [("**Demostración de la atenuación (δ̂ bruto, sin corregir)** con β_D explícito en el generador:"), "",
               *_tabla([{"nivel": c, "sesgo bruto": f"{100 * x['sesgo_rel']:+.3f} %" if x["sesgo_rel"] is not None else "—",
                         "|sesgo|+1.96·MCSE bruto": f"{100 * x['cota']:.3f} %" if x["cota"] is not None else "—",
                         "cobertura bruto": f"{x['cobertura']:.3f}" if x["cobertura"] is not None else "—",
                         "RMSE bruto": _f(x["rmse"])} for c, x in br["niveles"].items()],
                      ["nivel", "sesgo bruto", "|sesgo|+1.96·MCSE bruto", "cobertura bruto", "RMSE bruto"]), ""]
     if "beta_D_medio" in g21:
-        L += [(f"**β̂ promedios en el estudio** (R = {g21['R']}): β̂_D = {g21['beta_D_medio']:+.3f} ± {g21['beta_D_sd']:.3f}, "
-               f"β̂_L = {g21['beta_L_medio']:+.3f} ± {g21['beta_L_sd']:.3f}. R² de colinealidad log‖v̄‖ medio = "
-               f"{g21['r2_colinealidad_log_v_medio']:.3f}. β_D verdadero del generador: {f02['sintetica'].get('beta_D', 0.0)}."), ""]
+        L += [(f"**β̂ en el estudio** (R = {g21['R']}, estimador {g21['estimador_beta']}): β̂_D = {g21['beta_D_medio']:+.3f} ± "
+               f"{_f(g21['beta_D_sd'], 3)} (SE medio {g21['se_beta_D_medio']:.3f}; verdad {sc.get('beta_D', 0.0)}), β̂_L = "
+               f"{g21['beta_L_medio']:+.3f} ± {_f(g21['beta_L_sd'], 3)} (verdad {sc.get('beta_L', 0.0)}). MCO sin instrumento: "
+               f"β̂_D = {g21['beta_mco_D_medio']:+.3f} (sesgo por endogeneidad de log‖v̄‖, ADR-019). R² de colinealidad "
+               f"log‖v̄‖ medio = {g21['r2_colinealidad_log_v_medio']:.3f}."), ""]
+        eq = g21["equivalencia_informativa"]
+        L += [(f"**Equivalencia de pendientes (informativa, no es compuerta en la sintética):** predicha (1+β̂_L)/(1+β̂_D) = "
+               f"{eq['predicha_media']:.3f} contra Deming observada {eq['observada_media']:.3f}; aprueban ±"
+               f"{(f02.get('prop2pp') or {}).get('tolerancia_equivalencia', 0.10)}: {eq['pasan']} de {eq['R']} réplicas."), ""]
     alerta = " ⚠ **ALERTA: cobertura < 0.90, el SE subestima**" if g21["cobertura"] < 0.90 else ""
-    L += [(f"**Cobertura del IC95 (CR2 o delta method CR2 según primario) de {simb}_g sobre todos los juegos × réplicas "
+    L += [(f"**Cobertura del IC95 de {simb}_g (SE delta method con Var(β̂) si primario δ̃) sobre todos los juegos × réplicas "
            f"({g21['juegos_total']:,}): {g21['cobertura']:.3f}**{alerta}. σ_η medio (bruto) {g21['sigma_eta_medio']:.4f}. "
            f"Errores por réplica (Medium / Extreme): "
-           + "; ".join(f"{100 * (a if a is not None else float('nan')):+.2f} % / {100 * (b if b is not None else float('nan')):+.2f} %" for a, b in zip(
-               g21["niveles"]["Medium Altitude"]["errores_por_replica"],
-               g21["niveles"]["Extreme Altitude"]["errores_por_replica"], strict=True)) + "."), ""]
+           + "; ".join(f"{100 * (a if a is not None else float('nan')):+.2f} % / {100 * (b if b is not None else float('nan')):+.2f} %"
+                       for a, b in zip(g21["niveles"]["Medium Altitude"]["errores_por_replica"],
+                                       g21["niveles"]["Extreme Altitude"]["errores_por_replica"], strict=True)) + "."), ""]
     s = sint["staff"]
     L += [(f"**Planteles locales** (semilla {s['semilla']}): RMSE de δ̂ contra la verdad {s['rmse_sin_alpha']:.4f} sin α_{{j,k}} → "
            f"{s['rmse_con_alpha']:.4f} con α_{{j,k}} (Prop. 2′): el segundo efecto fijo elimina el sesgo del C_D medio del plantel."), ""]
     b, nulo = sint["g23b"]["con_calibracion"], sint["g23b"]["nulo"]
-    L += ["## Sintética de calibración para G2.3b (ADR-017, F2.5b)", "",
+    L += ["## Sintética de calibración para G2.3b (ADR-018/019, F2.5b)", "",
           (f"18 parques (6 por cubeta); en cada cubeta λ = {sc['lambda_escala']} en 2 parques, τ = {sc['tau_reloj']} en otros 2 y "
            f"2 limpios (c = λ/τ² − 1 ≈ ±0.02). {sc['n_juegos_g23b']} juegos × ≈{sc['lanzamientos_por_juego']} lanzamientos por réplica, "
-           f"R = {b['R']} (semillas {sc['semillas'][0]}–{sc['semillas'][-1]}). Detector ê con id de parque, centrado en la mediana "
-           f"de la cubeta, Wald con SE CR2 y BH al {100 * b['q']:.0f} %. **Diseño y tamaño fijados antes de la corrida "
-           f"final** (solo se usaron las semillas 101–102 para medir tiempo y SE del detector)."), ""]
+           f"R = {b['R']} (semillas {sc['semillas'][0]}–{sc['semillas'][-1]}). Detector ê con id de parque: contraste LOO "
+           f"(c_p − media del resto de la cubeta), cluster = lanzador, t de Pustejovsky y Tipton (2018) y BH al "
+           f"{100 * b['q']:.0f} %. Criterio (ADR-019 D3): potencia ≥ {f02['gates']['g23b_potencia_min']} y FPR ≤ 0.05 + "
+           f"1.96·√(0.05·0.95/n_limpios) = {b['fpr_cota']:.4f} (n_limpios = {b['limpio']['n']}; Morris, White y Crowther 2019 "
+           f"§5.2), con IC de Clopper–Pearson."), ""]
     filas = []
     for nombre, clave in (("λ = 1.02 (c≈+0.02)", "lambda"), ("τ = 1.01 (c≈−0.02)", "tau"), ("limpios (c=0)", "limpio")):
         x = b[clave]
+        lo, hi = x["ic_clopper_pearson"]
         filas.append({"grupo de parques": nombre, "parques×réplicas": x["n"], "marcados por BH": x["rechazos"],
-                      "tasa": _f(x["tasa"], 3), "ĉ centrado medio": _f(x["c_centrado_medio"]), "c verdad": _f(x["c_verdad_medio"]),
-                      "SE CR2 medio": _f(x["se_medio"])})
+                      "tasa": _f(x["tasa"], 3), "IC95 Clopper–Pearson": f"[{lo:.3f}, {hi:.3f}]",
+                      "ĉ centrado medio": _f(x["c_centrado_medio"]), "c verdad": _f(x["c_verdad_medio"]),
+                      "SE medio": _f(x["se_medio"])})
     L += [*_tabla(filas, list(filas[0])), "",
-          (f"**Potencia (contaminados) {b['potencia']:.3f}** (mínimo {f02['gates']['g23b_potencia_min']}, y también por tipo) · "
-           f"**FPR (limpios) {b['fpr']:.3f}** (máximo {f02['gates']['g23b_fpr_max']}). Control sin calibración (todos los parques "
-           f"limpios, mismas semillas): {nulo['limpio']['rechazos']} de {nulo['limpio']['n']} parques marcados, "
-           f"FPR {nulo['limpio']['tasa']:.3f}. Con 2 parques limpios por cubeta la mediana es su promedio, así que los contrastes de "
-           f"cada par son iguales y de signo opuesto: los falsos positivos llegan de a pares."), "",
+          (f"**Potencia (contaminados) {b['potencia']:.3f}** (mínimo {f02['gates']['g23b_potencia_min']}, global y por tipo) · "
+           f"**FPR (limpios) {b['fpr']:.3f}** (cota {b['fpr_cota']:.4f}). Control sin calibración (todos los parques limpios, "
+           f"mismas semillas): {nulo['limpio']['rechazos']} de {nulo['limpio']['n']} parques marcados, FPR {nulo['limpio']['tasa']:.3f}."), "",
           (f"**G2.3a en la sintética (informativo):** pendiente de Deming media {b['deming_pendiente_medio']:.3f} con calibración "
            f"por parque contra {nulo['deming_pendiente_medio']:.3f} sin ella; la banda [0.85, 1.15] no distingue ambas (D02b)."), ""]
     return L
 
 
+def reporte_sintetico_md(sint: dict, gates_s: dict, f02: dict, segundos: float) -> str:
+    """Reporte de la etapa `sintetica` (`reports/FASE_02_sintetica.md`): sin datos reales ni por lanzamiento."""
+    L = ["# FASE 02 — etapa sintética (estudio de simulación de G2.1, G2.3b y cobertura de G2.4)", "",
+         (f"n_jobs {sint['n_jobs']} · caché {'sí' if sint['cache'] else 'no'} · hash de código {sint['hash_codigo']} · "
+          f"{segundos}s ({sint['segundos']})"), ""]
+    L += _sec_sintetica(sint, f02)
+    L += ["## Compuertas sintéticas", ""]
+    for k, v in gates_s.items():
+        L.append(f"- **{k}** {'✅' if v['ok'] else '❌'} {v['detalle']}")
+    L.append("")
+    return "\n".join(L)
+
+
+def _sim_gate(v: dict) -> str:
+    if v.get("no_evaluable"):
+        return "n/e"
+    if v.get("provisional"):
+        return f"🔎 (bruto: {'✅' if v['ok'] else '❌'})"
+    return "✅" if v["ok"] else "❌"
+
+
 def reporte_md(a: dict, sint: dict, gates: dict, f02: dict, segundos: float, figs: list[str]) -> str:
+    detenido = bool((a.get("prop2pp") or {}).get("activada", True)) and not (a.get("prop2pp") or {}).get("adoptado")
     L = ["# FASE 02 — Densidad del aire por juego desde la trayectoria", "",
          f"{a['datos']['filas_entrada']:,} filas de entrada · {a['datos']['filas_salida']:,} lanzamientos válidos · {segundos}s", ""]
+    if detenido:
+        L += [("> **FASE DETENIDA (ADR-019):** la equivalencia (1+β̂_L)/(1+β̂_D) contra la Deming observada NO pasa; "
+               "G2.2–G2.4 se reportan en bruto con 🔎 (provisionales) y no se avanza. Ver la sección de Prop. 2″."), ""]
     L += _sec_datos(a) + _sec_resultados(a) + _sec_deming_se(a) + _sec_prop2pp(a) + _sec_calibracion(a) + _sec_latentes(a)
     L += _sec_sintetica(sint, f02)
     L += ["## Compuertas", ""]
     for k, v in gates.items():
-        L.append(f"- **{k}** {'✅' if v['ok'] else '❌'} {v['detalle']}")
+        L.append(f"- **{k}** {_sim_gate(v)} {v['detalle']}")
     m = a["medias_por_cubeta"]
     L += ["", f"Figuras agregadas por juego en `docs/figuras/f2/`: {', '.join(figs)}.", "",
           "### Bloque para el orquestador — F02",
           "- Modelo(s) usado(s): Sonnet (implementación)",
-          "- Compuertas: " + " | ".join(f"{k} {'✅' if v['ok'] else '❌'}" for k, v in gates.items()),
+          "- Compuertas: " + " | ".join(f"{k} {_sim_gate(v)}" for k, v in gates.items())
+          + (" — **DETENIDA**: equivalencia de Prop. 2″ no pasa" if detenido else ""),
           (f"- Cifras clave: δ̄ᴰ No {_f(m['No Altitude']['delta_D'])} · Medium {_f(m['Medium Altitude']['delta_D'])} ± "
            f"{_f(m['Medium Altitude']['se_D'])} · Extreme {_f(m['Extreme Altitude']['delta_D'])} ± "
            f"{_f(m['Extreme Altitude']['se_D'])} · Deming {_f(a['deming']['pendiente'], 3) if a['deming'] else '—'} · "
@@ -946,13 +1115,13 @@ def reporte_md(a: dict, sint: dict, gates: dict, f02: dict, segundos: float, fig
            f"{_f(a['prop2pp']['beta'][1], 3) if a.get('prop2pp',{}).get('beta') else '—'} · pendiente predicha "
            f"{_f(a['prop2pp']['sobreidentificacion']['pendiente_predicha'], 3) if a.get('prop2pp',{}).get('sobreidentificacion') else '—'} vs observada "
            f"{_f(a['deming']['pendiente'], 3) if a['deming'] else '—'} (equivalencia "
-           f"{'✓' if a.get('prop2pp',{}).get('sobreidentificacion',{}).get('equivalencia') else '✗'}; adoptado "
+           f"{'✓' if a.get('prop2pp',{}).get('sobreidentificacion',{}).get('equivalencia') else '✗'}; {a.get('prop2pp',{}).get('estimador','—')}; adoptado "
            f"{'✓' if a.get('prop2pp',{}).get('adoptado') else '✗'}) · σ_η {a['se']['sigma_eta_D']:.4f} · G2.1 "
            f"{100 * max(x['cota'] for x in sint['g21']['niveles'].values()):.3f} % (|sesgo|+1.96 MCSE, peor nivel) · cobertura IC95 "
            f"{sint['g21']['cobertura']:.3f} · G2.3b potencia {sint['g23b']['con_calibracion']['potencia']:.2f} / FPR "
            f"{sint['g23b']['con_calibracion']['fpr']:.3f} · {a['juegos']['confirmatorios']:,} juegos confirmatorios"),
-          "- Desviaciones respecto al ROADMAP: Prop. 2″ (ADR-018) corrige la atenuación por Reynolds; G2.3b sintética con cluster=lanzador, contraste LOO y t de Pustejovsky-Tipton; G2.3b real = n/e (nunca compuerta)",
-          "- Mejora posible detectada: Prop. 2″ adoptada" + ("" if a.get('prop2pp',{}).get('adoptado') else " (si pasa sobreidentificación en próxima corrida)") + "; detector ê separable escala/reloj (D02b)",
+          "- Desviaciones respecto al ROADMAP: Prop. 2″ por 2SLS con RelSpeed (ADR-019, propuesta pendiente de ratificación); G2.3b = validación sintética (LOO + cluster lanzador + Pustejovsky–Tipton, cota de FPR de Morris–White–Crowther); real = 🔎 n/e",
+          "- Mejora posible detectada: " + ("Prop. 2″ adoptada" if a.get('prop2pp',{}).get('adoptado') else "Prop. 2″ NO adoptada: revisar β̂ y la equivalencia antes de F3") + "; detector ê separable escala/reloj (D02b)",
           "- Riesgo de empeorar: ninguno",
           "- Rama / PR / commit de resultados locales: fase02 / (pendiente) / (pendiente)",
           "- Log: reports/logs/f02_<fecha>.log", ""]
@@ -963,22 +1132,80 @@ def reporte_md(a: dict, sint: dict, gates: dict, f02: dict, segundos: float, fig
 def cargar_pitches(ruta: Path, columna_parque: str | None = None) -> pl.DataFrame:
     cols = ["game_anon_id", "pitcher_anon_id", "familia", "pitcher_throws_r", "year", "altitude_category_h", "excluir_modelo",
             "x0", "y0", "z0", "vx0", "vy0", "vz0", "ax0", "ay0", "az0", "PitchTrajectoryXc1", "SpinRate", "SpinAxis",
-            "RelHeight", "PlateLocHeight"]
+            "RelHeight", "PlateLocHeight", "RelSpeed"]
     lf = io.leer_pitches(ruta)
     disp = set(lf.collect_schema().names())
     df = lf.select([c for c in cols if c in disp] + ([columna_parque] if columna_parque and columna_parque in disp else [])).collect()
     return df.rename({columna_parque: "parque_id"}) if columna_parque and columna_parque in df.columns else df
 
 
-def correr(cfg, df: pl.DataFrame, ruta_densidad: Path, rep_dir: Path, log_dir: Path, fig_dir: Path) -> dict:
-    """Ejecuta F2 sobre `df` (datos limpios de F0 o la sintética). Devuelve {'ok', 'gates', 'reporte'}; no sale del proceso."""
+CLAVES_SINT = ("sintetica", "gates", "prop2pp", "n_nudos", "grado", "n_min_por_col", "soporte_q", "n_min_efectivo", "por_anio",
+               "referencia", "g23b_q", "g23b_min_parques", "g23b_contraste", "g23b_df", "spinaxis_desfase_min_grados",
+               "spinaxis_sd_min_ms2", "spinaxis_r2_max", "spinaxis_n_min_evaluable", "spinaxis_fraccion_min_evaluable",
+               "solver", "max_p_cr2")
+
+
+def firma_sintetica(f02: dict) -> str:
+    """Huella de la parte de la config que afecta a la sintética + hash de `sintetico.py`/`fisica.py`: valida el caché y
+    que `--etapa real` use una `f02_sintetica.json` calculada con el mismo código y la misma config."""
+    import hashlib
+
+    from . import recursos
+    sub = {k: f02.get(k) for k in CLAVES_SINT}
+    h = hashlib.sha256(json.dumps(sub, sort_keys=True, default=str).encode()).hexdigest()[:16]
+    return f"{h}-{recursos.hash_codigo()}"
+
+
+def correr_sintetica(cfg, rep_dir: Path, log_dir: Path, usar_cache: bool | None = None) -> dict:
+    """Etapa `sintetica`: estudio de simulación de G2.1, G2.3b y cobertura de G2.4. Escribe `f02_sintetica.json` y
+    `FASE_02_sintetica.md` (agregados; nada por lanzamiento). Devuelve {'ok', 'gates', 'sint', 'reporte'}."""
+    f02 = cfg["f02"]
+    t0 = time.time()
+    print("F2: etapa sintética (estudio de simulación de G2.1, G2.3b, cobertura de G2.4) ...", flush=True)
+    sint = sintetica_f02(f02, cfg["fisica"], cfg.get("recursos"), usar_cache)
+    gates_s = gates_sinteticos(sint, f02["gates"])
+    segundos = round(time.time() - t0, 1)
+    sint["firma"] = firma_sintetica(f02)
+    rep_dir.mkdir(parents=True, exist_ok=True)
+    md = reporte_sintetico_md(sint, gates_s, f02, segundos)
+    (rep_dir / "FASE_02_sintetica.md").write_text(md, encoding="utf-8")
+    _json({"sint": sint, "gates": gates_s, "segundos": segundos}, rep_dir / "f02_sintetica.json")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+    resumen_log = {"gates": {k: v["ok"] for k, v in gates_s.items()}, "segundos": segundos, "firma": sint["firma"],
+                   "n_jobs": sint["n_jobs"], "cache": sint["cache"]}
+    (log_dir / f"f02_sintetica_{stamp}.log").write_text(json.dumps(resumen_log, indent=2), encoding="utf-8")
+    print(md)
+    return {"ok": all(g["ok"] for g in gates_s.values()), "gates": gates_s, "sint": sint,
+            "reporte": rep_dir / "FASE_02_sintetica.md"}
+
+
+def cargar_sintetica(f02: dict, rep_dir: Path) -> dict:
+    """Lee `f02_sintetica.json` y exige que su firma (config + código) coincida; si no, error claro."""
+    ruta = rep_dir / "f02_sintetica.json"
+    if not ruta.exists():
+        raise FileNotFoundError(f"falta {ruta}: corre primero `--etapa sintetica`")
+    sint = json.loads(ruta.read_text(encoding="utf-8"))["sint"]
+    if sint.get("firma") != firma_sintetica(f02):
+        raise RuntimeError(f"{ruta} está desactualizada (cambió el código del generador o la config de la sintética): "
+                           "vuelve a correr `--etapa sintetica`")
+    return sint
+
+
+def correr_real(cfg, df: pl.DataFrame, sint: dict, ruta_densidad: Path, rep_dir: Path, log_dir: Path,
+                fig_dir: Path) -> dict:
+    """Etapa `real`: análisis sobre `df` (datos de F0) + compuertas con la sintética `sint` ya calculada.
+
+    Si la equivalencia de Prop. 2″ no pasa, G2.2–G2.4 quedan provisionales (🔎, en bruto) y devuelve `detenido=True`
+    con ok=False: la fase no avanza. Devuelve {'ok', 'detenido', 'gates', 'reporte', 'agregados'}.
+    """
+    from . import recursos
     t0 = time.time()
     f02, fis = cfg["f02"], cfg["fisica"]
+    recursos.limitar_principal(int((cfg.get("recursos") or {}).get("blas_hilos_principal", 4)))
     print(f"F2: {df.height:,} lanzamientos × {df.width} columnas", flush=True)
     r = analizar(df, f02, fis, cfg["seed"])
     a, pj = r["agregados"], r["por_juego"]
-    print("F2: sintética con física exacta (estudio de simulación de G2.1, escenario de G2.3b) ...", flush=True)
-    sint = sintetica_f02(f02, fis)
     gates = evaluar_gates(a, sint, f02["gates"], f02.get("referencia", "No Altitude"))
     ruta_densidad.parent.mkdir(parents=True, exist_ok=True)
     pj.write_parquet(ruta_densidad)
@@ -990,10 +1217,23 @@ def correr(cfg, df: pl.DataFrame, ruta_densidad: Path, rep_dir: Path, log_dir: P
     _json({"gates": gates, "segundos": segundos, "agregados": a, "sintetica": sint}, rep_dir / "fase_02.json")
     log_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+    pp = a.get("prop2pp") or {}
+    detenido = bool(pp.get("activada", True)) and not pp.get("adoptado")
     resumen = {"filas_entrada": a["datos"]["filas_entrada"], "filas_salida": a["datos"]["filas_salida"],
-               "juegos": a["juegos"], "gates": {k: v["ok"] for k, v in gates.items()}, "segundos": segundos,
+               "juegos": a["juegos"], "gates": {k: v["ok"] for k, v in gates.items()},
+               "provisional": [k for k, v in gates.items() if v.get("provisional")], "detenido": detenido,
+               "prop2pp": {k: pp.get(k) for k in ("estimador", "beta", "se_beta", "adoptado")}, "segundos": segundos,
                "se_metodo": a["se"]["metodo"], "segundos_sintetica": sint["segundos"]}
-    (log_dir / f"f02_{stamp}.log").write_text(json.dumps(resumen, indent=2, ensure_ascii=False), encoding="utf-8")
+    (log_dir / f"f02_{stamp}.log").write_text(json.dumps(resumen, indent=2, ensure_ascii=False, default=_a_json), encoding="utf-8")
     print(md)
-    return {"ok": all(g["ok"] for g in gates.values()), "gates": gates, "reporte": rep_dir / "FASE_02.md",
-            "agregados": a}
+    ok = (not detenido) and all(g["ok"] for g in gates.values() if not g.get("provisional"))
+    return {"ok": ok, "detenido": detenido, "gates": gates, "reporte": rep_dir / "FASE_02.md", "agregados": a}
+
+
+def correr(cfg, df: pl.DataFrame, ruta_densidad: Path, rep_dir: Path, log_dir: Path, fig_dir: Path,
+           sint: dict | None = None, usar_cache: bool | None = None) -> dict:
+    """Ejecuta F2 completo (sintética + real) sobre `df`. Con `sint` ya calculada, solo la etapa real. No sale del proceso."""
+    if sint is None:
+        s = correr_sintetica(cfg, rep_dir, log_dir, usar_cache)
+        sint = s["sint"]
+    return correr_real(cfg, df, sint, ruta_densidad, rep_dir, log_dir, fig_dir)

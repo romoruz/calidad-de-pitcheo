@@ -50,7 +50,7 @@ def preparar_datos(df: pl.DataFrame, y_plano_ft: float = fisica.Y_FRENTE_PLATO_F
     """
     req = ["game_anon_id", "pitcher_anon_id", "familia", "pitcher_throws_r", "year", "altitude_category_h",
            "excluir_modelo", *fisica._R0, *fisica._V0, *fisica._A0, "PitchTrajectoryXc1", "SpinRate", "SpinAxis"]
-    extra = [c for c in ("RelHeight", "PlateLocHeight", "parque_id") if c in df.columns]
+    extra = [c for c in ("RelHeight", "PlateLocHeight", "parque_id", "RelSpeed") if c in df.columns]
     t = df.select([*req, *extra]).with_columns(
         _txt(df, "game_anon_id").alias("game_anon_id"), _txt(df, "pitcher_anon_id").alias("pitcher_anon_id"),
         _txt(df, "familia").alias("familia"), _txt(df, "altitude_category_h").alias("altitude_category_h"),
@@ -96,6 +96,12 @@ def preparar_datos(df: pl.DataFrame, y_plano_ft: float = fisica.Y_FRENTE_PLATO_F
         vec["rel_height"] = t["RelHeight"].to_numpy().astype(float)
     if "parque_id" in extra:
         d = d.with_columns(t["parque_id"].alias("parque"))
+    if "RelSpeed" in extra:                       # instrumento de log‖v̄‖ en la Prop. 2″ (ADR-019): mph → log m/s
+        rs = t["RelSpeed"].to_numpy().astype(float)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            d = d.with_columns(pl.Series("log_rel_speed", np.where(rs > 0, np.log(rs * 0.44704), np.nan)))
+            sr = fisica.R_BOLA * t["SpinRate"].to_numpy().astype(float) * fisica.RPM_RADS / np.where(rs > 0, rs * 0.44704, np.nan)
+            d = d.with_columns(pl.Series("S_rel", sr))      # S con la rapidez de liberación: exógena al arrastre (ADR-019)
     conteo["filas_salida"] = d.height
     return {"d": d, "vec": vec, "conteo": conteo}
 
@@ -422,40 +428,51 @@ def _normalizar_por_grupo(delta: np.ndarray, en_ref: np.ndarray, grupos_norm: np
     return delta - aj
 
 
-def estimar_reynolds(d: pl.DataFrame, cfg_f02: dict, referencia: str = "No Altitude", por_anio: bool = True) -> dict:
-    """Prop. 2″ (ADR-018): ajusta `y_c = δ_g + α_{j,k} + f_c(S) + β_c · log‖v̄‖ + ε` y devuelve β̂_c, δ̂_c y δ̃_c.
+def estimar_reynolds(d: pl.DataFrame, cfg_f02: dict, referencia: str = "No Altitude", por_anio: bool = True,
+                     instrumento: bool | None = None) -> dict:
+    """Prop. 2″ (ADR-018/019): `y_c = δ_g + α_{j,k} + f_c(S) + β_c · log‖v̄‖ + ε` → β̂_c, δ̂_c y δ̃_c = δ̂_c/(1+β̂_c).
 
-    Las columnas de `d`: `juego`, `lanzador_forma`, `S`, `estrato`, `cubeta`, `y_D`, `y_L`, `year`, y además
-    `v_norma` (‖v̄‖ en m/s, provista por `preparar_datos`). Los efectos fijos de juego absorben log ρ_g · (1+β_c);
-    la variación de log‖v̄‖ dentro de lanzador×forma, controlada por el spline de S, identifica β_c (con la salvedad
-    de la colinealidad diagnosticada abajo). SE CR2 con conglomerado lanzador×juego.
+    **Endogeneidad (ADR-019).** log‖v̄‖ (rapidez en el punto medio del vuelo) depende del arrastre del propio
+    lanzamiento: un C_D mayor frena más y baja ‖v̄‖, justo cuando y = log ρC_D sube. MCO da β̂ sesgado hacia abajo
+    (≈ −0.24 en la sintética aun sin ruido de medición). Con la columna `log_rel_speed` (log de la rapidez en la
+    liberación, medida antes del vuelo y por tanto exógena al arrastre) se estima por **2SLS**: segunda etapa sobre
+    [dummies de juego, lanzador×forma, splines de S, x̂] con x̂ el ajuste de la primera etapa de log‖v̄‖ sobre las
+    mismas columnas más el instrumento; el spline de S usa `S_rel = rω/RelSpeed` (exógena) y no S = rω/v̄, que arrastra la
+    parte endógena de v̄ y deja un sesgo residual de ≈ +0.03 en β̂ (`prop2pp.s_exogeno`). Como x̂ es una proyección sobre span(X, z), β̂ − β = (W'W)⁻¹W'e exactamente
+    (e = residuo ESTRUCTURAL con el log‖v̄‖ observado) y el SE es el sándwich CR2 sobre W (aproximación: leverages de la
+    segunda etapa). `instrumento=None` usa IV si hay `log_rel_speed` con datos y `prop2pp.instrumento` no es falso;
+    si no, MCO (declarado en `estimador`). Siempre se reporta también `beta_mco` (diagnóstico).
 
-    Devuelve:
-      - `beta` (2,), `se_beta` (2,): β̂_D, β̂_L con CR2.
-      - `delta` (G, 2), `se_delta` (G, 2): δ̂_c normalizado (por año si `por_anio=True`).
-      - `delta_corregido` (G, 2) = δ̂_c / (1 + β̂_c), `se_delta_corregido` (G, 2) con delta method CR2.
-      - `r2_colinealidad`: R² de log‖v̄‖ sobre {dummies juego, dummies lanzador×forma, splines f_c} (sin log v).
-         Un R² ≈ 1 indica que β_c no está identificado.
-      - `conectado`, `juegos`, `en_referencia`, `grupos_norm`, `anio_juego`, `iteraciones`, `convergio`.
+    Devuelve `beta`, `se_beta` (2,), `delta`, `se_delta`, `delta_corregido`, `se_delta_corregido` (G, 2), `estimador`
+    ("IV" | "MCO"), `beta_mco`, `primera_etapa` ({corr, F, r2_parcial}), `r2_colinealidad_log_v`, `juegos`, etc.
     """
+    p2 = cfg_f02.get("prop2pp") or {}
+    quiere_iv = p2.get("instrumento", True) if instrumento is None else instrumento
+    n_perdido = 0
+    if quiere_iv and "log_rel_speed" in d.columns:
+        buenos = np.isfinite(d["log_rel_speed"].to_numpy())
+        n_perdido = int((~buenos).sum())
+        if buenos.mean() >= p2.get("instrumento_fraccion_min", 0.95):
+            d = d.filter(pl.Series(buenos))
+        else:
+            quiere_iv = False
+    else:
+        quiere_iv = False
     jk = d["lanzador_forma"].to_numpy()
     cub = np.array([None if c is None else str(c) for c in d["cubeta"].to_list()], dtype=object)
     args = (cfg_f02.get("n_nudos", 3), cfg_f02.get("grado", 3), cfg_f02.get("n_min_por_col", 20))
-    dis = fisica.construir_diseno(d["juego"].to_numpy(), jk, d["S"].to_numpy(), d["estrato"].to_numpy(), cub, *args)
+    s_exo = bool(quiere_iv and p2.get("s_exogeno", True) and "S_rel" in d.columns and np.all(np.isfinite(d["S_rel"].to_numpy())))
+    s_col = d["S_rel"].to_numpy() if s_exo else d["S"].to_numpy()    # S = rω/v̄ es endógena (v̄ lleva el arrastre del lanzamiento)
+    dis = fisica.construir_diseno(d["juego"].to_numpy(), jk, s_col, d["estrato"].to_numpy(), cub, *args)
     u = dis.usadas
     v_norma = d["v_norma"].to_numpy()
-    valido = u & np.isfinite(v_norma) & (v_norma > 0)
-    if valido.sum() < u.sum():
-        # algún lanzamiento con ‖v̄‖ nulo no debería existir tras preparar_datos; si pasa, Prop. 2″ no evaluable
+    if not np.all(np.isfinite(v_norma[u]) & (v_norma[u] > 0)):
         raise ValueError("v_norma debe ser positivo y finito tras preparar_datos (filtra antes)")
-    log_v = np.log(v_norma[u])
-    y_D = d["y_D"].to_numpy()[u]
-    y_L = d["y_L"].to_numpy()[u]
-    jg = d["juego"].to_numpy()[u]
-    ll = d["lanzador"].to_numpy()[u]
+    x = np.log(v_norma[u])
+    ys = np.column_stack([d["y_D"].to_numpy()[u], d["y_L"].to_numpy()[u]])
+    ll, jg = d["lanzador"].to_numpy()[u], d["juego"].to_numpy()[u]
     conglom = np.char.add(np.char.add(ll.astype(str), "|"), jg.astype(str))
     en_ref = np.array([c == referencia for c in dis.cubeta_juego])
-    anio_juego = None
     if por_anio:
         jd = d.group_by("juego").agg(pl.col("year").first().alias("year"))
         anio_de = dict(zip(jd["juego"].to_list(), jd["year"].to_list(), strict=True))
@@ -464,55 +481,71 @@ def estimar_reynolds(d: pl.DataFrame, cfg_f02: dict, referencia: str = "No Altit
         pos_y = {y: i for i, y in enumerate(anios_ref)}
         grupos_norm = np.array([pos_y.get(a, -1) for a in anio_juego], dtype=int)
     else:
+        anio_juego = None
         grupos_norm = np.zeros(len(dis.juegos), dtype=int)
-    salidas = {"D": fisica.ajustar_lsmr_extendido(dis, y_D, log_v[:, None]),
-               "L": fisica.ajustar_lsmr_extendido(dis, y_L, log_v[:, None])}
-    beta = np.array([salidas["D"]["beta_extra"][0], salidas["L"]["beta_extra"][0]])
-    # Normalización por grupo
-    delta_norm = np.column_stack([_normalizar_por_grupo(salidas[c]["delta"], en_ref, grupos_norm) for c in ("D", "L")])
-    # X, info, minv compartidos (D y L comparten diseño)
-    X = salidas["D"]["X"]
-    info = salidas["D"]["info"]
-    pos_extra = salidas["D"]["pos_extra"]
-    minv = _inversa_gram(X)
-    p = X.shape[1]
-    sigma = np.sqrt(np.array([(salidas[c]["resid"] ** 2).sum() for c in ("D", "L")]) / max(len(log_v) - p, 1))
+
+    X_base, info = fisica.matriz_diseno_dispersa(dis, ref_juego=0)
+    n_base = X_base.shape[1]
+    # --- primera etapa (si hay instrumento) y regresor de la segunda etapa
+    primera = None
+    if quiere_iv:
+        z = d["log_rel_speed"].to_numpy()[u]
+        Xz = sparse.hstack([X_base, sparse.csr_matrix(z[:, None])]).tocsr()
+        b1, _ = fisica.lsmr_coef(Xz, x)
+        x_hat = Xz @ b1
+        res_x = x - X_base @ fisica.lsmr_coef(X_base, x)[0]
+        res_z = z - X_base @ fisica.lsmr_coef(X_base, z)[0]
+        r2p = float((res_x @ res_z) ** 2 / ((res_x @ res_x) * (res_z @ res_z)))
+        primera = {"corr_parcial": float(np.sqrt(r2p)), "r2_parcial": r2p,
+                   "F": float((len(x) - n_base - 1) * r2p / max(1.0 - r2p, 1e-300))}
+        regresor = x_hat
+    else:
+        regresor = x
+    W = sparse.hstack([X_base, sparse.csr_matrix(regresor[:, None])]).tocsr()
+    Xo = sparse.hstack([X_base, sparse.csr_matrix(x[:, None])]).tocsr()          # con el log‖v̄‖ observado (MCO)
+    coef_w = [fisica.lsmr_coef(W, ys[:, k]) for k in range(2)]
+    coef_o = [fisica.lsmr_coef(Xo, ys[:, k]) for k in range(2)]
+    beta = np.array([c[0][n_base] for c in coef_w])
+    beta_mco = np.array([c[0][n_base] for c in coef_o])
+    # residuo estructural: y − X_base b − β·x (log‖v̄‖ observado)
+    resid = np.column_stack([ys[:, k] - X_base @ coef_w[k][0][:n_base] - beta[k] * x for k in range(2)])
+    p_tot = W.shape[1]
+    sigma = np.sqrt((resid ** 2).sum(axis=0) / max(len(x) - p_tot, 1))
+    minv = _inversa_gram(W)
     n_g = len(dis.juegos)
     pos_juego = info["cols_juego"]
-    R = np.zeros((n_g, p))
+    R = np.zeros((n_g, p_tot))
     ok = pos_juego >= 0
     R[ok] = minv[pos_juego[ok]]
-    # Contrastes de δ (ya normalizado) y SE CR2
+    delta_bruto = np.column_stack([np.where(pos_juego >= 0, coef_w[k][0][np.maximum(pos_juego, 0)], 0.0) for k in range(2)])
+    delta_norm = np.column_stack([_normalizar_por_grupo(delta_bruto[:, k], en_ref, grupos_norm) for k in range(2)])
     etiquetas = np.unique(grupos_norm[grupos_norm >= 0])
     promedios = {int(lab): R[en_ref & (grupos_norm == lab)].mean(axis=0) for lab in etiquetas
                  if (en_ref & (grupos_norm == lab)).any()}
-    fallback = (np.mean(list(promedios.values()), axis=0) if promedios else R[en_ref].mean(axis=0))
+    fallback = np.mean(list(promedios.values()), axis=0) if promedios else R[en_ref].mean(axis=0)
     M_delta = R.copy()
     for g in range(n_g):
         M_delta[g] -= promedios.get(int(grupos_norm[g]), fallback)
-    resid = np.column_stack([salidas["D"]["resid"], salidas["L"]["resid"]])
-    var_delta = _var_cr2(X, minv, resid, conglom, M_delta)                  # (G, 2)
-    e_beta = np.zeros((1, p))
-    e_beta[0, pos_extra[0]] = 1.0
-    var_beta = _var_cr2(X, minv, resid, conglom, e_beta @ minv)[0]           # (2,)
-    # Delta method: δ̃_g = δ_g / (1 + β), SE con contraste combinado por respuesta.
+    var_delta = _var_cr2(W, minv, resid, conglom, M_delta)
+    e_beta = np.zeros((1, p_tot))
+    e_beta[0, n_base] = 1.0
+    var_beta = _var_cr2(W, minv, resid, conglom, e_beta @ minv)[0]
     var_delta_corr = np.empty((n_g, 2))
-    for jr, c in enumerate(("D", "L")):
+    for jr in range(2):
         f = 1.0 / (1.0 + beta[jr])
         M_corr = f * M_delta - (delta_norm[:, jr:jr + 1] * f ** 2) * (e_beta @ minv)
-        var_delta_corr[:, jr] = _var_cr2(X, minv, resid[:, jr:jr + 1], conglom, M_corr)[:, 0]
+        var_delta_corr[:, jr] = _var_cr2(W, minv, resid[:, jr:jr + 1], conglom, M_corr)[:, 0]
     delta_corregido = delta_norm / (1.0 + beta)[None, :]
-    # Colinealidad: R² de log v sobre dummies de juego + lanzador×forma + splines (sin la columna de log v)
-    X_sin_lv = X[:, :pos_extra[0]]
-    r2_col = _r2_lineal_dentro(log_v, X_sin_lv, cfg_f02.get("max_p_cr2", 14000))
-    return {"beta": beta, "se_beta": np.sqrt(var_beta), "delta": delta_norm, "se_delta": np.sqrt(var_delta),
+    r2_col = _r2_lineal_dentro(x, X_base, cfg_f02.get("max_p_cr2", 14000))
+    return {"beta": beta, "se_beta": np.sqrt(var_beta), "beta_mco": beta_mco,
+            "estimador": "IV" if quiere_iv else "MCO", "primera_etapa": primera, "s_exogena": s_exo,
+            "n_instrumento_perdido": n_perdido, "delta": delta_norm, "se_delta": np.sqrt(var_delta),
             "delta_corregido": delta_corregido, "se_delta_corregido": np.sqrt(var_delta_corr),
             "r2_colinealidad_log_v": float(r2_col), "en_referencia": en_ref, "grupos_norm": grupos_norm,
             "anio_juego": anio_juego, "juegos": dis.juegos, "cubeta_juego": dis.cubeta_juego,
             "sigma_eta": sigma, "conectado": dis.conectado,
-            "iteraciones": [salidas[c]["iteraciones"] for c in ("D", "L")],
-            "convergio": [salidas[c]["convergio"] for c in ("D", "L")],
-            "n_lanzamientos": len(log_v), "p_cr2": int(p),
+            "iteraciones": [None, None], "convergio": [coef_w[k][1] for k in range(2)],
+            "n_lanzamientos": len(x), "p_cr2": int(p_tot),
             "pendiente_predicha": float((1.0 + beta[1]) / (1.0 + beta[0])),
             "diseno": dis, "mascara": u}
 

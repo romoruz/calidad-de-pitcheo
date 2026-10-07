@@ -835,39 +835,40 @@ def direccion_magnus(spin_axis_deg, v_hat, signo_x: int = SIGNO_MAGNUS_X) -> np.
     return n / np.linalg.norm(n, axis=1)[:, None]
 
 
-# Referencia de Reynolds (ADR-018): ρ_ref · v_ref · d_bola / μ_aire. Con ρ=1.2 kg/m³, v=40 m/s, d=0.0742 m,
-# μ=1.81e-5 Pa·s → Re_ref ≈ 1.97·10⁵, dentro de la zona del drag crisis para pelotas de béisbol (Nathan 2008).
-RHO_V_REF = 1.2 * 40.0            # kg·m⁻²·s⁻¹ (producto que define el pivote de log Re para la ley potencial)
+# Reynolds (ADR-019 D1): Re = ρ·v·d/μ con d = diámetro de la bola y μ = viscosidad dinámica del aire. C_D depende
+# SOLO de Re (ley potencial pura, pendiente local β_D en log Re); C_L depende de S (y de Re solo si beta_L ≠ 0).
+# Re_ref = Re(ρ₀=1.2 kg/m³, v=40 m/s) ≈ 1.97·10⁵ (zona del drag crisis, Nathan 2008): C_D(Re_ref) = `cd`.
+MU_AIRE = 1.81e-5                 # Pa·s
+D_BOLA = 2.0 * R_BOLA             # m
+RE_REF = 1.2 * 40.0 * D_BOLA / MU_AIRE
 
 
 def _integrar_bloque(r0, v0, omega_hat, omega_t, cd, rho, t_max: float, dt: float,
                      beta_D: float = 0.0, beta_L: float = 0.0):
     """DOP853 (rtol 1e-10) para un bloque de lanzamientos a la vez. Devuelve (t, y) con y: (6, N, nt).
 
-    Si `beta_D` ≠ 0 (`beta_L` ≠ 0), aplica una **ley potencial de Reynolds** a C_D (C_L): se multiplican por
-    `(ρ·v / RHO_V_REF)^β` (d_bola y μ_aire absorbidos en la constante). β < 0 reproduce el drag crisis
-    (Nathan 2008): C_D cae con Re.
+    ADR-019 D1: `C_D = cd · (Re/Re_ref)^β_D` con Re = ρ·v·d/μ (v = rapidez instantánea): sin ningún otro término en v,
+    de modo que la pendiente local en log Re es EXACTAMENTE β_D. `C_L = S/(2.32·S + 0.4)` (Nathan 2008), sin Re, salvo
+    que `beta_L ≠ 0` lo multiplique por `(Re/Re_ref)^β_L`. β_D < 0 reproduce el drag crisis.
     """
     from scipy.integrate import solve_ivp
 
     n = r0.shape[0]
     kappa = (rho * A_BOLA / (2.0 * M_BOLA))                       # (N,)
     g_vec = np.array([0.0, 0.0, -G_SI])[:, None]
-    log_rho = np.log(rho)                                         # para el factor de Reynolds
+    log_rho = np.log(rho)
+    log_mu_d = np.log(D_BOLA / MU_AIRE)
 
     def rhs(_t, s):
         u = s.reshape(6, n)
         v = u[3:]
         sp = np.sqrt(np.sum(v * v, axis=0))
-        cd_t = cd * (1.0 + 0.2 * (sp / 40.0 - 1.0))                # curvatura mínima (baseline histórico)
+        log_re_rel = log_rho + np.log(sp) + log_mu_d - np.log(RE_REF)
+        cd_t = cd * np.exp(beta_D * log_re_rel) if beta_D != 0.0 else cd
         s_giro = R_BOLA * omega_t / sp
-        cl = s_giro / (2.32 * s_giro + 0.4)                        # C_L = 1/(2.32 + 0.4/S) (Nathan 2008)
-        if beta_D != 0.0 or beta_L != 0.0:
-            log_re_rel = log_rho + np.log(sp) - np.log(RHO_V_REF)
-            if beta_D != 0.0:
-                cd_t = cd_t * np.exp(beta_D * log_re_rel)
-            if beta_L != 0.0:
-                cl = cl * np.exp(beta_L * log_re_rel)
+        cl = s_giro / (2.32 * s_giro + 0.4)                        # C_L(S) (Nathan 2008)
+        if beta_L != 0.0:
+            cl = cl * np.exp(beta_L * log_re_rel)
         cruz = np.cross(omega_hat, v.T).T                        # ω̂ × v: perpendicular a v
         n_hat = cruz / np.sqrt(np.sum(cruz * cruz, axis=0))
         acel = g_vec - kappa * cd_t * sp * v + kappa * cl * sp**2 * n_hat
@@ -964,7 +965,7 @@ def generar_fisica(n_juegos: int = 45, lanzamientos_por_juego: int = 111, semill
     `calibracion_parques` {índice de parque: (λ, τ)} aplica la calibración por PARQUE (ver
     `esquema_calibracion_parques`) y sustituye a `cubetas_sesgo`. `n_jobs` > 1 integra los bloques en paralelo con
     joblib (un flujo aleatorio hijo por bloque: determinista, pero otra realización que `n_jobs=1`).
-    `beta_D`, `beta_L` (ADR-018): si ≠ 0, aplican la ley potencial de Reynolds a C_D/C_L (ver `_integrar_bloque`).
+    `beta_D`, `beta_L` (ADR-018/019): ley potencial pura de Reynolds para C_D (y C_L si ≠ 0); ver `_integrar_bloque`.
     Nathan (2008): en el régimen del drag crisis β_D ∈ [−0.4, −0.2] es un rango plausible para pelotas de béisbol.
 
     Devuelve (DataFrame con las columnas de F2, verdad). El DataFrame trae las columnas de `pitches.parquet` que
@@ -1084,6 +1085,8 @@ def generar_fisica(n_juegos: int = 45, lanzamientos_por_juego: int = 111, semill
         perp = a_t - np.einsum("ij,ij->i", a_t, vh)[:, None] * vh
         nh = perp / np.linalg.norm(perp, axis=1)[:, None]
         axis_obs = np.degrees(np.arctan2(nh[:, 0] / SIGNO_MAGNUS_X, -nh[:, 2])) % 360.0
+    rel_speed = mph + rng.normal(0, 0.2, n)                    # mph: velocidad en la liberación (radar), error 0.2 mph;
+    #                                                            se draw al final: no altera ninguna columna previa
     anio_i = np.array([ji["anio"] for ji in juego_info])[g_idx]
     cub_i = np.array([ji["cubeta"] for ji in juego_info])[g_idx]
     df = pl.DataFrame({
@@ -1095,7 +1098,7 @@ def generar_fisica(n_juegos: int = 45, lanzamientos_por_juego: int = 111, semill
         "x0": r9[:, 0], "y0": r9[:, 1], "z0": r9[:, 2], "vx0": v9[:, 0], "vy0": v9[:, 1], "vz0": v9[:, 2],
         "ax0": a9[:, 0], "ay0": a9[:, 1], "az0": a9[:, 2], "PitchTrajectoryXc1": c1[:, 1],
         "SpinRate": spin_obs, "SpinAxis": axis_obs, "RelHeight": c0[:, 2],
-        "PlateLocSide": -pos_plato[:, 0], "PlateLocHeight": pos_plato[:, 2],
+        "PlateLocSide": -pos_plato[:, 0], "PlateLocHeight": pos_plato[:, 2], "RelSpeed": rel_speed,
     })
     log_ref = float(np.mean([np.log(ji["rho"]) for ji in juego_info if ji["cubeta"] == "No Altitude"]))
     verdad = {

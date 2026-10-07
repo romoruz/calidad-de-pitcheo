@@ -109,6 +109,13 @@ fisica:
   baro_b: 5.25588
 
 # F2 — densidad del aire por juego desde la trayectoria (docs/MODELO_MATEMATICO.md, sección F2; ROADMAP §1.6).
+# Recursos de cómputo (ADR-019): pensado para una laptop de 4 núcleos físicos / 8 hilos que debe quedar usable.
+recursos:
+  n_jobs: 3                      # workers de joblib/loky; NUNCA -1 (se acota a los núcleos físicos)
+  blas_hilos_worker: 1           # BLAS/OpenMP a 1 hilo dentro de cada worker
+  blas_hilos_principal: 4        # proceso principal (LSMR/CR2): como máximo 4 hilos de BLAS
+  cache: true                    # caché en disco de la sintética: reports/cache/f02_sint/*.npz (fuera de git)
+
 f02:
   # Estimador de la Prop. 2′: efectos fijos de juego + lanzador×forma, f_D = B-spline de S por forma×mano×year.
   forma: familia                 # forma k = familia de ADR-002 hasta que F5 tenga formas (GMM)
@@ -148,6 +155,9 @@ f02:
     activa: true                # si False, solo se reporta como diagnóstico y no se adopta
     tolerancia_equivalencia: 0.10   # |p − b| + 1.96·SE(dif) < tolerancia ⇒ equivalencia aprobada
     tolerancia_r2_colinealidad: 0.98   # R² de log v sobre {dummies, splines}: ≥ ⇒ β no identificable, se declara
+    instrumento: true           # ADR-019: 2SLS con log(RelSpeed) como instrumento de log‖v̄‖ (si hay RelSpeed); MCO si no
+    instrumento_fraccion_min: 0.95   # fracción mínima de filas con RelSpeed válido para usar IV
+    s_exogeno: true             # el spline de S del modelo de Reynolds usa S_rel = rω/RelSpeed (S=rω/v̄ es endógena)
   # Compuertas de §4-F2 (ADR-017).
   gates:
     g21_error_max: 0.01          # G2.1: por nivel, |sesgo relativo medio| + 1.96·MCSE < 1 % (R réplicas)
@@ -155,17 +165,18 @@ f02:
     g22_componente: [-0.32, -0.20]   # G2.2 (c): componente de menor media de la mezcla de Extreme
     g23_pendiente: [0.85, 1.15]  # G2.3a: Deming de δ^L sobre δ^D
     g23b_potencia_min: 0.80      # G2.3b: potencia para |c| = 0.02 (global y por tipo de sesgo)
-    g23b_fpr_max: 0.05           # G2.3b: tasa de falsos positivos en parques limpios
+    g23b_fpr_max: 0.05           # G2.3b: FPR nominal; la cota efectiva es 0.05 + 1.96·√(0.05·0.95/n_limpios) (ADR-019 D3)
     g24_se_max: 0.03             # G2.4: mediana del SE CR2 de δ̂_g
     g24_cobertura_min: 0.90      # G2.4: cobertura mínima del IC95 CR2 (sintética)
   # Sintética de F2 (generar_fisica), PROTOCOLO PRE-REGISTRADO de ADR-017: no se ajusta a la vista del resultado.
   sintetica:
-    semillas: [201, 202, 203, 204, 205, 206, 207, 208, 209, 210]   # R = 10 réplicas (ADR-018: 101-110 consumidas)
+    # R = 30 réplicas, semillas NUEVAS 211-240 (ADR-019). CONSUMIDAS, no reusar: 101-110 (D02b §4) y 201-210 (D02c §8).
+    semillas: [211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230,
+               231, 232, 233, 234, 235, 236, 237, 238, 239, 240]
     n_juegos: 150                # juegos por réplica (G2.1)
     lanzamientos_por_juego: 250
     n_juegos_g23b: 300           # juegos por réplica del escenario de G2.3b (18 parques)
-    n_jobs: -1                   # réplicas en paralelo con joblib (el resultado no depende de esto)
-    beta_D: -0.30                # β_D intencional en el generador para la validación de la corrección de Prop. 2″
-    beta_L: 0.0
+    beta_D: -0.30                # ADR-019 D1: C_D = C_D(Re) con ley potencial pura, pendiente local en log Re = β_D
+    beta_L: 0.0                  # C_L(S) sin Re
     lambda_escala: 1.02
     tau_reloj: 1.01

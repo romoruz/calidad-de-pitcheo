@@ -364,6 +364,15 @@ def ajustar_lsmr(d: DisenoDensidad, y, tol: float = 1e-14, max_iter: int = 20000
             "convergio": bool(sol[1] in (1, 2)), "cambio_final": float(sol[4] / max(np.linalg.norm(y), 1e-300))}
 
 
+def lsmr_coef(X: sparse.csr_matrix, y, tol: float = 1e-14, max_iter: int = 20000) -> tuple[np.ndarray, bool]:
+    """Coeficientes MCO de y sobre las columnas de X con LSMR (columnas escaladas a norma 1). → (b, convergió)."""
+    from scipy.sparse.linalg import lsmr
+    norma = np.sqrt(np.asarray(X.multiply(X).sum(axis=0)).ravel())
+    norma[norma == 0] = 1.0
+    sol = lsmr(X @ sparse.diags(1.0 / norma), np.asarray(y, dtype=float), atol=tol, btol=tol, conlim=1e12, maxiter=max_iter)
+    return sol[0] / norma, bool(sol[1] in (1, 2))
+
+
 def ajustar_lsmr_extendido(d: DisenoDensidad, y, columnas_extra: np.ndarray,
                            tol: float = 1e-14, max_iter: int = 20000) -> dict:
     """Como `ajustar_lsmr` pero concatena `columnas_extra` (n_usadas, k) al diseño disperso al final.

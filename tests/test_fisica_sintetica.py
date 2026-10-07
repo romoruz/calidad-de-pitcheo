@@ -7,6 +7,7 @@ import pytest
 
 from pitcheo import densidad as D
 from pitcheo import fisica as F
+from pitcheo import recursos
 from pitcheo import sintetico as N
 
 M_SOBRE_A = F.DOS_M_SOBRE_A
@@ -177,21 +178,91 @@ def test_sintetica_sin_beta_reproduce_bit_a_bit_la_anterior():
     assert vb["beta_D"] == 0.0 and vb["beta_L"] == 0.0
 
 
-def test_estimador_reynolds_recupera_delta_beta_cuando_lo_impone_el_generador():
-    """Para β_D = −0.5 el `Δβ̂` entre con y sin Reynolds explícito debe aproximarse a −0.5 (±0.1)."""
-    cfg = {"n_nudos": 3, "grado": 3, "n_min_por_col": 20}
-    df0, _ = N.generar_fisica(60, 110, 51, beta_D=0.0)
-    df1, _ = N.generar_fisica(60, 110, 51, beta_D=-0.5)
-    r0 = D.estimar_reynolds(D.preparar_datos(df0)["d"], cfg, "No Altitude")
-    r1 = D.estimar_reynolds(D.preparar_datos(df1)["d"], cfg, "No Altitude")
-    assert abs((r1["beta"][0] - r0["beta"][0]) - (-0.5)) < 0.10               # Δβ̂ ≈ Δβ_true
-    # Con β_D = −0.5, el δ̄ bruto Extreme se atenúa y el corregido recupera cerca de la verdad barométrica log(0.76).
-    cub = np.array([c for c in r1["cubeta_juego"]])
-    bruto = r1["delta"][cub == "Extreme Altitude", 0].mean()
-    corregido = r1["delta_corregido"][cub == "Extreme Altitude", 0].mean()
+def test_generador_re_puro_sin_ruido_mco_recupera_beta_exactamente():
+    """ADR-019 D1: C_D depende SOLO de Re (sin término aditivo en v). Sin ruido ni heterogeneidad, β̂ = β exacto."""
+    cfg = {"n_nudos": 3, "grado": 3, "n_min_por_col": 20, "prop2pp": {"instrumento": False}}
+    for beta in (0.0, -0.30):
+        df, _ = N.generar_fisica(60, 110, 911, beta_D=beta, sigma_pos_m=0.0, sigma_alpha=0.0, sigma_cd_lanzamiento=0.0)
+        r = D.estimar_reynolds(D.preparar_datos(df)["d"], cfg, "No Altitude")
+        assert r["estimador"] == "MCO"
+        assert abs(r["beta"][0] - beta) < 0.01                                  # si hubiera 1+0.2(v/40−1) daría ≈ −0.1 de más
+
+
+def _una_replica_beta(beta, semilla):
+    cfg = {"n_nudos": 3, "grado": 3, "n_min_por_col": 20, "prop2pp": {}}
+    df, _ = N.generar_fisica(100, 250, semilla, beta_D=beta)
+    return D.estimar_reynolds(D.preparar_datos(df)["d"], cfg, "No Altitude")
+
+
+@pytest.fixture(scope="module")
+def beta_con_ruido():
+    """Panel de réplicas (semillas de prueba 941-945, no las del protocolo) con β_D = −0.30 y con β_D = 0."""
+    from joblib import Parallel, delayed
+    out = {}
+    with recursos.config_paralelo(2):
+        for beta, n in ((-0.30, 5), (0.0, 3)):
+            rs = Parallel()(delayed(_una_replica_beta)(beta, 941 + k) for k in range(n))
+            out[beta] = {"rs": rs, "beta_D": np.mean([r["beta"][0] for r in rs]), "se": np.mean([r["se_beta"][0] for r in rs]),
+                         "mco": np.mean([r["beta_mco"][0] for r in rs]), "beta_L": np.mean([r["beta"][1] for r in rs]),
+                         "se_L": np.mean([r["se_beta"][1] for r in rs])}
+    return out
+
+
+def test_beta_d_recupera_menos_030_con_2sls_sesgo_menor_que_2_se(beta_con_ruido):
+    """ADR-019 G: con heterogeneidad realista el 2SLS (instrumento log RelSpeed) recupera β_D = −0.30.
+
+    Criterio de Morris, White y Crowther (2019): el sesgo del promedio del panel es < 2·SE. (Queda un resto de ≈ +0.02/+0.03
+    atribuible a que S = rω/v̄ entra como control; ver D02c. Una réplica suelta puede quedar a 2-3 SE.)"""
+    c = beta_con_ruido[-0.30]
+    r = c["rs"][0]
+    assert r["estimador"] == "IV" and r["primera_etapa"]["F"] > 1e3
+    assert abs(c["beta_D"] - (-0.30)) < 2 * c["se"]
+    assert abs(c["beta_L"]) < 3 * c["se_L"]                                     # β_L = 0
+
+
+def test_beta_cero_no_inventa_dependencia_de_reynolds(beta_con_ruido):
+    c = beta_con_ruido[0.0]
+    assert abs(c["beta_D"]) < 2 * c["se"]
+
+
+def test_mco_sin_instrumento_esta_sesgado_por_endogeneidad_de_la_rapidez(beta_con_ruido):
+    """Documenta ADR-019: MCO da β̂_D ≈ β − 0.24 aun sin ruido de posición (un C_D mayor frena más y baja ‖v̄‖)."""
+    c = beta_con_ruido[-0.30]
+    assert c["mco"] < -0.30 - 0.10
+    assert abs(c["beta_D"] - (-0.30)) < abs(c["mco"] - (-0.30)) / 3             # el IV corrige la mayor parte del sesgo
+
+
+def test_iv_usa_s_exogena_y_mco_cae_a_s_medida():
+    """ADR-019: con RelSpeed el spline de S usa S_rel = rω/RelSpeed (exógena); sin él, S = rω/v̄ y MCO."""
+    cfg = {"n_nudos": 3, "grado": 3, "n_min_por_col": 20, "prop2pp": {}}
+    df, _ = N.generar_fisica(40, 100, 7, beta_D=-0.3)
+    d = D.preparar_datos(df)["d"]
+    assert "S_rel" in d.columns and np.all(np.isfinite(d["S_rel"].to_numpy()))
+    assert np.corrcoef(d["S"].to_numpy(), d["S_rel"].to_numpy())[0, 1] > 0.95    # misma magnitud: S_rel solo cambia v̄ por v_rel
+    assert D.estimar_reynolds(d, cfg, "No Altitude")["s_exogena"] is True
+    cfg2 = {**cfg, "prop2pp": {"s_exogeno": False}}
+    assert D.estimar_reynolds(d, cfg2, "No Altitude")["s_exogena"] is False
+    sin = D.estimar_reynolds(D.preparar_datos(df.drop("RelSpeed"))["d"], cfg, "No Altitude")
+    assert sin["estimador"] == "MCO" and sin["s_exogena"] is False
+
+
+def test_sin_relspeed_cae_a_mco_declarado():
+    cfg = {"n_nudos": 3, "grado": 3, "n_min_por_col": 20, "prop2pp": {}}
+    df, _ = N.generar_fisica(40, 100, 7, beta_D=-0.3)
+    r = D.estimar_reynolds(D.preparar_datos(df.drop("RelSpeed"))["d"], cfg, "No Altitude")
+    assert r["estimador"] == "MCO" and r["primera_etapa"] is None
+
+
+def test_estimador_reynolds_corrige_la_atenuacion_del_nivel():
+    """Con β_D = −0.5 el δ̄ᴰ bruto de Extreme queda lejos de log 0.76 y el corregido (2SLS) se acerca."""
+    cfg = {"n_nudos": 3, "grado": 3, "n_min_por_col": 20, "prop2pp": {}}
+    df, _ = N.generar_fisica(80, 200, 51, beta_D=-0.5)
+    r = D.estimar_reynolds(D.preparar_datos(df)["d"], cfg, "No Altitude")
+    cub = np.array(list(r["cubeta_juego"]))
     verdad = np.log(0.76)
-    assert bruto > verdad + 0.05                                              # bruto está mucho más cerca de 0 que de −0.274
-    assert abs(corregido - verdad) < 0.15                                      # corregido reduce el error
+    bruto = r["delta"][cub == "Extreme Altitude", 0].mean()
+    corregido = r["delta_corregido"][cub == "Extreme Altitude", 0].mean()
+    assert abs(bruto - verdad) > 0.10 and abs(corregido - verdad) < abs(bruto - verdad) / 3
 
 
 def test_sobreidentificacion_detecta_equivalencia_cuando_la_hay():

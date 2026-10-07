@@ -2,6 +2,7 @@
 data/
 artefactos/
 reports/privado/
+reports/cache/
 *.parquet
 *.pkl
 *.rds

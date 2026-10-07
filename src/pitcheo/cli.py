@@ -226,22 +226,57 @@ def cmd_f00(a, cfg):
 
 
 def cmd_f02(a, cfg):
-    """F2: densidad del aire por juego (Prop. 2′), compuertas G2.1-G2.4 y reporte."""
-    from . import fase02
+    """F2: densidad del aire por juego (Props. 1, 2′, 2″), compuertas G2.1–G2.4 y reporte, por etapas (ADR-019).
 
+    `--etapa escala|sintetica|real|todo` (default todo = sintetica + real). Salida: 0 ok; 2 compuerta fallida o fase
+    detenida (la equivalencia de Prop. 2″ no pasa); 130/143 si se interrumpió (los workers de loky se terminan).
+    """
+    from . import fase02, recursos
+
+    recursos.instalar_senales()
+    if a.n_jobs:
+        cfg.setdefault("recursos", {})["n_jobs"] = a.n_jobs
+    usar_cache = False if a.sin_cache else None
     out = Path(a.out) if a.out else None
-    if a.escala:
-        res = fase02.prueba_escala(a.escala, cfg)
+    rep_dir = (out / "reports") if out else cfg.ruta("reportes")
+    log_dir = (out / "reports" / "logs") if out else cfg.ruta("logs")
+    etapa = a.etapa
+    if a.escala and etapa == "todo":
+        etapa = "escala"
+    if etapa == "escala":
+        n = a.escala or 635000
+        destino = rep_dir / "f02_escala.json"
+        if a.reusar and fase02.escala_vigente(destino):
+            print(f"prueba de escala vigente (mismo hash de código): se reutiliza {destino}")
+            return
+        res = fase02.prueba_escala(n, cfg)
         print(json.dumps(res, indent=2, ensure_ascii=False))
-        destino = (out or cfg.ruta("reportes")) / "f02_escala.json"
         fase02._json(res, destino)
         print(f"\nprueba de escala -> {destino}")
         return
+    sint = None
+    if etapa == "sintetica":
+        res = fase02.correr_sintetica(cfg, rep_dir, log_dir, usar_cache)
+        print(f"\nreporte -> {res['reporte']}")
+        if not res["ok"]:
+            print("\n[COMPUERTA SINTÉTICA FALLIDA] ver docs/discrepancias/D02c.md; sin ajustar umbrales ni semillas.")
+            sys.exit(2)
+        return
+    if etapa == "real":
+        try:
+            sint = fase02.cargar_sintetica(cfg["f02"], rep_dir)
+        except (FileNotFoundError, RuntimeError) as exc:
+            sys.exit(f"[etapa real] {exc}")
     if a.sintetico:
         from .sintetico import generar_fisica
         out = out or (cfg.ruta("interim") / "sintetico")
+        sc = cfg["f02"]["sintetica"]
         print(f"generando {a.sintetico} juegos sintéticos con física exacta ...", flush=True)
-        df, _ = generar_fisica(a.sintetico, cfg["f02"]["sintetica"]["lanzamientos_por_juego"], cfg["seed"])
+        df, _ = generar_fisica(a.sintetico, sc["lanzamientos_por_juego"], cfg["seed"], beta_D=sc.get("beta_D", 0.0),
+                               beta_L=sc.get("beta_L", 0.0),
+                               n_jobs=recursos.n_jobs_seguro(cfg))
+        rep_dir = (out / "reports")
+        log_dir = (out / "reports" / "logs")
     else:
         ruta = cfg.ruta("pitches")
         if not ruta.exists():
@@ -251,10 +286,13 @@ def cmd_f02(a, cfg):
     res = fase02.correr(
         cfg, df,
         ruta_densidad=(out / "densidad_juego.parquet") if out else cfg.ruta("densidad_juego"),
-        rep_dir=(out / "reports") if out else cfg.ruta("reportes"),
-        log_dir=(out / "reports" / "logs") if out else cfg.ruta("logs"),
-        fig_dir=(out / "figuras" / "f2") if out else cfg.ruta("figuras") / "f2")
+        rep_dir=rep_dir, log_dir=log_dir,
+        fig_dir=(out / "figuras" / "f2") if out else cfg.ruta("figuras") / "f2",
+        sint=sint, usar_cache=usar_cache)
     print(f"\nreporte -> {res['reporte']}")
+    if res.get("detenido"):
+        print("\n[FASE DETENIDA] la equivalencia de Prop. 2″ no pasa: G2.2–G2.4 quedan en bruto con 🔎 (ADR-019).")
+        sys.exit(2)
     if not res["ok"]:
         print("\n[COMPUERTA FALLIDA] ver el Bloque para el orquestador en el reporte.")
         sys.exit(2)
@@ -293,8 +331,16 @@ def main(argv=None):
     s = sp.add_parser("f02", help="densidad del aire por juego desde la trayectoria (Props. 1, 2′, 3′)")
     s.add_argument("--sintetico", type=int, default=0, metavar="N",
                    help="genera N juegos sintéticos con física exacta y corre F2 sobre ellos (no escribe en reports/)")
+    s.add_argument("--etapa", choices=["escala", "sintetica", "real", "todo"], default="todo",
+                   help="etapa a correr (ADR-019): escala | sintetica (estudio de simulación) | real (usa f02_sintetica.json) "
+                        "| todo (sintetica + real)")
     s.add_argument("--escala", type=int, default=0, metavar="N",
-                   help="prueba de escala: genera ≈N lanzamientos sintéticos, corre el análisis completo y reporta tiempo y RAM")
+                   help="atajo de --etapa escala: genera ≈N lanzamientos sintéticos, corre el análisis y reporta tiempo y RAM")
+    s.add_argument("--reusar", action="store_true",
+                   help="con --etapa escala: salta la corrida si reports/f02_escala.json tiene el mismo hash de código")
+    s.add_argument("--sin-cache", action="store_true", help="ignora y no escribe la caché de la sintética (reports/cache/)")
+    s.add_argument("--n-jobs", type=int, default=0, metavar="N",
+                   help="workers de joblib (default recursos.n_jobs = 3; se acota a los núcleos físicos; nunca -1)")
     s.add_argument("--out", default=None, help="redirige densidad_juego, reportes, logs y figuras a este directorio")
     s.set_defaults(f=cmd_f02)
 
