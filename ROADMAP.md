@@ -1,9 +1,23 @@
 # ROADMAP MAESTRO — Stuff+ LMB calibrado por densidad del aire
 
 **Proyecto:** Hackathon ISAC 2026 · Reto Diablos Rojos · `romoruz/calidad-de-pitcheo`
-**Versión:** 2.9 (2.8 + revisión del diseño de F2: Props. 2′ y 3′, errores estándar, sintética)
+**Versión:** 2.10 (2.9 + decisiones F2: G2.1 como estudio de simulación, Prop. 3″, G2.3a/G2.3b; ADR-017)
 **Ruta local (clon del repo + datos):** `/home/rodrigo/calidad-de-pitcheo`
 **Regla:** solo el orquestador cambia este archivo. Claude Code lo lee, no lo edita.
+
+---
+
+## Estado por fase
+
+| Fase | Estado | Rama / tag / nota |
+|---|---|---|
+| F0.0 | ✅ cerrada | tag `fase00_0` |
+| F0 | ✅ cerrada (G0.1–G0.9) | merge `45f9f7c`, tag `fase00`; mecanismo U, `perdida_ignorable=false` |
+| F1 | ✅ cerrada (pre-registro H1–H6) | merge `b6a008c`, tag `fase01`; BH m=5, H5 por equivalencia (v2.8) |
+| F2 | 🟡 diseño revisado (Props. 1, 2′, 3″) + implementación en curso | rama `fase02`, sin PR; compuertas G2.1 (estudio de simulación), G2.2, G2.3a/b, G2.4 por implementar (Sonnet) |
+| F3 | ⚪ pendiente | diseño (Opus) tras F2 |
+| F4 / F5 | ⚪ pendientes (paralelizables) | dependen de F2–F3 |
+| F6–F11 | ⚪ pendientes | — |
 
 ---
 

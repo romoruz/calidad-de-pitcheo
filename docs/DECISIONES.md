@@ -352,3 +352,40 @@ de **control de calidad de datos**, no hipótesis; F1 aún no ocurre.
   cubetas se reporta además con intervalo de Imbens–Manski.
 - **Transparencia de pre-registro.** Los diagnósticos usan el tráfico de corredores por cubeta, que no es el estadístico de
   ninguna H1–H6; H3 condiciona en EV×LA y usa valor de batazo.
+
+---
+
+## ADR-017 — G2.1 como estudio de simulación; Props. 3″ y rediseño de G2.3 (decisiones F2)
+
+- **Contexto.** El Prompt 2 de F2 (Sonnet) se detuvo porque G2.1 —definida como "error sintético de recuperación de ρ < 1 %"
+  en una sola corrida— salió 1.253 % con 45 juegos y 3 semillas (`docs/discrepancias/D02b.md` §1). El diagnóstico mostró que
+  el **sesgo** del estimador es ≈ +0.2 % (persiste sin ruido de posición) y que lo que cruzaba el 1 % era **dispersión
+  muestral** de una sintética chica (sd 0.4–0.5 % con 45 juegos; 0.10–0.14 % con 150). La implementación también reveló que
+  la Prop. 3′(b) era imprecisa (el factor de giro, calculado con la rapidez medida, mete un término en δ^L−δ^D) y que la
+  banda de Deming no detecta un sesgo de ±2 %.
+- **Decisión.**
+  1. **G2.1 es un estudio de simulación** (Morris, White y Crowther 2019) con protocolo pre-registrado y **no ajustable a la
+     vista del resultado**: estimando log(ρ_nivel/ρ_No) por nivel; R = 10 réplicas con semillas fijas **101–110**, 150
+     juegos/réplica y ~250 lanzamientos/juego (máximo factible ≥ 150 juegos si el costo lo impide, documentándolo).
+     **Aprueba** si, por nivel, |sesgo relativo medio| + 1.96·MCSE < 1 %. Se reportan además SE empírico, RMSE y **cobertura
+     del IC95 CR2** de δ̂_g sobre todos los juegos×réplicas (valida G2.4; alerta si < 0.90). La corrida fallida de 45 juegos
+     queda como antecedente en D02b. Detalle en `docs/MODELO_MATEMATICO.md` §F2.5a.
+  2. **Prop. 3″** (sustituye a la 3′(b), §F2.4): (i) solo el c_g **relativo** entre parques es identificable —la
+     normalización por canal absorbe un c común, así que un sesgo uniforme no confunde contrastes de altitud—; (ii) como S
+     usa la rapidez medida, **δ^L − δ^D = κ̄·c_g + (η_L − η_D)·log(λ/τ)**, con η_D ≈ 0 y η_L ≈ 0.47 (signos verificados en la
+     sintética); (iii) separar λ de τ con ê queda **🔎 exploratorio, nunca compuerta**.
+  3. **G2.3 se divide:** **G2.3a** = Deming, pendiente ∈ [0.85, 1.15] (proporcionalidad; se conserva). **G2.3b** = ĉ por
+     parque con el detector ê (ID de parque de F0, o parque latente GMM), centrado en la mediana de su cubeta, con **Wald
+     (SE CR2) y control FDR de Benjamini–Hochberg al 5 %**; criterio **potencia ≥ 0.80 para |c| = 0.02 y FPR ≤ 0.05** en
+     parques limpios, medido inyectando λ = 1.02 en ~1/3 de los parques de cada cubeta y τ = 1.01 en otro ~1/3 (§F2.5b).
+  4. **ê = v̂ × n̂_Magnus**, con n̂_Magnus la dirección de **sustentación** implicada por `SpinAxis` (convención Nathan 2008),
+     no el vector del eje. La prueba de **circularidad de `SpinAxis`** (R² sobre columnas de movimiento) es **obligatoria**;
+     si sale inferido, **G2.3b se declara no evaluable** y queda solo G2.3a.
+  5. **Solver** para la Prop. 2′: LSMR disperso (Fong y Saunders 2011) o aceleración Irons–Tuck (Bergé 2018), que debe
+     coincidir con las proyecciones alternadas a ≤ 1e-8 en la muestra de 5 000 (prueba de regresión).
+- **Alternativas.** Subir el tamaño de la sintética o cambiar semillas para que la corrida de 45 juegos "pasara" habría sido
+  ajustar la compuerta al resultado: rechazado. Dejar G2.3 solo como Deming habría dejado pasar sesgos de calibración de
+  ±2 % específicos de parque, que es justo la amenaza de la Prop. 3 (b).
+- **Consecuencias.** F2 (Sonnet) implementa estas compuertas; nada de esto se implementa en esta ronda del orquestador (solo
+  docs + el experimento de D02b §3). G2.3b depende de que exista ID de parque o un GMM de parques latentes y de que
+  `SpinAxis` sea medido. La corrida local de F2 queda a la espera de la implementación.
