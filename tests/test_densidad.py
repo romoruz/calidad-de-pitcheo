@@ -215,3 +215,34 @@ def test_fail_closed_perp_degenerada_filtra_sin_fallar():
     chk = D.verificar_spinaxis_medido(P["vec"]["spin_axis"], a_t, v, P["d"]["lanzador_forma"].to_numpy())
     assert chk["n_evaluado"] < chk["n_entrada"] and chk["medido"] is True       # las degeneradas se filtraron
     assert np.isfinite(chk["desfase_rms_grados"]) and np.isfinite(chk["r2_circularidad"])
+
+
+# --------------------------------------------------------------------------
+# CR2 con conglomerados grandes (cluster = lanzador): rama de rango bajo ≡ eigh denso (ADR-019)
+# --------------------------------------------------------------------------
+@pytest.mark.parametrize(("n_c", "k"), [(400, 12), (60, 40), (30, 30), (25, 40)])
+def test_a_por_e_rango_bajo_equivale_al_eigh_denso(n_c, k):
+    rng = np.random.default_rng(n_c + k)
+    Xd = rng.normal(size=(n_c, k))
+    Xd[:, :3] = (rng.random((n_c, 3)) < 0.4).astype(float)
+    a = rng.normal(size=(k * 3, k))
+    minv = np.linalg.inv((a.T @ a / 3 + 0.1 * np.eye(k)) * n_c / 4)
+    e = rng.normal(size=(n_c, 2))
+    w, v = np.linalg.eigh(np.eye(n_c) - Xd @ minv @ Xd.T)
+    ref = (v * np.where(w > 1e-8, 1.0 / np.sqrt(np.clip(w, 1e-8, None)), 0.0)) @ (v.T @ e)
+    assert np.max(np.abs(D._a_por_e(Xd, minv, e) - ref)) < 1e-10
+
+
+def test_detector_e_con_conglomerados_por_lanzador_de_miles_de_filas_es_rapido():
+    """Con conglomerados por lanzador grandes (a escala real, miles de filas) el `eigh` denso tardaba minutos; el rango bajo, segundos."""
+    import time
+    df, _ = N.generar_fisica(120, 250, 8, n_jobs=2)
+    P = D.preparar_datos(df)
+    d, vec = P["d"], P["vec"]
+    jk = d["lanzador_forma"].to_numpy()
+    cong = d["lanzador"].to_numpy().astype(str)
+    assert np.unique(cong, return_counts=True)[1].max() > 300                       # conglomerados grandes (cientos de filas)
+    t0 = time.time()
+    r = D.detector_e_parques(vec["spin_axis"], vec["a_tilde"], vec["v_barra"], jk, d["parque"].to_numpy().astype(object),
+                             d["cubeta"].to_numpy().astype(object), cong, N.SIGNO_MAGNUS_X)
+    assert time.time() - t0 < 60 and all(np.isfinite(f["se"]) for f in r["parques"] if f["evaluable"])

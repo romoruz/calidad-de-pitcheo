@@ -1,19 +1,25 @@
 {
   "lanzamientos": 634974,
   "juegos": 2540,
-  "segundos_generacion": 41.6,
-  "segundos_analisis": 39.9,
-  "ram_pico_mb": 1612,
-  "ram_pico_tras_generar_mb": 867,
+  "n_jobs": 3,
+  "hash_codigo": "b117525b18cbe8c2",
+  "segundos_generacion": 42.0,
+  "segundos_analisis": 166.9,
+  "ram_pico_mb": 2614,
+  "ram_pico_generacion_mb": 1367,
+  "ram_pico_analisis_mb": 2614,
+  "cpu_pct_equipo_generacion": 61.0,
+  "cpu_pct_equipo_analisis": 65.2,
   "se_metodo": "CR2",
   "p_cr2": 2983,
   "juegos_conectados": 2540,
   "iteraciones_solver": [
-    374,
-    372
+    372,
+    373
   ],
   "convergio": [
     true,
     true
-  ]
+  ],
+  "prop2pp_estimador": "IV"
 }

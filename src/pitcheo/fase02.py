@@ -580,8 +580,10 @@ def sintetica_f02(f02: dict, fis: dict, recursos_cfg: dict | None = None, usar_c
     df, v, _ = cache_sint.generar_con_cache("g21", sc["semillas"][0], _kw_g21(sc), usar)
     con, sin = _estimar_sintetica(df, v, f02), _estimar_sintetica(df, v, f02, sin_alpha=True)
 
+    atenuacion = 1.0 + sc.get("beta_D", 0.0)          # δ̂ bruto estima (1+β_D)·log ρ: se compara contra eso, no contra log ρ
+
     def rmse(x):
-        return float(np.sqrt(np.mean((x["delta"][:, 0] - x["verdad"]) ** 2)))
+        return float(np.sqrt(np.mean((x["delta"][:, 0] - atenuacion * x["verdad"]) ** 2)))
 
     staff = {"semilla": sc["semillas"][0], "rmse_con_alpha": rmse(con), "rmse_sin_alpha": rmse(sin),
              "sigma_alpha": float(v["sigma_alpha"])}
@@ -1041,7 +1043,7 @@ def _sec_sintetica(sint: dict, f02: dict) -> list[str]:
                        for a, b in zip(g21["niveles"]["Medium Altitude"]["errores_por_replica"],
                                        g21["niveles"]["Extreme Altitude"]["errores_por_replica"], strict=True)) + "."), ""]
     s = sint["staff"]
-    L += [(f"**Planteles locales** (semilla {s['semilla']}): RMSE de δ̂ contra la verdad {s['rmse_sin_alpha']:.4f} sin α_{{j,k}} → "
+    L += [(f"**Planteles locales** (semilla {s['semilla']}): RMSE de δ̂ contra su estimando (1+β_D)·log ρ {s['rmse_sin_alpha']:.4f} sin α_{{j,k}} → "
            f"{s['rmse_con_alpha']:.4f} con α_{{j,k}} (Prop. 2′): el segundo efecto fijo elimina el sesgo del C_D medio del plantel."), ""]
     b, nulo = sint["g23b"]["con_calibracion"], sint["g23b"]["nulo"]
     L += ["## Sintética de calibración para G2.3b (ADR-018/019, F2.5b)", "",

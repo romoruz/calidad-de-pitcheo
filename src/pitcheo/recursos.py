@@ -185,20 +185,34 @@ def _estado(codigo: int, interrumpida: bool) -> str:
     return {0: "ok", 2: "compuerta_fallida"}.get(codigo, "error")
 
 
-def correr_etapa(etapa: str, cmd: list[str], ruta_json: Path) -> int:
-    """Ejecuta `cmd` como una etapa: mide su árbol, traduce señales a 'interrumpida' y escribe el JSON de recursos."""
+def correr_etapa(etapa: str, cmd: list[str], ruta_json: Path, gracia_s: float = 8.0) -> int:
+    """Ejecuta `cmd` como una etapa: mide su árbol, traduce señales a 'interrumpida' y escribe el JSON de recursos.
+
+    Ante SIGINT/SIGTERM termina el árbol y, si tras `gracia_s` segundos algo sigue vivo (p. ej. dentro de una llamada nativa
+    de BLAS/LAPACK que no atiende señales), lo mata con SIGKILL: el equipo no debe quedar ocupado tras un Ctrl-C."""
     interrumpida = {"v": False}
     proc_ref: dict = {}
 
     def propagar(signum, _f):
         interrumpida["v"] = True
         p = proc_ref.get("p")
-        if p is not None:
-            for h in reversed(_arbol(psutil.Process(p.pid))):
+        if p is None:
+            return
+        arbol = list(reversed(_arbol(psutil.Process(p.pid))))
+        for h in arbol:
+            try:
+                h.terminate()
+            except psutil.Error:
+                pass
+
+        def escalar():                                    # una llamada nativa larga (BLAS/LAPACK) ignora SIGTERM: SIGKILL
+            _, vivos = psutil.wait_procs(arbol, timeout=gracia_s)
+            for h in vivos:
                 try:
-                    h.terminate()
+                    h.kill()
                 except psutil.Error:
                     pass
+        threading.Thread(target=escalar, daemon=True).start()
 
     viejos = {s: signal.signal(s, propagar) for s in (signal.SIGINT, signal.SIGTERM)}
     try:
@@ -224,12 +238,13 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="python -m pitcheo.recursos")
     ap.add_argument("--etapa", required=True)
     ap.add_argument("--json", default=str(RAIZ / "reports" / "f02_recursos.json"))
+    ap.add_argument("--gracia", type=float, default=8.0, help="segundos entre SIGTERM y SIGKILL a una etapa que no responde")
     ap.add_argument("cmd", nargs=argparse.REMAINDER)
     a = ap.parse_args(argv)
     cmd = a.cmd[1:] if a.cmd and a.cmd[0] == "--" else a.cmd
     if not cmd:
         ap.error("falta el comando tras --")
-    return correr_etapa(a.etapa, cmd, Path(a.json))
+    return correr_etapa(a.etapa, cmd, Path(a.json), a.gracia)
 
 
 if __name__ == "__main__":

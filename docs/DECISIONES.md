@@ -461,3 +461,59 @@ de **control de calidad de datos**, no hipótesis; F1 aún no ocurre.
   de que F0 no trae id de parque; la compuerta se evalúa en la sintética. La normalización por año no afecta a los
   estimadores sintéticos de la antigua ronda 2 (modo global queda disponible como `por_anio: false`). La corrida real
   queda a la espera: F2 (Rodrigo) corre `scripts/fases/f02.sh` con el código nuevo.
+
+---
+
+## ADR-019 — Generador Re-puro, protocolo sintético R=30, cotas de Morris–White–Crowther, regla de detención en real y recursos de cómputo (ronda 4 de F2)
+
+- **Contexto.** La corrida pre-registrada de ADR-018 (semillas 201–210, β_D=−0.30 en el generador; D02c §8) dejó G2.1 sobre δ̃
+  en 1.5–2.1 %, cobertura 0.79 y G2.3b con FPR 0.067 (4/60). El diagnóstico atribuyó el 2 % al sesgo de β̂_D (−0.346) y a un
+  término aditivo `C_D·(1+0.2(v/40−1))` del generador que no es una ley potencial pura; el FPR, a una cota de 0.05 a secas
+  sobre solo 60 parques limpios. El orquestador decidió D1–D4 y fijó recursos para la laptop de Rodrigo (i7-1165G7, 4 núcleos
+  físicos / 8 hilos, 32 GB), que debe quedar usable durante F2.
+- **Decisión (orquestador).**
+  1. **D1 — Generador Re-puro.** `C_D = C_D(Re)` con Re = ρ·v·d/μ y ley potencial pura de pendiente local β_D = −0.30 en log Re, sin
+     ningún otro término en v; `C_L(S)` sin Re (β_L = 0). El término aditivo se elimina.
+  2. **D2 — R = 30 réplicas, semillas NUEVAS 211–240.** Las semillas **101–110** (D02b §4) y **201–210** (D02c §8) están
+     **consumidas** y no se reutilizan. G2.1 sobre δ̃ con el mismo criterio (|sesgo relativo medio| + 1.96·MCSE < 1 % por nivel).
+  3. **D3 — G2.3b:** FPR ≤ 0.05 + 1.96·√(0.05·0.95/n_limpios) (Morris, White y Crowther 2019 §5.2; con n = 180 limpios, 0.0818),
+     reportando el IC exacto de Clopper–Pearson; potencia ≥ 0.80 (global y por tipo). Sin cambios de método respecto a ADR-018
+     (LOO, cluster lanzador, t de Pustejovsky y Tipton, BH 5 %).
+  4. **D4 — G2.4:** cobertura del IC95 sobre **δ̃** con el SE delta que incluye Var(β̂), ≥ 0.90. La equivalencia de pendientes
+     (1+β̂_L)/(1+β̂_D) en la sintética es **solo informativa**.
+  5. **E — Datos reales:** la equivalencia contra la Deming observada (±0.10) **decide**. Si pasa, δ̃ es primario para G2.2–G2.4.
+     Si no, G2.2–G2.4 se reportan en bruto con 🔎 (provisionales) y la fase **se DETIENE** (`detenido`, salida 2).
+  6. **R — Recursos:** `recursos.n_jobs: 3` por defecto (nunca −1; se acota a los núcleos físicos); BLAS a 1 hilo dentro de cada
+     worker (`threadpoolctl`/`parallel_config(inner_max_num_threads=1)` y `OMP/OPENBLAS/MKL/NUMEXPR_NUM_THREADS=1` en `f02.sh`) y
+     ≤ 4 hilos de BLAS en el proceso principal; caché en disco de la sintética (`reports/cache/f02_sint/*.npz`, en `.gitignore`;
+     llave = config + semilla + hash de `sintetico.py`/`fisica.py`; `--sin-cache`); `f02.sh --etapa pruebas|escala|sintetica|real|todo`
+     (`todo` salta la escala si existe `reports/f02_escala.json` con el mismo hash de código), `nice -n 10 ionice -c3`,
+     `--cpu-max 300` vía `systemd-run --user --scope -p CPUQuota=300%` si está disponible; trap de SIGINT/SIGTERM que mata los
+     workers de loky y **no commitea** si una etapa fue interrumpida (con `--commit`); `reports/f02_recursos.json` con tiempo, RAM
+     pico (incluidos los hijos, psutil) y CPU % promedio por etapa (meta ≤ 75 % del equipo).
+- **Hallazgos de la implementación (cambios de diseño NO pedidos; propuestos para ratificación).**
+  1. **log‖v̄‖ es endógeno** (D02c §9.1). Con el generador Re-puro y β_D = −0.30, MCO da β̂_D ≈ −0.53: sesgo −0.24 que **persiste sin
+     ruido de posición** y desaparece solo si se quita la heterogeneidad por lanzamiento de C_D (con σ_α = σ_ε = 0, MCO recupera −0.300
+     exacto). Mecanismo: un C_D mayor frena más y baja ‖v̄‖ (punto medio), justo cuando y = log ρC_D sube. La prueba pedida («β̂_D
+     recupera −0.30, sesgo < 2·SE») es imposible con MCO.
+  2. **Estimador: 2SLS** con log(RelSpeed) (rapidez en la liberación, medida antes del vuelo) como instrumento de log‖v̄‖ (primera
+     etapa F > 7·10⁵). `RelSpeed` está en el diccionario del organizador. Sin `RelSpeed` utilizable, cae a MCO y lo declara.
+  3. **S = rω/v̄ es un control endógeno** (hereda la parte endógena de v̄): con S medida el 2SLS conserva un sesgo de +0.034
+     (|z|>2 en 3/12 réplicas); con **S_rel = rω/RelSpeed** en el spline del modelo de Reynolds, +0.007 y sd/SE = 0.91 (|z|>2 en 0/12).
+     Se adopta S_rel solo en el modelo de Reynolds (`prop2pp.s_exogeno`); el estimador bruto de la Prop. 2′ no cambia.
+  4. **La equivalencia (±0.10 con 1.96·SE) casi no tiene potencia con ≈ 3.7·10⁴ lanzamientos:** SE(p) ≈ 0.06 ⇒ |dif| + 1.96·SE > 0.10
+     aun con diferencia 0.004 (piloto: predicha 1.408 vs observada 1.412, 0/6 aprueban). Por eso es solo informativa en la sintética.
+     Con ≈ 6.3·10⁵ lanzamientos el SE cae ≈ √17 veces y la prueba sí discrimina. Alternativa si el orquestador la quiere más permisiva:
+     TOST al 90 % (1.645·SE).
+- **Alternativas.** Bajar R o cambiar semillas hasta pasar: rechazado. Mantener MCO y relajar la prueba de G: rechazado (el sesgo es
+  de método, no de muestra). Instrumentar con vy0 (velocidad del 9P a 50 ft): no probado; por razonamiento, ya acumula 4.5 ft de arrastre y seguiría parcialmente endógeno.
+- **Consecuencias.** δ̃_g (con su SE delta) sustituye a δ_g como insumo de F3 cuando la equivalencia pasa en real. La etapa `real`
+  depende de `reports/f02_sintetica.json` (firma = config + código).
+- **Resultado (D02c §10).** Protocolo pre-registrado (semillas 211–240, código congelado en e287d3f; `f02.sh --etapa sintetica`):
+  **G2.1** sobre δ̃ 0.305 % (Medium) / 0.410 % (Extreme) ✅; **G2.3b** potencia 1.000 (IC95 CP [0.990, 1.000]) y FPR 4/180 = 0.022
+  (IC95 CP [0.006, 0.056]; cota 0.0818) ✅; **G2.4** cobertura 0.948 ✅. β̂_D = −0.304 (verdad −0.30; MCO −0.562). Sin corregir, el δ̂ bruto
+  se atenúa 5.9 % / 8.3 % con cobertura 0.468. Una segunda corrida con la caché dio resultados idénticos (226 s vs 492 s). Escala (≈ 635 k
+  lanzamientos, pipeline completo): 210 s, 2.6 GB, CPU 52 %. Etapa `real` de punta a punta sobre una sintética de esa escala: 197 s; la
+  equivalencia pasa (frontera 0.031) y δ̃ recupera los niveles barométricos. **Pendiente:** la etapa `real` sobre los datos reales (Rodrigo).
+- **Por ratificar (orquestador):** (a) 2SLS con `RelSpeed` y S_rel en lugar de MCO (hallazgos 1–3); (b) equivalencia ±0.10 con 1.96·SE o TOST
+  al 90 %; (c) que `real` falle cerrado a MCO si `RelSpeed` falta (β̂ sesgado a la baja, declarado en el reporte).

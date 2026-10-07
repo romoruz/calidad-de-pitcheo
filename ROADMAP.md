@@ -14,7 +14,7 @@
 | F0.0 | ✅ cerrada | tag `fase00_0` |
 | F0 | ✅ cerrada (G0.1–G0.9) | merge `45f9f7c`, tag `fase00`; mecanismo U, `perdida_ignorable=false` |
 | F1 | ✅ cerrada (pre-registro H1–H6) | merge `b6a008c`, tag `fase01`; BH m=5, H5 por equivalencia (v2.8) |
-| F2 | 🟠 ronda 3 implementada (Prop. 2″ Reynolds, normalización por año, SpinAxis fail-closed, G2.3b con LOO+Pustejovsky–Tipton+cluster lanzador; ADR-018) | rama `fase02`, sin PR; `docs/discrepancias/D02c.md`; sintética 201–210 por correr; corrida real pendiente de `scripts/fases/f02.sh` (Rodrigo) |
+| F2 | 🟡 ronda 4 implementada (ADR-019): **compuertas sintéticas G2.1, G2.3b y cobertura de G2.4 ✅** (R=30, semillas 211–240); falta la etapa `real` (Rodrigo) | rama `fase02`, sin PR; `docs/discrepancias/D02c.md` §9–11; Prop. 2″ por 2SLS con RelSpeed (por ratificar); `bash scripts/fases/f02.sh --etapa real --cpu-max 300` |
 | F3 | ⚪ pendiente | diseño (Opus) tras F2 |
 | F4 / F5 | ⚪ pendientes (paralelizables) | dependen de F2–F3 |
 | F6–F11 | ⚪ pendientes | — |

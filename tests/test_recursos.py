@@ -177,6 +177,29 @@ def test_senal_termina_el_arbol_y_marca_interrumpida(tmp_path, senal):
     assert json.loads(ruta.read_text(encoding="utf-8"))["etapas"]["t"]["estado"] == "interrumpida"
 
 
+def test_etapa_que_ignora_sigterm_se_mata_con_sigkill_tras_la_gracia(tmp_path):
+    """Una llamada nativa larga (BLAS/LAPACK) no atiende SIGTERM: el wrapper escala a SIGKILL y la etapa queda interrumpida."""
+    ruta = tmp_path / "r.json"
+    pidfile = tmp_path / "terco.pid"
+    terco = ("import os,signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); signal.signal(signal.SIGINT, signal.SIG_IGN); "
+             f"open(r'{pidfile}','w').write(str(os.getpid())); time.sleep(300)")
+    p = subprocess.Popen([sys.executable, "-m", "pitcheo.recursos", "--etapa", "t", "--json", str(ruta), "--gracia", "1.5",
+                          "--", sys.executable, "-c", terco], cwd=RAIZ)
+    for _ in range(100):
+        if pidfile.exists() and pidfile.read_text():
+            break
+        time.sleep(0.1)
+    terco_pid = int(pidfile.read_text())
+    assert _vivo(terco_pid)
+    t0 = time.time()
+    p.send_signal(signal.SIGTERM)
+    assert p.wait(timeout=30) == 130
+    assert time.time() - t0 < 15
+    time.sleep(0.5)
+    assert not _vivo(terco_pid)
+    assert json.loads(ruta.read_text(encoding="utf-8"))["etapas"]["t"]["estado"] == "interrumpida"
+
+
 def test_matar_hijos_termina_los_workers_de_loky():
     from joblib import Parallel, delayed
     with recursos.config_paralelo(2):

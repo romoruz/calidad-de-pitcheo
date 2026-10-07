@@ -77,32 +77,37 @@ reportes reales).
 
 ### Fase F2 — densidad del aire por juego desde la trayectoria
 
-En local, con `data/interim/pitches.parquet` (salida de F0):
+En local, con `data/interim/pitches.parquet` (salida de F0). **Por etapas** (ADR-019), pensado para una laptop de 4 núcleos
+físicos que debe quedar usable:
 
 ```bash
-bash scripts/fases/f02.sh
-# corre pytest, `pitcheo f02` (análisis + estudio de simulación) y la prueba de escala; escribe
-# data/interim/densidad_juego.parquet (por juego, fuera de git), reports/FASE_02.md (Bloque para el orquestador),
-# reports/fase_02.json, reports/f02_escala.json, docs/figuras/f2/ y reports/logs/f02_<fecha>.log;
-# sale con código != 0 si una compuerta (G2.1, G2.2, G2.3a, G2.3b, G2.4) falla, después de escribir el reporte.
+bash scripts/fases/f02.sh --etapa real --cpu-max 300      # solo el análisis sobre los datos reales
+bash scripts/fases/f02.sh --etapa sintetica               # estudio de simulación (R = 30, semillas 211-240; usa la caché)
+bash scripts/fases/f02.sh                                 # todo: pruebas → escala (se salta si no cambió el código) → sintetica → real
+# opciones: --cpu-max N (tope en % de un núcleo, vía systemd-run --user --scope si existe), --n-jobs N, --sin-cache, --commit
 ```
 
-Implementa las Props. 1, 2′ y 3″ de `docs/MODELO_MATEMATICO.md` §F2 y el ADR-017 (`docs/DECISIONES.md`):
+Cada etapa corre bajo `nice -n 10 ionice -c3` con `n_jobs = 3` (nunca `-1`), BLAS a 1 hilo en cada worker (`OMP_NUM_THREADS=1…`,
+`threadpoolctl`) y hasta 4 en el proceso principal. Tiempo, RAM pico (incluidos los hijos) y CPU % promedio por etapa quedan en
+`reports/f02_recursos.json` (meta: CPU promedio ≤ 75 %). Ctrl-C/SIGTERM matan los workers de loky; con `--commit`, `f02.sh` NO
+commitea si una etapa fue interrumpida o falló con error (una compuerta fallida sí se commitea: el reporte es el entregable).
+La etapa `real` lee `reports/f02_sintetica.json` y exige que su firma (config + hash de `sintetico.py`/`fisica.py`) coincida.
+La sintética se cachea en `reports/cache/f02_sint/*.npz` (fuera de git; llave = config + semilla + hash del código).
 
-- **Solver.** LSMR disperso (Fong y Saunders 2011) sobre la matriz de diseño completa; equivale a las proyecciones alternadas
-  a ≤ 1e-8 en δ̂ y residuos (prueba de regresión en 5 000 lanzamientos, `tests/test_fisica_sintetica.py`). Config
-  `f02.solver: lsmr | alternando`.
-- **G2.1 es un estudio de simulación** pre-registrado: R = 10 réplicas (semillas 101–110, 150 juegos × ≈250 lanzamientos)
-  en paralelo con `joblib`, por nivel |sesgo relativo medio| + 1.96·MCSE < 1 %; reporta además SE empírico, RMSE y cobertura
-  del IC95 CR2. **No se ajustan umbrales, semillas ni tamaños a la vista del resultado**; si una compuerta falla, la fase se
-  detiene y se documenta en `docs/discrepancias/`.
-- **G2.3a / G2.3b.** G2.3a = Deming (pendiente ∈ [0.85, 1.15]). G2.3b = ĉ por parque con el detector ê (id de parque si se
-  declara `f02.columna_parque`; si no, parque latente por mezcla gaussiana 🔎), centrado en la mediana de su cubeta, Wald con
-  SE CR2 y Benjamini–Hochberg al 5 %; su potencia (≥ 0.80 para |c| = 0.02) y su tasa de falsos positivos (≤ 0.05) se miden en
-  una sintética con λ = 1.02 y τ = 1.01 inyectados en subconjuntos de 18 parques. Si `SpinAxis` resulta circular (inferido del
-  movimiento), G2.3b se declara **no evaluable**.
-- **Escala.** `uv run pitcheo f02 --escala 635000` genera ≈ 635 k lanzamientos sintéticos, corre el análisis completo y
-  reporta tiempo y RAM pico (`reports/f02_escala.json`).
+Implementa las Props. 1, 2′, 2″ y 3″ de `docs/MODELO_MATEMATICO.md` §F2 y los ADR-017 a 019 (`docs/DECISIONES.md`):
+
+- **Solver.** LSMR disperso (Fong y Saunders 2011); equivale a las proyecciones alternadas a ≤ 1e-8 (prueba de regresión).
+- **Prop. 2″ (Reynolds).** δ̂_c = (1+β_c)·log ρ atenúa la altitud; β_c se estima por **2SLS** con `RelSpeed` como instrumento de
+  log‖v̄‖ (MCO queda sesgado por endogeneidad, ADR-019) y δ̃_c = δ̂_c/(1+β̂_c). **En datos reales la equivalencia
+  (1+β̂_L)/(1+β̂_D) vs Deming (±0.10) decide**: si pasa, δ̃ es primario para G2.2–G2.4; si no, G2.2–G2.4 quedan en bruto con 🔎 y la
+  fase se **detiene**.
+- **G2.1 / G2.3b / cobertura de G2.4 son compuertas sintéticas** (R = 30, semillas 211–240; 101–110 y 201–210 consumidas).
+  G2.1: |sesgo|+1.96·MCSE < 1 % sobre δ̃. G2.3b: ĉ por parque con detector ê (contraste LOO, cluster lanzador, t de Pustejovsky y
+  Tipton, BH 5 %), potencia ≥ 0.80 y FPR ≤ 0.05 + 1.96·√(0.05·0.95/n_limpios) con IC de Clopper–Pearson; su aplicación a datos
+  reales es 🔎 informativa (n/e si `SpinAxis` es circular, NaN o no evaluable: fail-closed). **No se ajustan umbrales, semillas ni
+  tamaños a la vista del resultado**: si una compuerta falla, se detiene y se documenta en `docs/discrepancias/`.
+- **Normalización por año:** δ̄_{No Altitude, year} = 0 en cada año; medias y contrastes dentro del año y luego ponderados.
+- **Escala.** `uv run pitcheo f02 --etapa escala --escala 635000` (tiempo y RAM pico en `reports/f02_escala.json`).
 
 Sin datos reales: `uv run pitcheo f02 --sintetico 150 --out /tmp/f2` (todo va a `--out`).
 

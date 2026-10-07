@@ -1,0 +1,43 @@
+{
+  "etapas": {
+    "sintetica": {
+      "segundos": 226.2,
+      "ram_pico_mb": 1505,
+      "cpu_pct_equipo": 72.6,
+      "cpu_pct_sistema": 74.6,
+      "cpu_segundos": 657.0,
+      "nucleos_logicos": 4,
+      "estado": "ok",
+      "codigo_salida": 0,
+      "comando": "uv run pitcheo f02 --etapa sintetica",
+      "hash_codigo": "b117525b18cbe8c2",
+      "fecha": "2026-10-07T15:31:59+00:00"
+    },
+    "escala": {
+      "segundos": 210.4,
+      "ram_pico_mb": 2709,
+      "cpu_pct_equipo": 51.8,
+      "cpu_pct_sistema": 58.9,
+      "cpu_segundos": 435.8,
+      "nucleos_logicos": 4,
+      "estado": "ok",
+      "codigo_salida": 0,
+      "comando": "uv run pitcheo f02 --etapa escala --escala 635000",
+      "hash_codigo": "b117525b18cbe8c2",
+      "fecha": "2026-10-07T16:01:26+00:00"
+    },
+    "pruebas": {
+      "segundos": 182.2,
+      "ram_pico_mb": 1687,
+      "cpu_pct_equipo": 34.2,
+      "cpu_pct_sistema": 36.1,
+      "cpu_segundos": 249.3,
+      "nucleos_logicos": 4,
+      "estado": "ok",
+      "codigo_salida": 0,
+      "comando": "uv run pytest -q",
+      "hash_codigo": "b117525b18cbe8c2",
+      "fecha": "2026-10-07T16:08:57+00:00"
+    }
+  }
+}

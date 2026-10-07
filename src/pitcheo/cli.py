@@ -263,8 +263,10 @@ def cmd_f02(a, cfg):
             sys.exit(2)
         return
     if etapa == "real":
+        # con --out la sintética puede no estar ahí: se lee entonces la del repo (reports/f02_sintetica.json)
+        rep_sint = rep_dir if (rep_dir / "f02_sintetica.json").exists() else cfg.ruta("reportes")
         try:
-            sint = fase02.cargar_sintetica(cfg["f02"], rep_dir)
+            sint = fase02.cargar_sintetica(cfg["f02"], rep_sint)
         except (FileNotFoundError, RuntimeError) as exc:
             sys.exit(f"[etapa real] {exc}")
     if a.sintetico:

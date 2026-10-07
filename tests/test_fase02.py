@@ -161,6 +161,19 @@ def _df_chico():
     return df
 
 
+def test_escala_vigente_solo_con_el_mismo_hash_de_codigo(tmp_path):
+    """`--etapa todo` salta la escala si reports/f02_escala.json tiene el mismo hash de código (ADR-019 R4)."""
+    from pitcheo import recursos
+    ruta = tmp_path / "f02_escala.json"
+    assert not F2.escala_vigente(ruta)                                        # no existe
+    ruta.write_text(json.dumps({"hash_codigo": recursos.hash_codigo()}), encoding="utf-8")
+    assert F2.escala_vigente(ruta)
+    ruta.write_text(json.dumps({"hash_codigo": "otro"}), encoding="utf-8")
+    assert not F2.escala_vigente(ruta)                                        # cambió el código del generador/física
+    ruta.write_text("no es json", encoding="utf-8")
+    assert not F2.escala_vigente(ruta)
+
+
 def test_etapas_sintetica_y_real_por_separado_y_firma_vieja(tmp_path):
     cfg = _cfg_chico()
     rep, logs = tmp_path / "rep", tmp_path / "logs"

@@ -230,6 +230,29 @@ def _inversa_gram(X: sparse.csr_matrix) -> np.ndarray:
         return np.linalg.pinv(xtx, hermitian=True)
 
 
+def _a_por_e(Xd: np.ndarray, minv_cc: np.ndarray, e: np.ndarray) -> np.ndarray:
+    """A_c e con A_c = (I − H_cc)^{-1/2} y H_cc = X_c (X'X)⁻¹ X_c' (corrección CR2 de Bell–McCaffrey).
+
+    Si el conglomerado tiene más filas que columnas tocadas (n_c > k) se usa que H_cc tiene rango ≤ k: con B = X_c·Q·D^{1/2}
+    (minv_cc = Q D Q'), H = B B' y, con G = B'B = V Λ V' y U = B V Λ^{-1/2}, (I − H)^{-1/2} = I + U[(I − Λ)^{-1/2} − I]U'. Cuesta
+    O(n_c·k²) y no forma ninguna matriz n_c×n_c (con conglomerados por LANZADOR de ~10⁴ filas, el `eigh` denso tardaba minutos).
+    Los autovalores 1 − λ ≤ 1e-8 se anulan, igual que en la rama densa (pseudo-inversa de la raíz).
+    """
+    n_c, k = Xd.shape
+    if n_c <= k:
+        w, v = np.linalg.eigh(np.eye(n_c) - Xd @ minv_cc @ Xd.T)
+        inv_raiz = np.where(w > 1e-8, 1.0 / np.sqrt(np.clip(w, 1e-8, None)), 0.0)
+        return (v * inv_raiz) @ (v.T @ e)
+    d, q = np.linalg.eigh(minv_cc)
+    b = Xd @ (q * np.sqrt(np.clip(d, 0.0, None)))
+    lam, vv = np.linalg.eigh(b.T @ b)
+    ok = lam > 1e-12 * max(float(lam.max()), 1e-300)
+    u = (b @ vv[:, ok]) / np.sqrt(lam[ok])
+    w = 1.0 - lam[ok]
+    g = np.where(w > 1e-8, 1.0 / np.sqrt(np.clip(w, 1e-8, None)), 0.0) - 1.0
+    return e + u @ (g[:, None] * (u.T @ e))
+
+
 def _var_cr2_componentes(X: sparse.csr_matrix, minv: np.ndarray, resid: np.ndarray, conglomerado: np.ndarray,
                          M: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Como `_var_cr2`, pero devuelve también Σ_c s_c⁴ para calcular df Satterthwaite / Pustejovsky–Tipton (2018).
@@ -249,10 +272,7 @@ def _var_cr2_componentes(X: sparse.csr_matrix, minv: np.ndarray, resid: np.ndarr
         Xd = np.zeros((b - a, len(cols)))
         filas = np.repeat(np.arange(b - a), np.diff(Xc.indptr))
         Xd[filas, np.searchsorted(cols, Xc.indices)] = Xc.data
-        h = Xd @ minv[np.ix_(cols, cols)] @ Xd.T
-        w, u = np.linalg.eigh(np.eye(b - a) - h)
-        inv_raiz = np.where(w > 1e-8, 1.0 / np.sqrt(np.clip(w, 1e-8, None)), 0.0)
-        ajustado = (u * inv_raiz) @ (u.T @ es[a:b])
+        ajustado = _a_por_e(Xd, minv[np.ix_(cols, cols)], es[a:b])
         s = M[:, cols] @ (Xd.T @ ajustado)
         s2 = s * s
         v += s2
@@ -278,10 +298,7 @@ def _var_cr2(X: sparse.csr_matrix, minv: np.ndarray, resid: np.ndarray, conglome
         Xd = np.zeros((b - a, len(cols)))
         filas = np.repeat(np.arange(b - a), np.diff(Xc.indptr))
         Xd[filas, np.searchsorted(cols, Xc.indices)] = Xc.data
-        h = Xd @ minv[np.ix_(cols, cols)] @ Xd.T
-        w, v = np.linalg.eigh(np.eye(b - a) - h)
-        inv_raiz = np.where(w > 1e-8, 1.0 / np.sqrt(np.clip(w, 1e-8, None)), 0.0)
-        ajustado = (v * inv_raiz) @ (v.T @ es[a:b])                 # A_c e_c
+        ajustado = _a_por_e(Xd, minv[np.ix_(cols, cols)], es[a:b])    # A_c e_c
         s = M[:, cols] @ (Xd.T @ ajustado)                          # (q, m)
         var += s**2
     return var

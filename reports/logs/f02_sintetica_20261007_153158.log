@@ -1,0 +1,11 @@
+{
+  "gates": {
+    "G2.1": true,
+    "G2.3b": true,
+    "G2.4_cobertura": true
+  },
+  "segundos": 225.0,
+  "firma": "cba3137ab4c7f2d4-b117525b18cbe8c2",
+  "n_jobs": 3,
+  "cache": true
+}

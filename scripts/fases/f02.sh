@@ -75,6 +75,12 @@ limpiar() {
   if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
     kill -TERM "$PID" 2>/dev/null
     for h in $(pgrep -P "$PID" 2>/dev/null); do kill -TERM "$h" 2>/dev/null; done
+    # una llamada nativa larga (BLAS/LAPACK) ignora SIGTERM: escalar a SIGKILL tras 10 s
+    for _ in $(seq 1 20); do kill -0 "$PID" 2>/dev/null || break; sleep 0.5; done
+    if kill -0 "$PID" 2>/dev/null; then
+      for h in $(pgrep -P "$PID" 2>/dev/null); do kill -KILL "$h" 2>/dev/null; done
+      kill -KILL "$PID" 2>/dev/null
+    fi
     wait "$PID" 2>/dev/null
   fi
   echo "[f02] INTERRUMPIDO: workers terminados; NO se commitea." >&2
