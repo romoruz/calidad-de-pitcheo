@@ -367,14 +367,23 @@ def ajustar_lsmr(d: DisenoDensidad, y, tol: float = 1e-14, max_iter: int = 20000
 def estimador_densidad_juego(y, juego, lanzador_forma, S, estrato, cubeta=None, referencia: str = "No Altitude",
                              n_nudos: int = 3, grado: int = 3, n_min_por_col: int = 20, tol: float = 1e-10,
                              max_iter: int = 5000, diseno: DisenoDensidad | None = None,
-                             solver: str = "lsmr") -> dict:
+                             solver: str = "lsmr", anio_juego: np.ndarray | None = None) -> dict:
     """Prop. 2′: δ_g por juego desde y = log(ρC) con efectos fijos de juego y lanzador×forma y f_D(S) por estrato.
 
-    `y`: (n,) o (n, m) (p. ej. las columnas δ^D y δ^L comparten diseño). Se estima por proyecciones alternadas
-    dentro del conjunto conectado, con `solver` = "lsmr" (LSMR disperso; por defecto, escala a 635k filas) o
-    "alternando" (proyecciones alternadas; referencia de equivalencia). **Normalización:** δ̄ sobre los juegos de la cubeta `referencia` := 0 (el
-    nivel absoluto no está identificado). Los juegos sin cubeta se estiman pero no entran en la referencia.
-    Devuelve `delta` (G, m), `alpha`, `resid` (n_usadas, m), `diseno`, `iteraciones`, `convergio`.
+    `y`: (n,) o (n, m) (p. ej. las columnas δ^D y δ^L comparten diseño). Se estima dentro del conjunto conectado con
+    `solver` = "lsmr" (LSMR disperso; por defecto, escala a 635k filas) o "alternando" (proyecciones alternadas;
+    referencia de equivalencia).
+
+    **Normalización.** El ajuste MCO identifica δ hasta una constante aditiva por año (ADR-018, §B): los juegos están
+    anidados en year, así que `γ_year` es colineal con δ y la constante global queda indeterminada año por año.
+    - Modo global (default, `anio_juego is None`): δ̄ sobre los juegos de `referencia` := 0 (compat ADR-017).
+    - Modo por año (`anio_juego` entregado, ADR-018): δ̄_{referencia, year=y} := 0 para cada año; a los juegos de un
+      año sin juegos de referencia se les resta la media de los niveles disponibles (fallback, se declara
+      en `niveles_por_grupo["fallback"]` y se marca `grupos_norm == -1`).
+
+    Los juegos sin cubeta se estiman pero no entran en la referencia. Devuelve `delta` (G, m), `alpha`, `resid`
+    (n_usadas, m), `diseno`, `iteraciones`, `convergio`, `en_referencia`, `grupos_norm` (G,) y `niveles_por_grupo`
+    (por respuesta: dict `{año: c_y}` + "fallback").
     """
     y = np.asarray(y, dtype=float)
     y2 = y[:, None] if y.ndim == 1 else y
@@ -382,7 +391,16 @@ def estimador_densidad_juego(y, juego, lanzador_forma, S, estrato, cubeta=None, 
     en_ref = np.array([c == referencia for c in d.cubeta_juego])
     if not en_ref.any():
         raise ValueError(f"no hay juegos de la cubeta de referencia {referencia!r} en el conjunto conectado")
-    deltas, alphas, resids, info = [], [], [], []
+    anio_juego = np.asarray(anio_juego) if anio_juego is not None else None
+    if anio_juego is not None and len(anio_juego) != len(d.juegos):
+        raise ValueError(f"anio_juego debe tener longitud {len(d.juegos)} (uno por juego del conjunto conectado)")
+    if anio_juego is None:
+        grupos_norm = np.zeros(len(d.juegos), dtype=int)                  # un solo grupo global
+    else:
+        anios_ref = np.unique(anio_juego[en_ref])
+        pos = {y: i for i, y in enumerate(anios_ref)}
+        grupos_norm = np.array([pos.get(a, -1) for a in anio_juego], dtype=int)
+    deltas, alphas, resids, info, niveles_todos = [], [], [], [], []
     for j in range(y2.shape[1]):
         ok_y = np.isfinite(y2[:, j])
         if not ok_y.all():
@@ -393,10 +411,23 @@ def estimador_densidad_juego(y, juego, lanzador_forma, S, estrato, cubeta=None, 
             r = ajustar_alternando(d, y2[:, j], tol, max_iter)
         else:
             raise ValueError(f"solver desconocido: {solver!r}")
-        nivel = float(np.mean(r["delta"][en_ref]))
-        deltas.append(r["delta"] - nivel)
-        alphas.append(r["alpha"] + nivel)                    # δ + c, α − c deja el ajuste intacto
+        if anio_juego is None:
+            nivel = float(np.mean(r["delta"][en_ref]))
+            delta_norm = r["delta"] - nivel
+            alphas.append(r["alpha"] + nivel)                             # δ + c, α − c deja el ajuste intacto (modo global)
+            niveles_todos.append({"global": nivel})
+        else:
+            anios_ref = np.unique(anio_juego[en_ref])
+            niv_year = {int(a): float(np.mean(r["delta"][en_ref & (anio_juego == a)])) for a in anios_ref}
+            fallback = float(np.mean(list(niv_year.values()))) if niv_year else 0.0
+            niv_arr = np.array([niv_year.get(int(a), fallback) for a in anio_juego])
+            delta_norm = r["delta"] - niv_arr
+            alphas.append(r["alpha"])                                     # α no absorbe por año; se queda al bruto
+            niveles_todos.append({**{int(a): c for a, c in niv_year.items()}, "fallback": fallback})
+        deltas.append(delta_norm)
         resids.append(r["resid"])
         info.append({k: r[k] for k in ("iteraciones", "convergio", "cambio_final")})
     return {"delta": np.column_stack(deltas), "alpha": np.column_stack(alphas), "resid": np.column_stack(resids),
-            "diseno": d, "ajuste": info, "juegos": d.juegos, "en_referencia": en_ref}
+            "diseno": d, "ajuste": info, "juegos": d.juegos, "en_referencia": en_ref,
+            "grupos_norm": grupos_norm, "niveles_por_grupo": niveles_todos,
+            "anio_juego": anio_juego if anio_juego is not None else None}

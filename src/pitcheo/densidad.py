@@ -135,22 +135,30 @@ def soporte_comun(d: pl.DataFrame, diseno, q=(0.025, 0.975), n_min_cubeta: int =
     return en, {"estratos_sin_soporte_comun": sin_soporte, "filas_en_soporte": int(en.sum()), "filas": len(en)}
 
 
-def estimar_densidad(d: pl.DataFrame, cfg_f02: dict, referencia: str = "No Altitude", sin_alpha: bool = False) -> dict:
+def estimar_densidad(d: pl.DataFrame, cfg_f02: dict, referencia: str = "No Altitude", sin_alpha: bool = False,
+                     por_anio: bool = True) -> dict:
     """Prop. 2′ para y_D y y_L: δ^D, δ^L, conjunto conectado, n efectivo y baja confianza.
 
     `sin_alpha=True` ajusta el modelo de un solo efecto fijo (sin lanzador×forma) para exhibir el sesgo de
     confusión de los planteles locales (ROADMAP §1.6 (2); solo diagnóstico y sintética).
+    `por_anio=True` (default, ADR-018): normaliza δ̄_{referencia, year=y} := 0 en cada año; si False, por media global
+    de la referencia (compat ADR-017).
     """
     jk = d["lanzador_forma"].to_numpy() if not sin_alpha else np.full(d.height, "todos", dtype=object)
     cub = np.array([None if c is None else str(c) for c in d["cubeta"].to_list()], dtype=object)
     y = np.column_stack([d["y_D"].to_numpy(), d["y_L"].to_numpy()])
     args = (cfg_f02.get("n_nudos", 3), cfg_f02.get("grado", 3), cfg_f02.get("n_min_por_col", 20))
     dis = fisica.construir_diseno(d["juego"].to_numpy(), jk, d["S"].to_numpy(), d["estrato"].to_numpy(), cub, *args)
+    anio_juego = None
+    if por_anio:
+        jd = d.group_by("juego").agg(pl.col("year").first().alias("year"))
+        anio_de = dict(zip(jd["juego"].to_list(), jd["year"].to_list(), strict=True))
+        anio_juego = np.array([anio_de.get(g) for g in dis.juegos])
     u = dis.usadas
     res = fisica.estimador_densidad_juego(y[u], d["juego"].to_numpy()[u], jk[u], d["S"].to_numpy()[u],
                                           d["estrato"].to_numpy()[u], cub[u], referencia, *args,
                                           tol=cfg_f02.get("tol_ap", 1e-10), max_iter=cfg_f02.get("max_iter_ap", 5000),
-                                          solver=cfg_f02.get("solver", "lsmr"))
+                                          solver=cfg_f02.get("solver", "lsmr"), anio_juego=anio_juego)
     dsg = res["diseno"]
     en_soporte, sop = soporte_comun(d.filter(pl.Series(u)), dsg, tuple(cfg_f02.get("soporte_q", (0.025, 0.975))))
     n_g = np.bincount(dsg.juego, minlength=len(dsg.juegos))
@@ -163,13 +171,14 @@ def estimar_densidad(d: pl.DataFrame, cfg_f02: dict, referencia: str = "No Altit
 # Errores estándar: CR2 por conglomerados lanzador-dentro-del-juego
 # ==========================================================================
 def se_cr2(diseno, resid: np.ndarray, conglomerado: np.ndarray, en_referencia: np.ndarray,
-           max_p: int = 14000) -> dict:
-    """SE de δ_g normalizado (δ_g − media de la cubeta de referencia) con corrección CR2 (Bell–McCaffrey 2002).
+           max_p: int = 14000, grupos_norm: np.ndarray | None = None) -> dict:
+    """SE de δ_g normalizado con corrección CR2 (Bell–McCaffrey 2002) sobre la matriz de diseño exacta X.
 
-    Sobre la matriz de diseño EXACTA X (juegos sin el de referencia + lanzador×forma + f_D). Para cada conglomerado
-    c (lanzador dentro del juego) con filas X_c y residuo e_c: H_cc = X_c (X'X)⁻¹ X_c', A_c = (I − H_cc)^{-1/2} y la
-    varianza de c'β̂ es Σ_c (c'(X'X)⁻¹ X_c' A_c e_c)². El contraste es c = e_g − promedio de los juegos de referencia,
-    el mismo que normaliza δ. `resid`: (n, m) para m respuestas con el mismo diseño.
+    Para cada conglomerado c (lanzador dentro del juego) con filas X_c y residuo e_c: H_cc = X_c (X'X)⁻¹ X_c',
+    A_c = (I − H_cc)^{-1/2}, y Var(c'β̂) = Σ_c (c'(X'X)⁻¹ X_c' A_c e_c)². El contraste **para cada juego g** es
+    `c = e_g − promedio de los juegos de referencia de su mismo grupo de normalización` (ADR-017: un único grupo;
+    ADR-018: un grupo por año). `grupos_norm` (G,) etiqueta por juego: 0..k-1 por grupo con referencia, −1 fuera.
+    Si `grupos_norm` es None (default), un único grupo = todos los juegos de referencia (compat).
 
     Devuelve `se` (G, m), `sigma_eta` (m,), `se_ingenuo` (G, m) = σ_η/√n_g y `metodo`. Si p > `max_p` (inversa
     densa inviable) cae a un CR0 aproximado (sin corrección de apalancamiento) y lo declara. No se usan grados de
@@ -190,7 +199,16 @@ def se_cr2(diseno, resid: np.ndarray, conglomerado: np.ndarray, en_referencia: n
     R = np.zeros((n_g, p))
     ok = pos >= 0
     R[ok] = minv[pos[ok]]
-    M = R - R[en_referencia].mean(axis=0)                           # (G, p): contraste δ_g − media_ref
+    gn = np.zeros(n_g, dtype=int) if grupos_norm is None else np.asarray(grupos_norm, dtype=int)
+    etiquetas = np.unique(gn[gn >= 0])
+    promedios = {int(lab): R[en_referencia & (gn == lab)].mean(axis=0) for lab in etiquetas
+                 if (en_referencia & (gn == lab)).any()}
+    fallback = (np.mean(list(promedios.values()), axis=0) if promedios
+                else R[en_referencia].mean(axis=0))                 # compat: si no hay grupos válidos
+    M = R.copy()
+    for g in range(n_g):
+        lab = int(gn[g])
+        M[g] -= promedios.get(lab, fallback)                        # (G, p): δ̂_g − media_ref dentro de su grupo
     var = _var_cr2(X, minv, resid, conglomerado, M)
     return {"se": np.sqrt(var), "sigma_eta": sigma, "se_ingenuo": se_ing, "metodo": "CR2", "p": p}
 
@@ -346,14 +364,22 @@ def kappa_sustentacion(a_perp: np.ndarray, l_perp: np.ndarray) -> np.ndarray:
 
 
 def c_g_desde_diferencia(delta_d: np.ndarray, delta_l: np.ndarray, en_referencia: np.ndarray,
-                         kappa_medio: float) -> np.ndarray:
-    """ĉ_g = (δ^L_g − δ^D_g − media_ref(δ^L − δ^D)) / κ̄: relativo a la cubeta de referencia (como δ).
+                         kappa_medio: float, grupos_norm: np.ndarray | None = None) -> np.ndarray:
+    """ĉ_g = (δ^L_g − δ^D_g − media_ref de su grupo de normalización) / κ̄.
 
-    El nivel común de c (el mismo error de calibración en todos los parques, incluida la referencia) lo absorbe
-    f_L y no se identifica, igual que el nivel absoluto de ρ; lo que se estima es c_g − c_ref.
+    `grupos_norm` (G,) sigue la convención de `se_cr2`: una etiqueta por juego o −1 si no hay referencia en el grupo
+    (fallback: media de las medias). Si es None, un solo grupo global (compat ADR-017).
     """
     dif = delta_l - delta_d
-    return (dif - dif[en_referencia].mean()) / kappa_medio
+    if grupos_norm is None:
+        return (dif - dif[en_referencia].mean()) / kappa_medio
+    gn = np.asarray(grupos_norm)
+    etiquetas = np.unique(gn[gn >= 0])
+    medias = {int(lab): float(dif[en_referencia & (gn == lab)].mean()) for lab in etiquetas
+              if (en_referencia & (gn == lab)).any()}
+    fallback = float(np.mean(list(medias.values()))) if medias else float(dif[en_referencia].mean())
+    ajuste = np.array([medias.get(int(a), fallback) for a in gn])
+    return (dif - ajuste) / kappa_medio
 
 
 def _circ_dif(a_deg: np.ndarray, b_deg: np.ndarray) -> np.ndarray:
@@ -456,7 +482,8 @@ def verificar_spinaxis_medido(spin_axis_deg: np.ndarray, a_tilde: np.ndarray, v_
 
 
 def c_g_detector_e(spin_axis_deg: np.ndarray, a_tilde: np.ndarray, v_barra: np.ndarray, juego_i: np.ndarray,
-                   grupos_jk: np.ndarray, juegos: np.ndarray, en_referencia: np.ndarray, signo_lateral: int) -> dict:
+                   grupos_jk: np.ndarray, juegos: np.ndarray, en_referencia: np.ndarray, signo_lateral: int,
+                   grupos_norm: np.ndarray | None = None) -> dict:
     """ĉ_g por juego desde ã·ê = c_g (g·ê) + β_{j,k} + ε con ê = v̂ × n̂_spin (ROADMAP §1.6 (1)).
 
     Se resta la media por lanzador×forma (β_{j,k}) de ã·ê y de g·ê y se regresa por juego: ĉ_g = Σ x̃ z̃ / Σ x̃²,
@@ -478,7 +505,16 @@ def c_g_detector_e(spin_axis_deg: np.ndarray, a_tilde: np.ndarray, v_barra: np.n
     sxx = np.bincount(jidx[ok], (xt * xt)[ok], minlength=len(juegos))
     with np.errstate(invalid="ignore", divide="ignore"):
         c_crudo = sxz / sxx
-    return {"c_g": c_crudo - np.nanmean(c_crudo[en_referencia]), "c_g_crudo": c_crudo, "sxx": sxx}
+    if grupos_norm is None:
+        ajuste = np.nanmean(c_crudo[en_referencia])
+        return {"c_g": c_crudo - ajuste, "c_g_crudo": c_crudo, "sxx": sxx}
+    gn = np.asarray(grupos_norm)
+    etiquetas = np.unique(gn[gn >= 0])
+    medias = {int(lab): float(np.nanmean(c_crudo[en_referencia & (gn == lab)])) for lab in etiquetas
+              if (en_referencia & (gn == lab)).any()}
+    fallback = float(np.nanmean(list(medias.values()))) if medias else float(np.nanmean(c_crudo[en_referencia]))
+    aj = np.array([medias.get(int(a), fallback) for a in gn])
+    return {"c_g": c_crudo - aj, "c_g_crudo": c_crudo, "sxx": sxx}
 
 
 # ==========================================================================

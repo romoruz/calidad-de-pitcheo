@@ -45,6 +45,66 @@ def _log_rho_baro(h_m: float, a: float = 2.25577e-5, b: float = 5.25588) -> floa
 # ==========================================================================
 # Análisis sobre un DataFrame por lanzamiento (datos reales de F0 o sintética)
 # ==========================================================================
+
+def _media_por_anio_ponderada(delta: np.ndarray, mascara: np.ndarray, anio_g: np.ndarray,
+                              W) -> dict:
+    """δ̄ de una cubeta como media sobre años del `δ̄_year`, ponderada por juegos de la cubeta en cada año.
+
+    Devuelve {"n", "media", "se", "por_anio": {año: {"n", "media"}}} con el SE de dos vías juego × lanzador
+    construido con las influencias normalizadas por conteo total.
+    """
+    import math
+    idx = np.flatnonzero(mascara)
+    if idx.size < 2:
+        return {"n": int(idx.size), "media": float(delta[idx].mean()) if idx.size else None, "se": None, "por_anio": {}}
+    anios, inv = np.unique(anio_g[idx], return_inverse=True)
+    n_y = np.bincount(inv, minlength=len(anios))
+    sumas = np.bincount(inv, delta[idx], minlength=len(anios))
+    media_y = sumas / n_y
+    por_anio = {int(a): {"n": int(n_y[k]), "media": float(media_y[k])} for k, a in enumerate(anios)}
+    media = float(np.sum(n_y * media_y) / n_y.sum())
+    # Influencia por juego para la varianza de dos vías: (1/N) · (δ_g − δ̄_year(g))
+    u = np.zeros(delta.shape)
+    u[idx] = (delta[idx] - media_y[inv]) / n_y.sum()
+    se = math.sqrt(max(D.varianza_dos_vias(u, W), 0.0))
+    return {"n": int(idx.size), "media": media, "se": se, "por_anio": por_anio}
+
+
+def _contraste_por_anio_ponderado(delta: np.ndarray, mascara_1: np.ndarray, mascara_0: np.ndarray,
+                                  anio_g: np.ndarray, W) -> dict:
+    """Diferencia δ̄(1) − δ̄(0) como media sobre años con los MISMOS pesos que el de la cubeta 1 (ADR-018 §B)."""
+    import math
+    i1 = np.flatnonzero(mascara_1)
+    if i1.size < 2:
+        return {"diferencia": None, "se": None, "por_anio": {}}
+    anios, inv1 = np.unique(anio_g[i1], return_inverse=True)
+    n_y_1 = np.bincount(inv1, minlength=len(anios))
+    s_y_1 = np.bincount(inv1, delta[i1], minlength=len(anios))
+    m_y_1 = s_y_1 / np.maximum(n_y_1, 1)
+    m_y_0 = np.zeros(len(anios))
+    for k, a in enumerate(anios):
+        g0 = np.flatnonzero(mascara_0 & (anio_g == a))
+        if g0.size == 0:
+            return {"diferencia": None, "se": None,
+                    "por_anio": {int(a): {"n_1": int(n_y_1[k]), "n_0": 0, "diferencia": None} for k, a in enumerate(anios)},
+                    "razon": "no hay juegos de la cubeta de referencia en algún año"}
+        m_y_0[k] = float(delta[g0].mean())
+    peso = n_y_1 / n_y_1.sum()
+    diff = float(np.sum(peso * (m_y_1 - m_y_0)))
+    por_anio = {int(a): {"n_1": int(n_y_1[k]), "n_0": int(np.sum(mascara_0 & (anio_g == a))),
+                         "diferencia": float(m_y_1[k] - m_y_0[k])} for k, a in enumerate(anios)}
+    # Influencia por juego para dos vías.
+    u = np.zeros(delta.shape)
+    for k, a in enumerate(anios):
+        g1 = np.flatnonzero(mascara_1 & (anio_g == a))
+        g0 = np.flatnonzero(mascara_0 & (anio_g == a))
+        u[g1] += peso[k] * (delta[g1] - m_y_1[k]) / n_y_1[k]
+        if g0.size:
+            u[g0] -= peso[k] * (delta[g0] - m_y_0[k]) / g0.size
+    se = math.sqrt(max(D.varianza_dos_vias(u, W), 0.0))
+    return {"diferencia": diff, "se": se, "por_anio": por_anio}
+
+
 def analizar(df: pl.DataFrame, f02: dict, fis: dict, semilla: int = 2026) -> dict:
     """Prop. 1 → Prop. 2′ → SE → contrastes, Deming y Prop. 3′. Devuelve agregados y la tabla por juego."""
     P = D.preparar_datos(df, fis.get("y_plato_ft", 17 / 12))
@@ -55,7 +115,8 @@ def analizar(df: pl.DataFrame, f02: dict, fis: dict, semilla: int = 2026) -> dic
     jl, ll = d["juego"].to_numpy()[u], d["lanzador"].to_numpy()[u]
     jk = d["lanzador_forma"].to_numpy()[u]
     conglomerado = np.char.add(np.char.add(ll.astype(str), "|"), jl.astype(str))
-    se = D.se_cr2(dsg, res["resid"], conglomerado, res["en_referencia"], f02.get("max_p_cr2", 14000))
+    gn = res.get("grupos_norm")
+    se = D.se_cr2(dsg, res["resid"], conglomerado, res["en_referencia"], f02.get("max_p_cr2", 14000), gn)
     dd, dl = res["delta"][:, 0], res["delta"][:, 1]
     cub = np.array([None if c is None else str(c) for c in dsg.cubeta_juego], dtype=object)
     sin_cub = np.array([c is None for c in cub])
@@ -63,14 +124,21 @@ def analizar(df: pl.DataFrame, f02: dict, fis: dict, semilla: int = 2026) -> dic
     conf = (~baja) & (~sin_cub)
     W = D.pesos_juego_lanzador(jl, ll, dsg.juegos)
 
-    # --- medias por cubeta y contrastes (EE de dos vías)
+    # --- medias por cubeta: media de medias por año, ponderada por juegos de la cubeta en cada año (ADR-018 §B;
+    #     si por_anio=False, equivale a la media global). Contrastes contra la referencia: diferencia dentro del año,
+    #     ponderada por el número de juegos de la cubeta en el año.
+    jd = d.group_by("juego").agg(pl.col("year").first().alias("year"))
+    anio_de_g = dict(zip(jd["juego"].to_list(), jd["year"].to_list(), strict=True))
+    anio_juego_full = np.array([anio_de_g[g] for g in dsg.juegos])
     medias, mas = {}, {}
     for c in CUBETAS:
-        m = D.media_cubeta(dd, conf & (cub == c), W)
-        ml = D.media_cubeta(dl, conf & (cub == c), W)
-        medias[c] = {"n": m["n"], "delta_D": m["media"], "se_D": m["se"], "delta_L": ml["media"], "se_L": ml["se"]}
+        m = _media_por_anio_ponderada(dd, conf & (cub == c), anio_juego_full, W)
+        ml = _media_por_anio_ponderada(dl, conf & (cub == c), anio_juego_full, W)
+        medias[c] = {"n": m["n"], "delta_D": m["media"], "se_D": m["se"], "delta_L": ml["media"], "se_L": ml["se"],
+                     "por_anio_D": m["por_anio"], "por_anio_L": ml["por_anio"]}
     for c in CUBETAS[1:]:
-        mas[f"{c} − {referencia}"] = D.contraste_cubetas(dd, conf & (cub == c), conf & (cub == referencia), W)
+        mas[f"{c} − {referencia}"] = _contraste_por_anio_ponderado(
+            dd, conf & (cub == c), conf & (cub == referencia), anio_juego_full, W)
     bar = _tabla_barometrica(medias, f02.get("altitud_cubeta_m", {}), referencia)
 
     # --- parques latentes (🔎) y predicción de cubeta
@@ -99,7 +167,7 @@ def analizar(df: pl.DataFrame, f02: dict, fis: dict, semilla: int = 2026) -> dic
     vv = {k: x[u] for k, x in vec.items() if isinstance(x, np.ndarray) and len(x) == len(u)}
     kappa = D.kappa_sustentacion(vv["a_perp"], vv["l_perp"])
     kappa_medio = float(np.nanmean(kappa))
-    c_dif = D.c_g_desde_diferencia(dd, dl, res["en_referencia"], kappa_medio)
+    c_dif = D.c_g_desde_diferencia(dd, dl, res["en_referencia"], kappa_medio, gn)
     chk = D.verificar_spinaxis_medido(vv["spin_axis"], vv["a_tilde"], vv["v_barra"], jk,
                                       f02.get("spinaxis_desfase_min_grados", 1.0), f02.get("spinaxis_sd_min_ms2", 0.05),
                                       f02.get("spinaxis_r2_max", 0.95), f02.get("spinaxis_n_min_evaluable", 100),
@@ -108,14 +176,17 @@ def analizar(df: pl.DataFrame, f02: dict, fis: dict, semilla: int = 2026) -> dic
     g23b_real = None
     if chk["medido"]:
         c_e = D.c_g_detector_e(vv["spin_axis"], vv["a_tilde"], vv["v_barra"], jl, jk, dsg.juegos, res["en_referencia"],
-                               chk["signo_lateral"])["c_g"]
+                               chk["signo_lateral"], gn)["c_g"]
         g23b_real = _g23b_datos(d, u, gi, conf, dd, cub, dsg, vv, jk, conglomerado, chk, f02, semilla)
-    # --- δ̄_No por año (la normalización es global; el nivel por año lo absorbe δ_g)
-    anios = d.group_by("juego").agg(pl.col("year").first().alias("year"))
-    anio_de = dict(zip(anios["juego"].to_list(), anios["year"].to_list(), strict=True))
-    anio_g = np.array([anio_de[g] for g in dsg.juegos])
+    # --- δ̄_No por año y niveles de normalización (ADR-018): el estimador los expone en `niveles_por_grupo`.
+    anio_g = res.get("anio_juego")
+    if anio_g is None:
+        anios = d.group_by("juego").agg(pl.col("year").first().alias("year"))
+        anio_de = dict(zip(anios["juego"].to_list(), anios["year"].to_list(), strict=True))
+        anio_g = np.array([anio_de[g] for g in dsg.juegos])
     por_anio = {int(a): float(np.mean(dd[(cub == referencia) & (anio_g == a)])) for a in np.unique(anio_g)
                 if ((cub == referencia) & (anio_g == a)).any()}
+    niveles_norm = res.get("niveles_por_grupo")
 
     por_juego = pl.DataFrame({
         "juego": dsg.juegos, "cubeta": [SIN if c is None else c for c in cub], "year": anio_g, "n_g": est["n_g"],
@@ -140,6 +211,7 @@ def analizar(df: pl.DataFrame, f02: dict, fis: dict, semilla: int = 2026) -> dic
                         "c_dif_por_cubeta": D.distribucion_por_cubeta(c_dif[conf], cub[conf]),
                         "c_e_por_cubeta": (D.distribucion_por_cubeta(c_e[conf], cub[conf]) if chk["medido"] else None)},
         "delta_referencia_por_anio": por_anio,
+        "niveles_normalizacion": niveles_norm,
     }
     return {"agregados": agregados, "por_juego": por_juego, "dsg": dsg, "estimacion": est, "se": se, "conf": conf,
             "cubeta": cub}
