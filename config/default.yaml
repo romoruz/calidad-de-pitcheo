@@ -131,6 +131,8 @@ f02:
   spinaxis_desfase_min_grados: 1.0
   spinaxis_sd_min_ms2: 0.05
   spinaxis_r2_max: 0.95          # R² de SpinAxis sobre las columnas de movimiento (dentro de lanzador×forma): ≥ → inferido
+  spinaxis_n_min_evaluable: 100  # fail-closed (ADR-018): mínimo de filas válidas tras filtrar NaN y perp degeneradas
+  spinaxis_fraccion_min_evaluable: 0.5    # fail-closed: fracción mínima de la muestra que debe quedar; si no, G2.3b real n/e
   # G2.3b: ĉ_ê por parque. Id de parque de F0 si existe `columna_parque` (nombre de la columna en pitches.parquet); si no,
   # parque latente (GMM de δ̂ᴰ por cubeta, 🔎). `parque_fuente`: auto | id | latente.
   columna_parque: null

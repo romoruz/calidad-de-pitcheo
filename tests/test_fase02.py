@@ -67,10 +67,11 @@ def _agregados(spinaxis_medido=True, se=0.009, pendiente=1.0):
 GATES = Config.load()["f02"]["gates"]
 
 
-def _sint(potencia=0.95, fpr=0.03, cobertura=0.94, sesgo=0.002):
+def _sint(potencia=0.95, fpr=0.03, cobertura=0.94, sesgo=0.002, spinaxis_medido=True):
     cota = sesgo + 0.00196
     niveles = {c: {"sesgo_rel": sesgo, "mcse": 0.001, "cota": cota, "ok": cota < GATES["g21_error_max"]} for c in CUB}
-    g = {"R": 10, "q": 0.05, "potencia": potencia, "fpr": fpr, "lambda": {"tasa": potencia, "rechazos": 19, "n": 20},
+    g = {"R": 10, "q": 0.05, "potencia": potencia, "fpr": fpr, "spinaxis_medido": spinaxis_medido,
+         "lambda": {"tasa": potencia, "rechazos": 19, "n": 20},
          "tau": {"tasa": potencia, "rechazos": 19, "n": 20}, "limpio": {"tasa": fpr, "rechazos": 1, "n": 40}}
     return {"g21": {"R": 10, "semillas": list(range(101, 111)), "niveles": niveles, "cobertura": cobertura},
             "g23b": {"con_calibracion": g}}
@@ -94,9 +95,12 @@ def test_cada_compuerta_falla_cuando_corresponde(agr, sint, falla):
     assert [k for k, v in g.items() if not v["ok"]] == [falla]
 
 
-def test_g23b_no_evaluable_si_spinaxis_inferido_y_no_hace_fallar_el_resto():
-    g = F2.evaluar_gates(_agregados(spinaxis_medido=False), _sint(potencia=0.1, fpr=0.9), GATES)
-    assert g["G2.3b"]["ok"] and g["G2.3b"]["no_evaluable"] and "NO EVALUABLE" in g["G2.3b"]["detalle"]
+def test_g23b_real_inferido_no_hace_fallar_la_compuerta():
+    """ADR-018: G2.3b en real = n/e; la compuerta vive en la sintética y SOLO depende del chk sintético."""
+    g = F2.evaluar_gates(_agregados(spinaxis_medido=False), _sint(), GATES)
+    assert g["G2.3b"]["ok"] and "no_evaluable" not in g["G2.3b"]            # SpinAxis real inferido no tumba la compuerta
+    g2 = F2.evaluar_gates(_agregados(), _sint(spinaxis_medido=False, potencia=0.1, fpr=0.9), GATES)
+    assert g2["G2.3b"]["ok"] and g2["G2.3b"]["no_evaluable"] and "SINTÉTICA" in g2["G2.3b"]["detalle"]
 
 
 def test_correr_de_punta_a_punta_en_chico(tmp_path):

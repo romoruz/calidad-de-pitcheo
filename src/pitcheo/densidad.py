@@ -376,46 +376,83 @@ def _r2_dentro(y: np.ndarray, x: np.ndarray, grupos: np.ndarray) -> float:
 
 def verificar_spinaxis_medido(spin_axis_deg: np.ndarray, a_tilde: np.ndarray, v_barra: np.ndarray,
                               grupos_jk: np.ndarray, desfase_min_grados: float = 1.0, var_min_ms2: float = 0.05,
-                              r2_max: float = 0.95) -> dict:
-    """¿`SpinAxis` es medido o inferido del movimiento? (ROADMAP §1.6 (1), docs/MODELO_MATEMATICO.md F2.4).
+                              r2_max: float = 0.95, n_min_evaluable: int = 100,
+                              fraccion_min_evaluable: float = 0.5) -> dict:
+    """¿`SpinAxis` es medido o inferido del movimiento? **Fail-closed** (ADR-018): un criterio NaN o la máscara de
+    evaluación por debajo del umbral declaran el eje INFERIDO/NO EVALUABLE (nunca "medido" por defecto).
 
-    (i) Se compara el eje con el que implica el movimiento: θ_mov = eje cuya sustentación n̂_M(θ) apunta a ã_⊥. Si
-        SpinAxis fue DERIVADO del movimiento, el desfase circular es ≈ 0 (dispersión por debajo de `desfase_min_grados`).
-        Se elige el signo lateral σ ∈ {±1} que minimiza ese desfase (la convención del radar no está documentada).
-    (ii) Con ê = v̂ × n̂_spin, la desviación estándar de ã·ê dentro de lanzador×forma debe superar `var_min_ms2` (m/s²):
-        si es ≈ 0 el eje no aporta información independiente del movimiento.
-    (iii) Circularidad (ADR-017): R² de (sen θ, cos θ) de SpinAxis sobre las columnas de movimiento (sen θ_mov,
-        cos θ_mov), dentro de lanzador×forma. Si SpinAxis sale del movimiento el R² es ≈ 1 (≥ `r2_max`); con un eje
-        medido con su propio ruido queda bien por debajo (sintética: ≈ 0.53 medido contra ≈ 0.99 inferido). El criterio (i)
-        solo atrapa un eje derivado con la MISMA v̂ que usa F2; (ii) y (iii) atrapan los derivados con otra.
-    Si cualquiera marca "inferido" el eje se declara inferido y el único detector de calibración es G2.3 (Deming).
+    (i) Desfase circular entre SpinAxis y el eje que implica el movimiento (θ_mov, con el signo lateral σ ∈ {±1} que lo
+        minimiza): si fue DERIVADO del movimiento, el desfase es ≈ 0 (< `desfase_min_grados`).
+    (ii) Con ê = v̂ × n̂_spin, la sd de ã·ê dentro de lanzador×forma debe superar `var_min_ms2` (m/s²): si es ≈ 0 el eje
+        no aporta información independiente del movimiento.
+    (iii) Circularidad: R² de (sen θ, cos θ) de SpinAxis sobre las columnas de movimiento (sen θ_mov, cos θ_mov) dentro
+        de lanzador×forma. Si SpinAxis sale del movimiento es ≈ 1 (≥ `r2_max`); con un eje medido con su propio ruido
+        queda bien por debajo (sintética: ≈ 0.53 medido contra ≈ 0.99 inferido).
+    **Máscara de validez** por fila: SpinAxis finito; `v_barra`, `a_tilde` finitos; ‖v̄‖ > 0; ‖perp‖ (= l_perp) > 1e-6
+    m/s² (una perp exactamente paralela a v̂ es ruido numérico y no informa). Si tras aplicarla quedan < `n_min_evaluable`
+    filas o < `fraccion_min_evaluable` de la entrada, el eje se declara **no evaluable** (inferido para efectos de la
+    compuerta: G2.3b queda n/e, se usa solo G2.3a).
     """
     from .sintetico import direccion_magnus
-    v_hat = v_barra / np.linalg.norm(v_barra, axis=1)[:, None]
-    a_par = np.einsum("ij,ij->i", a_tilde, v_hat)
-    perp = a_tilde - a_par[:, None] * v_hat
-    n_mov = perp / np.linalg.norm(perp, axis=1)[:, None]
+    spin_axis_deg = np.asarray(spin_axis_deg, dtype=float)
+    a_tilde = np.asarray(a_tilde, dtype=float)
+    v_barra = np.asarray(v_barra, dtype=float)
+    n_entrada = len(spin_axis_deg)
+    v_norma = np.linalg.norm(v_barra, axis=1)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        v_hat_todas = v_barra / v_norma[:, None]
+    valido = (np.isfinite(spin_axis_deg) & np.isfinite(v_norma) & (v_norma > 0)
+              & np.all(np.isfinite(a_tilde), axis=1) & np.all(np.isfinite(v_barra), axis=1))
+    with np.errstate(invalid="ignore", divide="ignore"):
+        a_par_todas = np.einsum("ij,ij->i", a_tilde, v_hat_todas)
+    perp_todas = a_tilde - a_par_todas[:, None] * v_hat_todas
+    l_perp_todas = np.linalg.norm(perp_todas, axis=1)
+    valido &= np.isfinite(l_perp_todas) & (l_perp_todas > 1e-6)
+    n_evaluado = int(valido.sum())
+    base = {"umbral_desfase_grados": desfase_min_grados, "umbral_sd_ms2": var_min_ms2, "umbral_r2": r2_max,
+            "n_entrada": n_entrada, "n_evaluado": n_evaluado, "n_descartado": n_entrada - n_evaluado,
+            "umbral_n_min": n_min_evaluable, "umbral_fraccion": fraccion_min_evaluable}
+    if n_evaluado < n_min_evaluable or n_evaluado < fraccion_min_evaluable * max(n_entrada, 1):
+        return {"medido": False, "no_evaluable": True, "signo_lateral": 0, "desfase_rms_grados": float("nan"),
+                "sd_a_por_e_dentro_jk_ms2": float("nan"), "r2_circularidad": float("nan"), **base,
+                "veredicto": ("SpinAxis NO EVALUABLE (muestra válida insuficiente tras filtrar NaN y perpendiculares "
+                              "degeneradas); fail-closed → inferido, G2.3b sobre datos reales n/e")}
+    v_hat = v_hat_todas[valido]
+    perp = perp_todas[valido]
+    sa = spin_axis_deg[valido]
+    at = a_tilde[valido]
+    gj = np.asarray(grupos_jk)[valido]
+    n_mov = perp / l_perp_todas[valido][:, None]
     mejor = None
     for sg in (1, -1):
         theta_mov = np.degrees(np.arctan2(n_mov[:, 0] / sg, -n_mov[:, 2])) % 360.0
-        desv = float(np.sqrt(np.mean(_circ_dif(spin_axis_deg, theta_mov) ** 2)))
-        if mejor is None or desv < mejor[0]:
+        difs = _circ_dif(sa, theta_mov) ** 2
+        desv = float(np.sqrt(np.mean(difs))) if np.all(np.isfinite(difs)) else float("nan")
+        if mejor is None or (np.isfinite(desv) and (not np.isfinite(mejor[0]) or desv < mejor[0])):
             mejor = (desv, sg)
     desv, signo = mejor
     th_mov = np.radians(np.degrees(np.arctan2(n_mov[:, 0] / signo, -n_mov[:, 2])) % 360.0)
-    th_obs = np.radians(np.asarray(spin_axis_deg, dtype=float))
-    r2 = _r2_dentro(np.column_stack([np.sin(th_obs), np.cos(th_obs)]), np.column_stack([np.sin(th_mov), np.cos(th_mov)]),
-                    grupos_jk)
-    e_hat = np.cross(v_hat, direccion_magnus(spin_axis_deg, v_hat, signo))
-    z = np.einsum("ij,ij->i", a_tilde, e_hat)
-    _, gi = np.unique(grupos_jk, return_inverse=True)
-    sd_z = float(np.std(z - (np.bincount(gi, z) / np.bincount(gi))[gi]))
-    inferido = bool(desv < desfase_min_grados or sd_z < var_min_ms2 or r2 >= r2_max)
-    return {"medido": not inferido, "signo_lateral": int(signo), "desfase_rms_grados": desv,
-            "sd_a_por_e_dentro_jk_ms2": sd_z, "umbral_desfase_grados": desfase_min_grados,
-            "umbral_sd_ms2": var_min_ms2, "r2_circularidad": r2, "umbral_r2": r2_max,
-            "veredicto": ("SpinAxis medido: se usa el detector ê" if not inferido
-                          else "SpinAxis INFERIDO del movimiento: el único detector es G2.3 (Deming)")}
+    th_obs = np.radians(sa)
+    r2 = _r2_dentro(np.column_stack([np.sin(th_obs), np.cos(th_obs)]),
+                    np.column_stack([np.sin(th_mov), np.cos(th_mov)]), gj)
+    e_hat = np.cross(v_hat, direccion_magnus(sa, v_hat, signo))
+    z = np.einsum("ij,ij->i", at, e_hat)
+    _, gi = np.unique(gj, return_inverse=True)
+    media = (np.bincount(gi, z) / np.maximum(np.bincount(gi), 1))[gi]
+    sd_z = float(np.std(z - media))
+    # Fail-closed: cualquier NaN en los tres criterios ⇒ inferido/no evaluable.
+    criterios_nan = not (np.isfinite(desv) and np.isfinite(sd_z) and np.isfinite(r2))
+    inferido = criterios_nan or desv < desfase_min_grados or sd_z < var_min_ms2 or r2 >= r2_max
+    out = {"medido": (not inferido), "no_evaluable": bool(criterios_nan), "signo_lateral": int(signo),
+           "desfase_rms_grados": desv, "sd_a_por_e_dentro_jk_ms2": sd_z, "r2_circularidad": r2, **base}
+    if criterios_nan:
+        out["veredicto"] = ("SpinAxis NO EVALUABLE (algún criterio no finito); fail-closed → inferido, G2.3b sobre "
+                            "datos reales n/e")
+    elif inferido:
+        out["veredicto"] = "SpinAxis INFERIDO del movimiento: el único detector es G2.3a (Deming)"
+    else:
+        out["veredicto"] = "SpinAxis medido: se usa el detector ê"
+    return out
 
 
 def c_g_detector_e(spin_axis_deg: np.ndarray, a_tilde: np.ndarray, v_barra: np.ndarray, juego_i: np.ndarray,

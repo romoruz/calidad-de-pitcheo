@@ -101,7 +101,9 @@ def analizar(df: pl.DataFrame, f02: dict, fis: dict, semilla: int = 2026) -> dic
     kappa_medio = float(np.nanmean(kappa))
     c_dif = D.c_g_desde_diferencia(dd, dl, res["en_referencia"], kappa_medio)
     chk = D.verificar_spinaxis_medido(vv["spin_axis"], vv["a_tilde"], vv["v_barra"], jk,
-                                      f02.get("spinaxis_desfase_min_grados", 1.0), f02.get("spinaxis_sd_min_ms2", 0.05))
+                                      f02.get("spinaxis_desfase_min_grados", 1.0), f02.get("spinaxis_sd_min_ms2", 0.05),
+                                      f02.get("spinaxis_r2_max", 0.95), f02.get("spinaxis_n_min_evaluable", 100),
+                                      f02.get("spinaxis_fraccion_min_evaluable", 0.5))
     c_e = np.full(n_g, np.nan)
     g23b_real = None
     if chk["medido"]:
@@ -272,7 +274,8 @@ def replica_g23b(semilla: int, sc: dict, f02: dict, con_calibracion: bool) -> di
     cong = _conglomerado(d, u)
     vv = {k: x[u] for k, x in vec.items() if isinstance(x, np.ndarray) and len(x) == len(u)}
     chk = D.verificar_spinaxis_medido(vv["spin_axis"], vv["a_tilde"], vv["v_barra"], jk, f02.get("spinaxis_desfase_min_grados", 1.0),
-                                      f02.get("spinaxis_sd_min_ms2", 0.05), f02.get("spinaxis_r2_max", 0.95))
+                                      f02.get("spinaxis_sd_min_ms2", 0.05), f02.get("spinaxis_r2_max", 0.95),
+                                      f02.get("spinaxis_n_min_evaluable", 100), f02.get("spinaxis_fraccion_min_evaluable", 0.5))
     det = D.detector_e_parques(vv["spin_axis"], vv["a_tilde"], vv["v_barra"], jk, d["parque"].to_numpy()[u].astype(object),
                                d["cubeta"].to_numpy()[u].astype(object), cong, chk["signo_lateral"], f02.get("g23b_q", 0.05),
                                f02.get("g23b_min_parques", 3), f02.get("max_p_cr2", 14000))
@@ -398,19 +401,19 @@ def evaluar_gates(a: dict, sint: dict, g: dict, referencia: str = "No Altitude")
                       "detalle": ("Deming δ^L sobre δ^D: pendiente "
                                   f"{dem['pendiente']:.3f} (EE dos vías {dem['se_pendiente']:.3f}) ∈ [{lo}, {hi}] · intercepto "
                                   f"{dem['intercepto']:+.4f}") if dem else "no evaluable"}
-    sp = a["calibracion"]["spinaxis"]
     b = sint["g23b"]["con_calibracion"]
     p_min, f_max = g["g23b_potencia_min"], g["g23b_fpr_max"]
     pot_l, pot_t = b["lambda"]["tasa"], b["tau"]["tasa"]
     ok_det = (b["potencia"] is not None and pot_l is not None and pot_t is not None and b["fpr"] is not None
               and b["potencia"] >= p_min and pot_l >= p_min and pot_t >= p_min and b["fpr"] <= f_max)
-    det_txt = (f"detector ê por parque (Wald CR2 + BH {100 * b['q']:.0f} %), {b['R']} réplicas × 18 parques: potencia "
-               f"{b['potencia']:.3f} (λ=1.02: {pot_l:.3f}, {b['lambda']['rechazos']}/{b['lambda']['n']}; τ=1.01: {pot_t:.3f}, "
-               f"{b['tau']['rechazos']}/{b['tau']['n']}; mínimo {p_min}) · FPR en parques limpios {b['fpr']:.3f} "
-               f"({b['limpio']['rechazos']}/{b['limpio']['n']}; máximo {f_max})")
-    if not sp["medido"]:
+    det_txt = (f"detector ê por parque (validación SINTÉTICA del método, ADR-018; Pustejovsky–Tipton + BH {100 * b['q']:.0f} %), "
+               f"{b['R']} réplicas × 18 parques: potencia {b['potencia']:.3f} (λ=1.02: {pot_l:.3f}, {b['lambda']['rechazos']}/"
+               f"{b['lambda']['n']}; τ=1.01: {pot_t:.3f}, {b['tau']['rechazos']}/{b['tau']['n']}; mínimo {p_min}) · "
+               f"FPR en parques limpios {b['fpr']:.3f} ({b['limpio']['rechazos']}/{b['limpio']['n']}; máximo {f_max}). "
+               f"La aplicación a datos reales es 🔎 informativa (ver reporte).")
+    if not b.get("spinaxis_medido", True):
         gates["G2.3b"] = {"ok": True, "no_evaluable": True,
-                          "detalle": "NO EVALUABLE: SpinAxis resulta inferido del movimiento (prueba de circularidad); queda solo G2.3a"}
+                          "detalle": "NO EVALUABLE: SpinAxis en la SINTÉTICA resulta inferido (fail-closed, ADR-018)"}
     else:
         gates["G2.3b"] = {"ok": bool(ok_det), "detalle": det_txt}
     s = a["se"]
@@ -580,20 +583,28 @@ def _sec_calibracion(a: dict) -> list[str]:
                 [{"cubeta": k, "juegos": v["n"], "media": _f(v["media"]), "sd": _f(v["sd"]), "p05": _f(v["p05"]),
                   "mediana": _f(v["mediana"]), "p95": _f(v["p95"])} for k, v in d.items()],
                 ["cubeta", "juegos", "media", "sd", "p05", "mediana", "p95"]), ""]
-    if not chk["medido"]:
-        L += ["_El detector ê no se evalúa: el eje está inferido del movimiento; el único detector es G2.3a._", ""]
     g = c.get("g23b_datos")
-    if g:
+    sp = c["spinaxis"]
+    if not chk["medido"]:
+        razon = ("no evaluable (algún criterio no finito o muestra válida insuficiente, fail-closed, ADR-018)"
+                 if sp.get("no_evaluable") else "inferido del movimiento (prueba de circularidad, ADR-017)")
+        L += [(f"_El detector ê sobre datos reales es n/e: SpinAxis sale {razon}. Datos: n_evaluado = {sp.get('n_evaluado')} de "
+               f"{sp.get('n_entrada')}, R² = {_f(sp.get('r2_circularidad'))}, sd(ã·ê) = {_f(sp.get('sd_a_por_e_dentro_jk_ms2'))}, "
+               f"desfase = {_f(sp.get('desfase_rms_grados'), 2)}°. El único detector de calibración sobre real es G2.3a._"), ""]
+    if g is not None and chk["medido"]:
         ev = [f for f in g["parques"] if f["evaluable"]]
-        L += [(f"**ĉ_ê por parque, centrado en la mediana de su cubeta (G2.3b sobre los datos; {g['origen']}; SE {g['metodo_se']}; "
-               f"Wald + BH al {100 * g['q']:.0f} %):** {sum(f['rechaza_bh'] for f in ev)} de {len(ev)} parques evaluados marcados."), "",
+        latente = "parque latente" in g["origen"].lower()
+        etiqueta = ("🔎 **informativa, no es compuerta** (" + ("sin id de parque: " if latente else "")
+                    + f"id = {g['origen']}; ADR-018: la compuerta G2.3b vive en la sintética)")
+        L += [(f"**ĉ_ê por parque sobre los datos reales — {etiqueta}; SE {g['metodo_se']}; Wald + BH al {100 * g['q']:.0f} %:** "
+               f"{sum(f['rechaza_bh'] for f in ev)} de {len(ev)} parques evaluados marcados."), "",
               *_tabla([{"parque": f["parque"], "cubeta": f["cubeta"], "ĉ crudo": _f(f["c_hat"]),
-                        "ĉ centrado": _f(f.get("c_centrado")), "SE CR2": _f(f.get("se")), "z": _f(f.get("z"), 2),
+                        "ĉ centrado": _f(f.get("c_centrado")), "SE": _f(f.get("se")), "z": _f(f.get("z"), 2),
                         "BH": ("marca" if f.get("rechaza_bh") else "—") if f["evaluable"] else "n/e"}
                        for f in sorted(g["parques"], key=lambda f: (f["cubeta"], f["parque"]))],
-                      ["parque", "cubeta", "ĉ crudo", "ĉ centrado", "SE CR2", "z", "BH"]), "",
-              ("Un parque marcado significa |ĉ| distinto del de su cubeta (calibración distinta de la mediana de los parques de "
-               "su altitud): se revisa, no se descarta. El centrado absorbe el sesgo de línea base que depende de ρ (D02b §3)."), ""]
+                      ["parque", "cubeta", "ĉ crudo", "ĉ centrado", "SE", "z", "BH"]), "",
+              ("Un parque marcado señala |ĉ| distinto del de su cubeta: se **revisa**, no se descarta ni dispara una "
+               "compuerta. El centrado absorbe el sesgo de línea base que depende de ρ (D02b §3)."), ""]
     return L
 
 
