@@ -1,0 +1,24 @@
+{
+  "filas_entrada": 635002,
+  "filas_salida": 629820,
+  "juegos": {
+    "total": 2122,
+    "sin_cubeta": 6,
+    "baja_confianza": 4,
+    "confirmatorios": 2112
+  },
+  "gates": {
+    "G2.1": true,
+    "G2.2": false,
+    "G2.3a": false,
+    "G2.3b": false,
+    "G2.4": true
+  },
+  "segundos": 215.0,
+  "se_metodo": "CR2",
+  "segundos_sintetica": {
+    "g21": 28.6,
+    "staff": 6.6,
+    "g23b": 113.5
+  }
+}

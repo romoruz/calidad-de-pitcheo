@@ -1,0 +1,19 @@
+{
+  "lanzamientos": 634974,
+  "juegos": 2540,
+  "segundos_generacion": 41.6,
+  "segundos_analisis": 39.9,
+  "ram_pico_mb": 1612,
+  "ram_pico_tras_generar_mb": 867,
+  "se_metodo": "CR2",
+  "p_cr2": 2983,
+  "juegos_conectados": 2540,
+  "iteraciones_solver": [
+    374,
+    372
+  ],
+  "convergio": [
+    true,
+    true
+  ]
+}

@@ -1,0 +1,760 @@
+{
+  "gates": {
+    "G2.1": {
+      "ok": true,
+      "detalle": "estudio de simulación, R = 10 réplicas (semillas 101–110), |sesgo relativo medio| + 1.96·MCSE por nivel < 1 %: Medium +0.126 % + 1.96×0.069 % = 0.261 % ✓ · Extreme +0.001 % + 1.96×0.073 % = 0.145 % ✓ (peor nivel 0.261 %)"
+    },
+    "G2.2": {
+      "ok": false,
+      "detalle": "(a) orden estricto ✓: δ̄ No -0.0001 > Medium -0.1008 > Extreme -0.1589 · (b) δ̄ Extreme ∈ [-0.3, -0.15]: ✓ · (c) componente de menor media de la mezcla de Extreme -0.1589 ∈ [-0.32, -0.2]: ✗"
+    },
+    "G2.3a": {
+      "ok": false,
+      "detalle": "Deming δ^L sobre δ^D: pendiente 1.514 (EE dos vías 0.019) ∈ [0.85, 1.15] · intercepto -0.0194"
+    },
+    "G2.3b": {
+      "ok": false,
+      "detalle": "detector ê por parque (Wald CR2 + BH 5 %), 10 réplicas × 18 parques: potencia 1.000 (λ=1.02: 1.000, 60/60; τ=1.01: 1.000, 60/60; mínimo 0.8) · FPR en parques limpios 0.167 (10/60; máximo 0.05)"
+    },
+    "G2.4": {
+      "ok": true,
+      "detalle": "σ_η = 0.0774 (D) / 0.2810 (L) · SE CR2 mediano de δ̂_g = 0.0105 (límite 0.03; ingenuo 0.0045, efecto de diseño ×2.34) · método CR2 · cobertura del IC95 CR2 en la sintética 0.965 (mínimo 0.9) ✓"
+    }
+  },
+  "segundos": 215.0,
+  "agregados": {
+    "datos": {
+      "filas_entrada": 635002,
+      "excluir_modelo": 5102,
+      "familia_EXC": 0,
+      "id_nulo": 0,
+      "fisica_nula": 80,
+      "t_s_t_p_o_rho_no_positiva": 0,
+      "filas_salida": 629820
+    },
+    "conectado": {
+      "componentes": 1,
+      "juegos": 2122,
+      "juegos_conectados": 2122,
+      "grupos_jk": 5647,
+      "grupos_jk_conectados": 5647,
+      "filas": 629648,
+      "filas_conectadas": 629648,
+      "juegos_fuera": []
+    },
+    "estratos": {
+      "CH|L|2024": {
+        "n": 8208,
+        "df": 6,
+        "spline": "spline"
+      },
+      "CH|L|2025": {
+        "n": 9861,
+        "df": 6,
+        "spline": "spline"
+      },
+      "CH|L|2026": {
+        "n": 5197,
+        "df": 6,
+        "spline": "spline"
+      },
+      "CH|R|2024": {
+        "n": 25082,
+        "df": 6,
+        "spline": "spline"
+      },
+      "CH|R|2025": {
+        "n": 23963,
+        "df": 6,
+        "spline": "spline"
+      },
+      "CH|R|2026": {
+        "n": 13037,
+        "df": 6,
+        "spline": "spline"
+      },
+      "CU|L|2024": {
+        "n": 7093,
+        "df": 6,
+        "spline": "spline"
+      },
+      "CU|L|2025": {
+        "n": 6235,
+        "df": 6,
+        "spline": "spline"
+      },
+      "CU|L|2026": {
+        "n": 2729,
+        "df": 6,
+        "spline": "spline"
+      },
+      "CU|R|2024": {
+        "n": 14687,
+        "df": 6,
+        "spline": "spline"
+      },
+      "CU|R|2025": {
+        "n": 14576,
+        "df": 6,
+        "spline": "spline"
+      },
+      "CU|R|2026": {
+        "n": 8208,
+        "df": 6,
+        "spline": "spline"
+      },
+      "FC|L|2024": {
+        "n": 4913,
+        "df": 6,
+        "spline": "spline"
+      },
+      "FC|L|2025": {
+        "n": 3858,
+        "df": 6,
+        "spline": "spline"
+      },
+      "FC|L|2026": {
+        "n": 1572,
+        "df": 6,
+        "spline": "spline"
+      },
+      "FC|R|2024": {
+        "n": 4937,
+        "df": 6,
+        "spline": "spline"
+      },
+      "FC|R|2025": {
+        "n": 6911,
+        "df": 6,
+        "spline": "spline"
+      },
+      "FC|R|2026": {
+        "n": 3977,
+        "df": 6,
+        "spline": "spline"
+      },
+      "FF|L|2024": {
+        "n": 17730,
+        "df": 6,
+        "spline": "spline"
+      },
+      "FF|L|2025": {
+        "n": 20289,
+        "df": 6,
+        "spline": "spline"
+      },
+      "FF|L|2026": {
+        "n": 8548,
+        "df": 6,
+        "spline": "spline"
+      },
+      "FF|R|2024": {
+        "n": 67080,
+        "df": 6,
+        "spline": "spline"
+      },
+      "FF|R|2025": {
+        "n": 68588,
+        "df": 6,
+        "spline": "spline"
+      },
+      "FF|R|2026": {
+        "n": 33736,
+        "df": 6,
+        "spline": "spline"
+      },
+      "SI|L|2024": {
+        "n": 8438,
+        "df": 6,
+        "spline": "spline"
+      },
+      "SI|L|2025": {
+        "n": 12543,
+        "df": 6,
+        "spline": "spline"
+      },
+      "SI|L|2026": {
+        "n": 6002,
+        "df": 6,
+        "spline": "spline"
+      },
+      "SI|R|2024": {
+        "n": 32250,
+        "df": 6,
+        "spline": "spline"
+      },
+      "SI|R|2025": {
+        "n": 32381,
+        "df": 6,
+        "spline": "spline"
+      },
+      "SI|R|2026": {
+        "n": 18429,
+        "df": 6,
+        "spline": "spline"
+      },
+      "SL|L|2024": {
+        "n": 10977,
+        "df": 6,
+        "spline": "spline"
+      },
+      "SL|L|2025": {
+        "n": 13180,
+        "df": 6,
+        "spline": "spline"
+      },
+      "SL|L|2026": {
+        "n": 6510,
+        "df": 6,
+        "spline": "spline"
+      },
+      "SL|R|2024": {
+        "n": 41595,
+        "df": 6,
+        "spline": "spline"
+      },
+      "SL|R|2025": {
+        "n": 42715,
+        "df": 6,
+        "spline": "spline"
+      },
+      "SL|R|2026": {
+        "n": 23613,
+        "df": 6,
+        "spline": "spline"
+      }
+    },
+    "ajuste": [
+      {
+        "iteraciones": 471,
+        "convergio": true,
+        "cambio_final": 1.6775131901317374e-14
+      },
+      {
+        "iteraciones": 468,
+        "convergio": true,
+        "cambio_final": 3.879865048167823e-14
+      }
+    ],
+    "soporte": {
+      "estratos_sin_soporte_comun": [],
+      "filas_en_soporte": 581599,
+      "filas": 629648
+    },
+    "juegos": {
+      "total": 2122,
+      "sin_cubeta": 6,
+      "baja_confianza": 4,
+      "confirmatorios": 2112
+    },
+    "se": {
+      "metodo": "CR2",
+      "p": 7984,
+      "sigma_eta_D": 0.07743868599537009,
+      "sigma_eta_L": 0.28096534885720825,
+      "se_cr2_D_mediana": 0.010504756914417879,
+      "se_cr2_L_mediana": 0.037488864566283836,
+      "se_ingenuo_D_mediana": 0.004493448312787783,
+      "efecto_diseno_D": 2.338546621184748
+    },
+    "medias_por_cubeta": {
+      "No Altitude": {
+        "n": 1001,
+        "delta_D": -0.00012246652286745086,
+        "se_D": 0.0015210557305722996,
+        "delta_L": -0.0011472761937751379,
+        "se_L": 0.00221514038083189
+      },
+      "Medium Altitude": {
+        "n": 508,
+        "delta_D": -0.10076570535421174,
+        "se_D": 0.0023442668543855547,
+        "delta_L": -0.1940571074847393,
+        "se_L": 0.0022148438531913207
+      },
+      "Extreme Altitude": {
+        "n": 603,
+        "delta_D": -0.15889935146674417,
+        "se_D": 0.001867690749628629,
+        "delta_L": -0.27193215316759706,
+        "se_L": 0.002875436677395193
+      }
+    },
+    "contrastes": {
+      "Medium Altitude − No Altitude": {
+        "diferencia": -0.1006432388313443,
+        "se": 0.0027693468669070034
+      },
+      "Extreme Altitude − No Altitude": {
+        "diferencia": -0.1587768849438767,
+        "se": 0.0023839560971094494
+      }
+    },
+    "barometrica": {
+      "filas": [
+        {
+          "cubeta": "No Altitude",
+          "altitud_m": 20,
+          "log_rho_baro": 0.0,
+          "delta_medio": -0.00012246652286745086,
+          "se": 0.0015210557305722996
+        },
+        {
+          "cubeta": "Medium Altitude",
+          "altitud_m": 532,
+          "log_rho_baro": -0.061083996572335264,
+          "delta_medio": -0.10076570535421174,
+          "se": 0.0023442668543855547
+        },
+        {
+          "cubeta": "Extreme Altitude",
+          "altitud_m": 2000,
+          "log_rho_baro": -0.24026481596061808,
+          "delta_medio": -0.15889935146674417,
+          "se": 0.001867690749628629
+        }
+      ],
+      "pendiente": 0.6308211398927999,
+      "se_pendiente": 0.00993815448684289,
+      "ic95": [
+        0.6113423570985878,
+        0.650299922687012
+      ],
+      "nota": "3 puntos, pesos 1/EE²; altitudes representativas ilustrativas: informativo, no es compuerta"
+    },
+    "mezcla_extreme": {
+      "n_componentes": 1,
+      "bic": -2175.0952413348964,
+      "componentes": [
+        {
+          "media": -0.15889935146674417,
+          "sd": 0.03943452189728944,
+          "peso": 1.0
+        }
+      ]
+    },
+    "latentes": {
+      "mezclas": {
+        "Extreme Altitude": {
+          "n_componentes": 1,
+          "bic": -2175.0952413348964,
+          "componentes": [
+            {
+              "media": -0.15889935146674417,
+              "sd": 0.03943452189728944,
+              "peso": 1.0
+            }
+          ]
+        },
+        "Medium Altitude": {
+          "n_componentes": 1,
+          "bic": -1765.0512744406903,
+          "componentes": [
+            {
+              "media": -0.10076570535421173,
+              "sd": 0.04206851725968245,
+              "peso": 1.0
+            }
+          ]
+        },
+        "No Altitude": {
+          "n_componentes": 1,
+          "bic": -3450.903619401244,
+          "componentes": [
+            {
+              "media": -0.00012246652286745108,
+              "sd": 0.042870739561805433,
+              "peso": 1.0
+            }
+          ]
+        }
+      },
+      "descriptores_por_juego": {
+        "rel_height_residual_ft": {
+          "Extreme Altitude": {
+            "n": 603,
+            "media": 0.009310542764543173,
+            "sd": 0.07126058426113643,
+            "p05": -0.11172864312806008,
+            "mediana": 0.015536992269719755,
+            "p95": 0.11329246558291098
+          },
+          "Medium Altitude": {
+            "n": 508,
+            "media": -0.016609972401369643,
+            "sd": 0.09030959964131928,
+            "p05": -0.14403860577339733,
+            "mediana": -0.03231554504448585,
+            "p95": 0.14669841192055882
+          },
+          "No Altitude": {
+            "n": 1001,
+            "media": 0.0014783414513178383,
+            "sd": 0.08391808091113849,
+            "p05": -0.1295661765908338,
+            "mediana": 0.005600663215860989,
+            "p95": 0.1341972852243398
+          }
+        },
+        "sesgo_plateloc_height_ft": {
+          "Extreme Altitude": {
+            "n": 603,
+            "media": 0.006713824773789412,
+            "sd": 0.004241420827102464,
+            "p05": 0.001787043677481181,
+            "mediana": 0.0057707992665683985,
+            "p95": 0.015090091103714235
+          },
+          "Medium Altitude": {
+            "n": 508,
+            "media": 0.006800822796699706,
+            "sd": 0.004866418123994476,
+            "p05": 0.0017330109947946495,
+            "mediana": 0.005525887297196157,
+            "p95": 0.016029498765500784
+          },
+          "No Altitude": {
+            "n": 1001,
+            "media": 0.006420886042625439,
+            "sd": 0.005103736933487314,
+            "p05": 0.001401136498954127,
+            "mediana": 0.005231493988975775,
+            "p95": 0.01564508653563378
+          }
+        }
+      },
+      "etiqueta": "🔎 exploratorio"
+    },
+    "sin_cubeta_prediccion": {
+      "n": 6,
+      "predichas": {
+        "Extreme Altitude": 6
+      },
+      "etiqueta": "🔎 exploratorio"
+    },
+    "deming": {
+      "pendiente": 1.5139697491279638,
+      "intercepto": -0.01939269344022586,
+      "se_pendiente": 0.019355949812582433,
+      "se_intercepto": 0.002070215967678536,
+      "z_pendiente_vs_1": 26.5535793440555,
+      "z_intercepto_vs_0": -9.367473608066172,
+      "razon_varianzas": 12.525655551822858,
+      "n_juegos": 2112
+    },
+    "calibracion": {
+      "kappa_medio": -1.2942891510536543,
+      "spinaxis": {
+        "medido": true,
+        "signo_lateral": 1,
+        "desfase_rms_grados": NaN,
+        "sd_a_por_e_dentro_jk_ms2": NaN,
+        "umbral_desfase_grados": 1.0,
+        "umbral_sd_ms2": 0.05,
+        "r2_circularidad": NaN,
+        "umbral_r2": 0.95,
+        "veredicto": "SpinAxis medido: se usa el detector ê"
+      },
+      "g23b_datos": {
+        "origen": "parque latente 🔎 (mezcla gaussiana de δ̂ᴰ por cubeta; no es un parque identificado)",
+        "parques": [
+          {
+            "parque": "Extreme Altitude|0",
+            "cubeta": "Extreme Altitude",
+            "c_hat": NaN,
+            "evaluable": false
+          },
+          {
+            "parque": "Medium Altitude|0",
+            "cubeta": "Medium Altitude",
+            "c_hat": NaN,
+            "evaluable": false
+          },
+          {
+            "parque": "No Altitude|0",
+            "cubeta": "No Altitude",
+            "c_hat": NaN,
+            "evaluable": false
+          }
+        ],
+        "metodo_se": "CR2",
+        "q": 0.05,
+        "n_parques": 3
+      },
+      "c_dif_por_cubeta": {
+        "Extreme Altitude": {
+          "n": 603,
+          "media": 0.08733195484860184,
+          "sd": 0.04380779898493807,
+          "p05": 0.018377771572094078,
+          "mediana": 0.08477092531572912,
+          "p95": 0.16150734415095414
+        },
+        "Medium Altitude": {
+          "n": 508,
+          "media": 0.07207925837482375,
+          "sd": 0.03875017223777853,
+          "p05": 0.010509381251283628,
+          "mediana": 0.07168540315339403,
+          "p95": 0.13558471794632956
+        },
+        "No Altitude": {
+          "n": 1001,
+          "media": 0.000791793448993555,
+          "sd": 0.04043861060875009,
+          "p05": -0.06413072698332108,
+          "mediana": 0.0009367082063406611,
+          "p95": 0.06746585536749895
+        }
+      },
+      "c_e_por_cubeta": {
+        "Extreme Altitude": {
+          "n": 506,
+          "media": -9.389897208639432e-05,
+          "sd": 0.0005409835770789509,
+          "p05": -0.0009438019229268542,
+          "mediana": -7.021417944689894e-05,
+          "p95": 0.0007533906627266337
+        },
+        "Medium Altitude": {
+          "n": 489,
+          "media": -0.0002332725189679439,
+          "sd": 0.0005127930911567357,
+          "p05": -0.0010937118379470258,
+          "mediana": -0.0002521658113188441,
+          "p95": 0.0005778991949524066
+        },
+        "No Altitude": {
+          "n": 944,
+          "media": -1.9936221978925514e-06,
+          "sd": 0.00108045938695646,
+          "p05": -0.0014436221310339425,
+          "mediana": -0.00016091285286731066,
+          "p95": 0.0021398858209854864
+        }
+      }
+    },
+    "delta_referencia_por_anio": {
+      "2024": -0.017695722624527465,
+      "2025": 0.01765521272472133,
+      "2026": 0.0017431663859231495
+    }
+  },
+  "sintetica": {
+    "g21": {
+      "R": 10,
+      "niveles": {
+        "Medium Altitude": {
+          "sesgo_rel": 0.001256673005026343,
+          "mcse": 0.0006907820408487503,
+          "cota": 0.0026106058050898934,
+          "ok": true,
+          "se_empirico": 0.008442873043162123,
+          "rmse": 0.008520355354403888,
+          "cobertura": 0.961439588688946,
+          "juegos": 389,
+          "errores_por_replica": [
+            0.0013415052575758146,
+            0.005154848928250244,
+            -0.003000708323775969,
+            -0.0005743273474432264,
+            0.0009111441349605176,
+            0.0007619686588398178,
+            0.0007145832519377393,
+            0.0033021219527351597,
+            0.0024156724097517124,
+            0.0015399211274316205
+          ]
+        },
+        "Extreme Altitude": {
+          "sesgo_rel": 1.1503330266637856e-05,
+          "mcse": 0.0007324824578540178,
+          "cota": 0.0014471689476605128,
+          "ok": true,
+          "se_empirico": 0.008427601285423466,
+          "rmse": 0.008418414637556236,
+          "cobertura": 0.9601873536299765,
+          "juegos": 427,
+          "errores_por_replica": [
+            -0.0002407763874534563,
+            0.0017858628973581592,
+            -0.00504098127207997,
+            9.808009055367606e-05,
+            0.0014142087663309155,
+            -0.0032161624356191743,
+            0.0012226918127993258,
+            0.0011431952108786891,
+            0.0017265236615691126,
+            0.0012223909583291004
+          ]
+        }
+      },
+      "cobertura": 0.9646666666666667,
+      "juegos_total": 1500,
+      "sigma_eta_medio": 0.05213867100907247,
+      "lanzamientos_por_replica": [
+        37659,
+        37270,
+        37416,
+        37424,
+        37514,
+        37139,
+        37490,
+        37234,
+        37779,
+        37593
+      ],
+      "segundos_por_replica": [
+        20.0,
+        20.4,
+        19.5,
+        19.3,
+        20.2,
+        20.4,
+        20.1,
+        19.6,
+        7.7,
+        7.4
+      ],
+      "semillas": [
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        110
+      ],
+      "n_juegos": 150,
+      "lanzamientos_por_juego": 250
+    },
+    "staff": {
+      "semilla": 101,
+      "rmse_con_alpha": 0.006865691136350526,
+      "rmse_sin_alpha": 0.020713242574985424,
+      "sigma_alpha": 0.05
+    },
+    "g23b": {
+      "con_calibracion": {
+        "R": 10,
+        "spinaxis_medido": true,
+        "q": 0.05,
+        "lambda": {
+          "n": 60,
+          "rechazos": 60,
+          "tasa": 1.0,
+          "c_centrado_medio": 0.019999833779708057,
+          "c_verdad_medio": 0.020000000000000018,
+          "se_medio": 0.0016499057970152955
+        },
+        "tau": {
+          "n": 60,
+          "rechazos": 60,
+          "tasa": 1.0,
+          "c_centrado_medio": -0.019744996248928146,
+          "c_verdad_medio": -0.019703950593079167,
+          "se_medio": 0.0016372464360749931
+        },
+        "limpio": {
+          "n": 60,
+          "rechazos": 10,
+          "tasa": 0.16666666666666666,
+          "c_centrado_medio": 0.0,
+          "c_verdad_medio": 0.0,
+          "se_medio": 0.000972365697942591
+        },
+        "potencia": 1.0,
+        "fpr": 0.16666666666666666,
+        "deming_pendiente_medio": 1.021394603794053,
+        "deming_pendientes": [
+          0.9945,
+          1.0078,
+          1.0196,
+          1.0216,
+          1.0359,
+          1.0289,
+          1.0461,
+          1.0023,
+          1.0242,
+          1.0331
+        ],
+        "lanzamientos_por_replica": [
+          75102,
+          74357,
+          74625,
+          74710,
+          75088,
+          75336,
+          75338,
+          74623,
+          75483,
+          75021
+        ]
+      },
+      "nulo": {
+        "R": 10,
+        "spinaxis_medido": true,
+        "q": 0.05,
+        "lambda": {
+          "n": 0,
+          "rechazos": 0,
+          "tasa": null,
+          "c_centrado_medio": null,
+          "c_verdad_medio": null,
+          "se_medio": null
+        },
+        "tau": {
+          "n": 0,
+          "rechazos": 0,
+          "tasa": null,
+          "c_centrado_medio": null,
+          "c_verdad_medio": null,
+          "se_medio": null
+        },
+        "limpio": {
+          "n": 180,
+          "rechazos": 1,
+          "tasa": 0.005555555555555556,
+          "c_centrado_medio": 3.2611964860477956e-05,
+          "c_verdad_medio": 0.0,
+          "se_medio": 0.0014129749062869593
+        },
+        "potencia": null,
+        "fpr": 0.005555555555555556,
+        "deming_pendiente_medio": 1.0103444927511998,
+        "deming_pendientes": [
+          1.0115,
+          0.9953,
+          1.0024,
+          1.0173,
+          1.0262,
+          1.0176,
+          1.0203,
+          0.9961,
+          1.0097,
+          1.0069
+        ],
+        "lanzamientos_por_replica": [
+          75102,
+          74357,
+          74625,
+          74710,
+          75088,
+          75336,
+          75338,
+          74623,
+          75483,
+          75021
+        ]
+      }
+    },
+    "segundos": {
+      "g21": 28.6,
+      "staff": 6.6,
+      "g23b": 113.5
+    }
+  }
+}
