@@ -163,6 +163,45 @@ def analizar(df: pl.DataFrame, f02: dict, fis: dict, semilla: int = 2026) -> dic
     idx = np.flatnonzero(conf)
     dem = D.deming(dd[idx], dl[idx], se["se"][idx, 0], se["se"][idx, 1], W[idx]) if len(idx) > 5 else None
 
+    # --- Prop. 2″ (ADR-018): β̂_c de Reynolds, prueba de sobreidentificación y δ̃ corregido.
+    p2pp_cfg = f02.get("prop2pp", {}) or {}
+    prop2pp: dict = {"activada": bool(p2pp_cfg.get("activa", True)), "adoptado": False}
+    medias_corr = mezcla_ext_corr = deming_corr = None
+    try:
+        r2pp = D.estimar_reynolds(d, f02, referencia, por_anio=f02.get("por_anio", True))
+        pend_obs = dem["pendiente"] if dem else float("nan")
+        se_obs = dem["se_pendiente"] if dem else float("nan")
+        sobre = D.sobreidentificacion_reynolds(r2pp, pend_obs, se_obs,
+                                               tolerancia=p2pp_cfg.get("tolerancia_equivalencia", 0.10))
+        r2_tope = p2pp_cfg.get("tolerancia_r2_colinealidad", 0.98)
+        identificable = r2pp["r2_colinealidad_log_v"] < r2_tope
+        adoptado = bool(prop2pp["activada"] and sobre["equivalencia"] and identificable)
+        prop2pp.update({"beta": r2pp["beta"].tolist(), "se_beta": r2pp["se_beta"].tolist(),
+                        "r2_colinealidad_log_v": r2pp["r2_colinealidad_log_v"], "r2_tope": r2_tope,
+                        "identificable": bool(identificable), "sobreidentificacion": sobre, "adoptado": adoptado,
+                        "iteraciones": r2pp["iteraciones"], "convergio": r2pp["convergio"],
+                        "n_lanzamientos": r2pp["n_lanzamientos"], "p_cr2": r2pp["p_cr2"]})
+        if adoptado:
+            dd_c = r2pp["delta_corregido"][:, 0]
+            dl_c = r2pp["delta_corregido"][:, 1]
+            se_c = r2pp["se_delta_corregido"]
+            medias_corr = {}
+            for c in CUBETAS:
+                m = _media_por_anio_ponderada(dd_c, conf & (cub == c), anio_juego_full, W)
+                ml = _media_por_anio_ponderada(dl_c, conf & (cub == c), anio_juego_full, W)
+                medias_corr[c] = {"n": m["n"], "delta_D": m["media"], "se_D": m["se"],
+                                  "delta_L": ml["media"], "se_L": ml["se"]}
+            mezcla_ext_corr = D.mezcla_bic(dd_c[conf & (cub == "Extreme Altitude")],
+                                           f02.get("gmm_max_comp", 4), f02.get("gmm_n_init", 5), semilla)                 if (conf & (cub == "Extreme Altitude")).sum() >= 8 else None
+            idx_c = np.flatnonzero(conf)
+            deming_corr = D.deming(dd_c[idx_c], dl_c[idx_c], se_c[idx_c, 0], se_c[idx_c, 1], W[idx_c])                 if len(idx_c) > 5 else None
+            prop2pp.update({"medias_corregidas": medias_corr, "mezcla_extreme_corregida": mezcla_ext_corr,
+                            "deming_corregido": deming_corr,
+                            "delta_corregido_D": dd_c, "delta_corregido_L": dl_c,
+                            "se_delta_corregido": se_c})
+    except (ValueError, np.linalg.LinAlgError) as exc:
+        prop2pp["error"] = str(exc)
+
     # --- Prop. 3′: ĉ_g desde δ^L − δ^D y, si SpinAxis es medido, el detector ê
     vv = {k: x[u] for k, x in vec.items() if isinstance(x, np.ndarray) and len(x) == len(u)}
     kappa = D.kappa_sustentacion(vv["a_perp"], vv["l_perp"])
@@ -212,6 +251,7 @@ def analizar(df: pl.DataFrame, f02: dict, fis: dict, semilla: int = 2026) -> dic
                         "c_e_por_cubeta": (D.distribucion_por_cubeta(c_e[conf], cub[conf]) if chk["medido"] else None)},
         "delta_referencia_por_anio": por_anio,
         "niveles_normalizacion": niveles_norm,
+        "prop2pp": prop2pp,
     }
     return {"agregados": agregados, "por_juego": por_juego, "dsg": dsg, "estimacion": est, "se": se, "conf": conf,
             "cubeta": cub}
@@ -237,9 +277,12 @@ def _g23b_datos(d: pl.DataFrame, u: np.ndarray, gi: np.ndarray, conf: np.ndarray
     fuera = ~conf[gi]
     par_fila = np.where(fuera, None, par_fila)
     cub_fila = cub[gi]
-    r = D.detector_e_parques(vv["spin_axis"], vv["a_tilde"], vv["v_barra"], jk, par_fila, cub_fila, conglomerado,
-                             chk["signo_lateral"], f02.get("g23b_q", 0.05), f02.get("g23b_min_parques", 3),
-                             f02.get("max_p_cr2", 14000))
+    cong_lanz = d["lanzador"].to_numpy()[u].astype(str)
+    r = D.detector_e_parques(vv["spin_axis"], vv["a_tilde"], vv["v_barra"], jk, par_fila, cub_fila, cong_lanz,
+                             chk["signo_lateral"], f02.get("g23b_q", 0.05), f02.get("g23b_min_parques", 2),
+                             f02.get("max_p_cr2", 14000),
+                             contraste=f02.get("g23b_contraste", "loo"),
+                             df_tipo=f02.get("g23b_df", "pustejovsky_tipton"))
     return {"origen": origen, **r}
 
 
@@ -303,7 +346,8 @@ def replica_g21(semilla: int, sc: dict, f02: dict) -> dict:
     """Una réplica del estudio de simulación de G2.1: genera, estima δ̂ (LSMR) y su SE CR2, y compara con la verdad."""
     from .sintetico import generar_fisica
     t0 = time.time()
-    df, v = generar_fisica(sc["n_juegos"], sc["lanzamientos_por_juego"], semilla)
+    df, v = generar_fisica(sc["n_juegos"], sc["lanzamientos_por_juego"], semilla,
+                           beta_D=sc.get("beta_D", 0.0), beta_L=sc.get("beta_L", 0.0))
     s = _estimar_sintetica(df, v, f02, con_se=True)
     return {"semilla": semilla, "error": error_recuperacion(s), "n_lanzamientos": df.height,
             "delta": s["delta"][:, 0], "verdad": s["verdad"], "se": s["se"]["se"][:, 0], "cubeta": s["cubeta"],
@@ -338,19 +382,20 @@ def replica_g23b(semilla: int, sc: dict, f02: dict, con_calibracion: bool) -> di
     esq = (esquema_calibracion_parques(CUBETAS_G23B, semilla, sc["lambda_escala"], sc["tau_reloj"])
            if con_calibracion else {})
     df, v = generar_fisica(sc["n_juegos_g23b"], sc["lanzamientos_por_juego"], semilla, cubetas=CUBETAS_G23B,
-                           calibracion_parques=esq)
+                           calibracion_parques=esq, beta_D=sc.get("beta_D", 0.0), beta_L=sc.get("beta_L", 0.0))
     s = _estimar_sintetica(df, v, f02, con_se=True)
     est, dsg, d, vec, res = s["est"], s["dsg"], s["d"], s["vec"], s["est"]["res"]
     u = est["mascara"]
     jk = d["lanzador_forma"].to_numpy()[u]
-    cong = _conglomerado(d, u)
+    cong_lanz = d["lanzador"].to_numpy()[u].astype(str)                                                        # ADR-018: cluster = lanzador para G2.3b
     vv = {k: x[u] for k, x in vec.items() if isinstance(x, np.ndarray) and len(x) == len(u)}
     chk = D.verificar_spinaxis_medido(vv["spin_axis"], vv["a_tilde"], vv["v_barra"], jk, f02.get("spinaxis_desfase_min_grados", 1.0),
                                       f02.get("spinaxis_sd_min_ms2", 0.05), f02.get("spinaxis_r2_max", 0.95),
                                       f02.get("spinaxis_n_min_evaluable", 100), f02.get("spinaxis_fraccion_min_evaluable", 0.5))
     det = D.detector_e_parques(vv["spin_axis"], vv["a_tilde"], vv["v_barra"], jk, d["parque"].to_numpy()[u].astype(object),
-                               d["cubeta"].to_numpy()[u].astype(object), cong, chk["signo_lateral"], f02.get("g23b_q", 0.05),
-                               f02.get("g23b_min_parques", 3), f02.get("max_p_cr2", 14000))
+                               d["cubeta"].to_numpy()[u].astype(object), cong_lanz, chk["signo_lateral"], f02.get("g23b_q", 0.05),
+                               f02.get("g23b_min_parques", 2), f02.get("max_p_cr2", 14000),
+                               contraste=f02.get("g23b_contraste", "loo"), df_tipo=f02.get("g23b_df", "pustejovsky_tipton"))
     c_park = {f"park_{k + 1:02d}": l / t**2 - 1.0 for k, (l, t) in esq.items()}
     tipo = {f"park_{k + 1:02d}": ("lambda" if l != 1.0 else "tau") for k, (l, _) in esq.items()}
     for f in det["parques"]:
@@ -397,7 +442,8 @@ def sintetica_f02(f02: dict, fis: dict) -> dict:
     t1 = time.time()
     # Planteles locales: δ̂ con y sin α_{j,k} en la primera semilla (diagnóstico de la Prop. 2′, no es compuerta).
     from .sintetico import generar_fisica
-    df, v = generar_fisica(sc["n_juegos"], sc["lanzamientos_por_juego"], sc["semillas"][0])
+    df, v = generar_fisica(sc["n_juegos"], sc["lanzamientos_por_juego"], sc["semillas"][0],
+                           beta_D=sc.get("beta_D", 0.0), beta_L=sc.get("beta_L", 0.0))
     con, sin = _estimar_sintetica(df, v, f02), _estimar_sintetica(df, v, f02, sin_alpha=True)
     def rmse(x):
         return float(np.sqrt(np.mean((x["delta"][:, 0] - x["verdad"]) ** 2)))
@@ -454,25 +500,28 @@ def evaluar_gates(a: dict, sint: dict, g: dict, referencia: str = "No Altitude")
                      + " · ".join(f"{c.split()[0]} {100 * x['sesgo_rel']:+.3f} % + 1.96×{100 * x['mcse']:.3f} % = {100 * x['cota']:.3f} %"
                                   f" {'✓' if x['ok'] else '✗'}" for c, x in g21["niveles"].items())
                      + f" (peor nivel {100 * peor['cota']:.3f} %)"}
-    m = a["medias_por_cubeta"]
-    dn, dm_, de = (m[c]["delta_D"] for c in CUBETAS)
+    pp = a.get("prop2pp", {})
+    adoptado = bool(pp.get("adoptado"))
+    sufijo = " (sobre δ̃ corregido por Reynolds, ADR-018)" if adoptado else " (sobre δ̂ bruto)"
+    med_src = pp.get("medias_corregidas") if adoptado else a["medias_por_cubeta"]
+    mz_src = pp.get("mezcla_extreme_corregida") if adoptado else a.get("mezcla_extreme")
+    dem_src = pp.get("deming_corregido") if adoptado else a["deming"]
+    dn, dm_, de = (med_src[c]["delta_D"] for c in CUBETAS)
     ok_orden = None not in (dn, dm_, de) and dn > dm_ > de
     ok_b = de is not None and g["g22_extreme"][0] <= de <= g["g22_extreme"][1]
-    mz = a.get("mezcla_extreme")
-    comp = mz["componentes"][0]["media"] if mz else None
+    comp = mz_src["componentes"][0]["media"] if mz_src else None
     ok_c = comp is not None and g["g22_componente"][0] <= comp <= g["g22_componente"][1]
     gates["G2.2"] = {"ok": bool(ok_orden and ok_b and ok_c),
-                     "detalle": (f"(a) orden estricto {'✓' if ok_orden else '✗'}: δ̄ No {dn:+.4f} > Medium {dm_:+.4f} > "
-                                 f"Extreme {de:+.4f} · (b) δ̄ Extreme ∈ {g['g22_extreme']}: {'✓' if ok_b else '✗'} · "
+                     "detalle": (f"{sufijo.strip()}. (a) orden estricto {'✓' if ok_orden else '✗'}: δ̄ No {dn:+.4f} > Medium "
+                                 f"{dm_:+.4f} > Extreme {de:+.4f} · (b) δ̄ Extreme ∈ {g['g22_extreme']}: {'✓' if ok_b else '✗'} · "
                                  f"(c) componente de menor media de la mezcla de Extreme "
                                  f"{'—' if comp is None else f'{comp:+.4f}'} ∈ {g['g22_componente']}: {'✓' if ok_c else '✗'}")
                      if None not in (dn, dm_, de) else "sin juegos confirmatorios en alguna cubeta"}
-    dem = a["deming"]
     lo, hi = g["g23_pendiente"]
-    gates["G2.3a"] = {"ok": dem is not None and lo <= dem["pendiente"] <= hi,
-                      "detalle": ("Deming δ^L sobre δ^D: pendiente "
-                                  f"{dem['pendiente']:.3f} (EE dos vías {dem['se_pendiente']:.3f}) ∈ [{lo}, {hi}] · intercepto "
-                                  f"{dem['intercepto']:+.4f}") if dem else "no evaluable"}
+    gates["G2.3a"] = {"ok": dem_src is not None and lo <= dem_src["pendiente"] <= hi,
+                      "detalle": (f"Deming δ^L sobre δ^D{sufijo}: pendiente "
+                                  f"{dem_src['pendiente']:.3f} (EE dos vías {dem_src['se_pendiente']:.3f}) ∈ [{lo}, {hi}] · intercepto "
+                                  f"{dem_src['intercepto']:+.4f}") if dem_src else "no evaluable"}
     b = sint["g23b"]["con_calibracion"]
     p_min, f_max = g["g23b_potencia_min"], g["g23b_fpr_max"]
     pot_l, pot_t = b["lambda"]["tasa"], b["tau"]["tasa"]
@@ -491,11 +540,22 @@ def evaluar_gates(a: dict, sint: dict, g: dict, referencia: str = "No Altitude")
     s = a["se"]
     cob = sint["g21"]["cobertura"]
     ok_cob = cob >= g["g24_cobertura_min"]
-    gates["G2.4"] = {"ok": bool(s["se_cr2_D_mediana"] < g["g24_se_max"] and ok_cob),
-                     "detalle": f"σ_η = {s['sigma_eta_D']:.4f} (D) / {s['sigma_eta_L']:.4f} (L) · SE CR2 mediano de δ̂_g = "
-                                f"{s['se_cr2_D_mediana']:.4f} (límite {g['g24_se_max']}; ingenuo {s['se_ingenuo_D_mediana']:.4f}, "
-                                f"efecto de diseño ×{s['efecto_diseno_D']:.2f}) · método {s['metodo']} · cobertura del IC95 CR2 en la "
-                                f"sintética {cob:.3f} (mínimo {g['g24_cobertura_min']}) {'✓' if ok_cob else '✗'}"}
+    if adoptado and pp.get("se_delta_corregido") is not None:
+        se_c = pp["se_delta_corregido"]
+        n_juego = a["juegos"]["confirmatorios"]
+        # mediana de SE de δ̃_D sobre juegos confirmatorios: aproximamos con la mediana sobre todo (los no-conf son pocos)
+        se_med = float(np.median(se_c[:, 0])) if n_juego else float("nan")
+        detalle_se = (f"σ_η (bruto) = {s['sigma_eta_D']:.4f} (D) / {s['sigma_eta_L']:.4f} (L) · SE CR2 mediano de "
+                      f"**δ̃**_g (corregido Reynolds) = {se_med:.4f} (límite {g['g24_se_max']}; método {s['metodo']}; "
+                      f"delta method sobre β̂_D y β̂_L)")
+    else:
+        se_med = s["se_cr2_D_mediana"]
+        detalle_se = (f"σ_η = {s['sigma_eta_D']:.4f} (D) / {s['sigma_eta_L']:.4f} (L) · SE CR2 mediano de δ̂_g = "
+                      f"{se_med:.4f} (límite {g['g24_se_max']}; ingenuo {s['se_ingenuo_D_mediana']:.4f}, "
+                      f"efecto de diseño ×{s['efecto_diseno_D']:.2f}) · método {s['metodo']}")
+    gates["G2.4"] = {"ok": bool(se_med < g["g24_se_max"] and ok_cob),
+                     "detalle": detalle_se + f" · cobertura del IC95 CR2 en la sintética {cob:.3f} (mínimo "
+                                             f"{g['g24_cobertura_min']}) {'✓' if ok_cob else '✗'}"}
     return dict(sorted(gates.items()))
 
 
@@ -634,6 +694,50 @@ def _sec_deming_se(a: dict) -> list[str]:
     return L
 
 
+def _sec_prop2pp(a: dict) -> list[str]:
+    pp = a.get("prop2pp") or {}
+    L = ["## Prop. 2″ (ADR-018): corrección de atenuación por Reynolds", ""]
+    if not pp or "beta" not in pp:
+        L += [f"_No evaluable: {pp.get('error', 'falta Prop. 2″')}_", ""]
+        return L
+    bD, bL = pp["beta"]
+    sbD, sbL = pp["se_beta"]
+    sob = pp["sobreidentificacion"]
+    L += [(f"Modelo `y_c = δ_g + α_jk + f_c(S) + β_c · log‖v̄‖ + ε` ajustado por LSMR disperso con conglomerado "
+           f"lanzador×juego para el SE CR2. **β̂_D = {bD:+.3f} ± {sbD:.3f}**, **β̂_L = {bL:+.3f} ± {sbL:.3f}**. "
+           f"R² de log‖v̄‖ sobre {{dummies de juego, lanzador×forma, splines de S}} = **{pp['r2_colinealidad_log_v']:.3f}** "
+           f"(tope {pp['r2_tope']}; identificable: {'✓' if pp['identificable'] else '✗ β no identificado por colinealidad'})."),
+          "",
+          ("**Prueba de sobreidentificación** (pendiente predicha vs Deming observada, equivalencia ±tol):"), "",
+          *_tabla([{"pendiente predicha (1+β_L)/(1+β_D)": _f(sob["pendiente_predicha"], 3),
+                    "Deming observada": _f(sob["pendiente_observada"], 3),
+                    "diferencia": _f(sob["diferencia"], 3),
+                    "SE(diferencia)": _f(sob["se_diferencia"], 3),
+                    "|dif|+1.96·SE": _f(sob["frontera"], 3),
+                    "tolerancia": _f(sob["tolerancia"], 2),
+                    "equivalencia": "✓" if sob["equivalencia"] else "✗"}],
+                  ["pendiente predicha (1+β_L)/(1+β_D)", "Deming observada", "diferencia", "SE(diferencia)",
+                   "|dif|+1.96·SE", "tolerancia", "equivalencia"]), "",
+          (f"**Adopción (ADR-018):** {'✓ δ̃ = δ/(1+β̂) adoptados como primarios (G2.2 y G2.4 sobre δ̃)' if pp['adoptado'] else '✗ no adoptados: se reportan como diagnóstico; G2.2 y G2.4 sobre δ bruto'}. "
+           f"Iteraciones LSMR: D {pp['iteraciones'][0]}, L {pp['iteraciones'][1]}; convergió: {pp['convergio']}."), ""]
+    if pp["adoptado"] and pp.get("medias_corregidas"):
+        mc = pp["medias_corregidas"]
+        mb = a["medias_por_cubeta"]
+        filas = [{"cubeta": c, "n": mc[c]["n"],
+                  "δ̄ᴰ bruto": _f(mb[c]["delta_D"]), "δ̃ᴰ corregido": _f(mc[c]["delta_D"]),
+                  "SE δ̃ᴰ (2-vías)": _f(mc[c]["se_D"]),
+                  "ρ̂/ρ_ref (δ̃)": _f(np.exp(mc[c]["delta_D"])) if mc[c]["delta_D"] is not None else None,
+                  "δ̄ᴸ bruto": _f(mb[c]["delta_L"]), "δ̃ᴸ corregido": _f(mc[c]["delta_L"])}
+                 for c in CUBETAS]
+        L += ["**δ̃ por cubeta (corregido Reynolds):**", "", *_tabla(filas, list(filas[0])), ""]
+        if pp.get("deming_corregido"):
+            dc = pp["deming_corregido"]
+            L += [(f"**Deming sobre δ̃:** pendiente {dc['pendiente']:.3f} (EE {dc['se_pendiente']:.3f}; z vs 1 = "
+                   f"{_f(dc['z_pendiente_vs_1'], 2)}), intercepto {dc['intercepto']:+.4f}. Si Prop. 2″ es correcta, "
+                   "la pendiente de Deming sobre δ̃ debe estar cerca de 1."), ""]
+    return L
+
+
 def _sec_calibracion(a: dict) -> list[str]:
     c = a["calibracion"]
     chk = c["spinaxis"]
@@ -746,7 +850,7 @@ def _sec_sintetica(sint: dict, f02: dict) -> list[str]:
 def reporte_md(a: dict, sint: dict, gates: dict, f02: dict, segundos: float, figs: list[str]) -> str:
     L = ["# FASE 02 — Densidad del aire por juego desde la trayectoria", "",
          f"{a['datos']['filas_entrada']:,} filas de entrada · {a['datos']['filas_salida']:,} lanzamientos válidos · {segundos}s", ""]
-    L += _sec_datos(a) + _sec_resultados(a) + _sec_deming_se(a) + _sec_calibracion(a) + _sec_latentes(a)
+    L += _sec_datos(a) + _sec_resultados(a) + _sec_deming_se(a) + _sec_prop2pp(a) + _sec_calibracion(a) + _sec_latentes(a)
     L += _sec_sintetica(sint, f02)
     L += ["## Compuertas", ""]
     for k, v in gates.items():
@@ -759,12 +863,17 @@ def reporte_md(a: dict, sint: dict, gates: dict, f02: dict, segundos: float, fig
           (f"- Cifras clave: δ̄ᴰ No {_f(m['No Altitude']['delta_D'])} · Medium {_f(m['Medium Altitude']['delta_D'])} ± "
            f"{_f(m['Medium Altitude']['se_D'])} · Extreme {_f(m['Extreme Altitude']['delta_D'])} ± "
            f"{_f(m['Extreme Altitude']['se_D'])} · Deming {_f(a['deming']['pendiente'], 3) if a['deming'] else '—'} · "
-           f"σ_η {a['se']['sigma_eta_D']:.4f} · SE CR2 mediano {a['se']['se_cr2_D_mediana']:.4f} · G2.1 "
+           f"β̂_D {_f(a['prop2pp']['beta'][0], 3) if a.get('prop2pp',{}).get('beta') else '—'} / β̂_L "
+           f"{_f(a['prop2pp']['beta'][1], 3) if a.get('prop2pp',{}).get('beta') else '—'} · pendiente predicha "
+           f"{_f(a['prop2pp']['sobreidentificacion']['pendiente_predicha'], 3) if a.get('prop2pp',{}).get('sobreidentificacion') else '—'} vs observada "
+           f"{_f(a['deming']['pendiente'], 3) if a['deming'] else '—'} (equivalencia "
+           f"{'✓' if a.get('prop2pp',{}).get('sobreidentificacion',{}).get('equivalencia') else '✗'}; adoptado "
+           f"{'✓' if a.get('prop2pp',{}).get('adoptado') else '✗'}) · σ_η {a['se']['sigma_eta_D']:.4f} · G2.1 "
            f"{100 * max(x['cota'] for x in sint['g21']['niveles'].values()):.3f} % (|sesgo|+1.96 MCSE, peor nivel) · cobertura IC95 "
            f"{sint['g21']['cobertura']:.3f} · G2.3b potencia {sint['g23b']['con_calibracion']['potencia']:.2f} / FPR "
            f"{sint['g23b']['con_calibracion']['fpr']:.3f} · {a['juegos']['confirmatorios']:,} juegos confirmatorios"),
-          "- Desviaciones respecto al ROADMAP: ninguna en las compuertas; la cobertura ≥ 0.90 se trata como condición de G2.4 (ADR-017 la daba como alerta)",
-          "- Mejora posible detectada: 🔎 D02b — con el detector ê escala y reloj son separables; la banda de G2.3a no detecta 2 %",
+          "- Desviaciones respecto al ROADMAP: Prop. 2″ (ADR-018) corrige la atenuación por Reynolds; G2.3b sintética con cluster=lanzador, contraste LOO y t de Pustejovsky-Tipton; G2.3b real = n/e (nunca compuerta)",
+          "- Mejora posible detectada: Prop. 2″ adoptada" + ("" if a.get('prop2pp',{}).get('adoptado') else " (si pasa sobreidentificación en próxima corrida)") + "; detector ê separable escala/reloj (D02b)",
           "- Riesgo de empeorar: ninguno",
           "- Rama / PR / commit de resultados locales: fase02 / (pendiente) / (pendiente)",
           "- Log: reports/logs/f02_<fecha>.log", ""]

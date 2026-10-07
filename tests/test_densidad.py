@@ -116,16 +116,16 @@ def test_detector_e_recupera_c_centrado_y_marca_los_parques_contaminados(detecto
     assert all(f["se"] > 0 and np.isfinite(f["z"]) for f in filas)
 
 
-def test_detector_e_parque_mediano_con_conteo_impar_no_se_evalua():
-    """Con 3 parques por cubeta el de la mediana tiene contraste 0 (SE 0, p = 1) y nunca se marca."""
-    esq = {}
-    df, _ = N.generar_fisica(40, 120, 9, calibracion_parques=esq, n_jobs=2)         # 3 + 2 + 3 parques por defecto
+def test_detector_e_contraste_mediana_marca_parque_mediano_como_no_evaluable():
+    """Modo mediana (ADR-017, compat): con 3 parques por cubeta el de la mediana tiene contraste 0 (SE 0, p=1)."""
+    df, _ = N.generar_fisica(40, 120, 9, calibracion_parques={}, n_jobs=2)         # 3 + 2 + 3 parques por defecto
     P = D.preparar_datos(df)
     d, vec = P["d"], P["vec"]
     jk = d["lanzador_forma"].to_numpy()
     cong = np.char.add(np.char.add(d["lanzador"].to_numpy().astype(str), "|"), d["juego"].to_numpy().astype(str))
     r = D.detector_e_parques(vec["spin_axis"], vec["a_tilde"], vec["v_barra"], jk, d["parque"].to_numpy().astype(object),
-                             d["cubeta"].to_numpy().astype(object), cong, N.SIGNO_MAGNUS_X)
+                             d["cubeta"].to_numpy().astype(object), cong, N.SIGNO_MAGNUS_X,
+                             min_parques=3, contraste="mediana", df_tipo="normal")
     por_cub: dict = {}
     for f in r["parques"]:
         por_cub.setdefault(f["cubeta"], []).append(f)
@@ -133,6 +133,25 @@ def test_detector_e_parque_mediano_con_conteo_impar_no_se_evalua():
     for c in ("No Altitude", "Extreme Altitude"):
         medianos = [f for f in por_cub[c] if f["evaluable"] and f["se"] == 0.0]
         assert len(medianos) == 1 and medianos[0]["p"] == 1.0 and not medianos[0]["rechaza_bh"]
+
+
+def test_detector_e_loo_pt_recupera_potencia_sin_fp_en_escenario_calibrado():
+    """ADR-018: con contraste LOO + cluster lanzador + t de Pustejovsky-Tipton, potencia alta y FPR bajo."""
+    esq = N.esquema_calibracion_parques(N.CUBETAS_G23B, 55)
+    df, _ = N.generar_fisica(150, 150, 55, cubetas=N.CUBETAS_G23B, calibracion_parques=esq, n_jobs=2)
+    P = D.preparar_datos(df)
+    d, vec = P["d"], P["vec"]
+    jk = d["lanzador_forma"].to_numpy()
+    cong_lanz = d["lanzador"].to_numpy().astype(str)
+    r = D.detector_e_parques(vec["spin_axis"], vec["a_tilde"], vec["v_barra"], jk,
+                             d["parque"].to_numpy().astype(object), d["cubeta"].to_numpy().astype(object),
+                             cong_lanz, N.SIGNO_MAGNUS_X)
+    assert r["contraste"] == "loo" and r["df_tipo"] == "pustejovsky_tipton"
+    tipo = {f"park_{k + 1:02d}": ("lambda" if l != 1 else "tau") for k, (l, t) in esq.items()}
+    cont = [f for f in r["parques"] if f["evaluable"] and f["parque"] in tipo]
+    lim = [f for f in r["parques"] if f["evaluable"] and f["parque"] not in tipo]
+    assert np.mean([f["rechaza_bh"] for f in cont]) >= 0.80                     # potencia
+    assert np.mean([f["rechaza_bh"] for f in lim]) <= 0.10                      # FPR bajo con 1 réplica
 
 
 def test_detector_e_sin_sesgos_no_marca_nada_con_bh():

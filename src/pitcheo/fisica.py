@@ -364,6 +364,41 @@ def ajustar_lsmr(d: DisenoDensidad, y, tol: float = 1e-14, max_iter: int = 20000
             "convergio": bool(sol[1] in (1, 2)), "cambio_final": float(sol[4] / max(np.linalg.norm(y), 1e-300))}
 
 
+def ajustar_lsmr_extendido(d: DisenoDensidad, y, columnas_extra: np.ndarray,
+                           tol: float = 1e-14, max_iter: int = 20000) -> dict:
+    """Como `ajustar_lsmr` pero concatena `columnas_extra` (n_usadas, k) al diseño disperso al final.
+
+    Devuelve `delta`, `alpha`, `ajuste_f`, `beta_extra` (k,), `resid`, `iteraciones`, `convergio`, `cambio_final`,
+    `X` (csr completo), `info` (de `matriz_diseno_dispersa`) y `pos_extra` (índices de las columnas extra).
+    """
+    from scipy.sparse.linalg import lsmr
+    y = np.asarray(y, dtype=float)[d.usadas]
+    columnas_extra = np.atleast_2d(np.asarray(columnas_extra, dtype=float))
+    if columnas_extra.shape[0] != len(y):
+        columnas_extra = columnas_extra.T
+    k = columnas_extra.shape[1]
+    X_base, info = matriz_diseno_dispersa(d, ref_juego=0)
+    X = sparse.hstack([X_base, sparse.csr_matrix(columnas_extra)]).tocsr()
+    norma = np.sqrt(np.asarray(X.multiply(X).sum(axis=0)).ravel())
+    norma[norma == 0] = 1.0
+    Xs = X @ sparse.diags(1.0 / norma)
+    sol = lsmr(Xs, y, atol=tol, btol=tol, conlim=1e12, maxiter=max_iter)
+    b = sol[0] / norma
+    n_j = len(d.grupos)
+    pos = info["cols_juego"]
+    delta = np.where(pos >= 0, b[np.maximum(pos, 0)], 0.0)
+    alpha = b[info["n_juego"]:info["n_juego"] + n_j]
+    off_spl = info["n_juego"] + n_j
+    off_extra = off_spl + info["n_spline"]
+    ajuste_f = X[:, off_spl:off_extra] @ b[off_spl:off_extra]
+    beta_extra = b[off_extra:off_extra + k]
+    resid = y - X @ b
+    return {"delta": delta, "alpha": alpha, "ajuste_f": ajuste_f, "beta_extra": beta_extra, "resid": resid,
+            "iteraciones": int(sol[2]), "convergio": bool(sol[1] in (1, 2)),
+            "cambio_final": float(sol[4] / max(np.linalg.norm(y), 1e-300)),
+            "X": X, "info": info, "pos_extra": np.arange(off_extra, off_extra + k)}
+
+
 def estimador_densidad_juego(y, juego, lanzador_forma, S, estrato, cubeta=None, referencia: str = "No Altitude",
                              n_nudos: int = 3, grado: int = 3, n_min_por_col: int = 20, tol: float = 1e-10,
                              max_iter: int = 5000, diseno: DisenoDensidad | None = None,

@@ -82,7 +82,7 @@ def preparar_datos(df: pl.DataFrame, y_plano_ft: float = fisica.Y_FRENTE_PLATO_F
     d = pl.DataFrame({
         "juego": t["game_anon_id"], "lanzador": t["pitcher_anon_id"], "familia": t["familia"], "mano": mano,
         "year": t["year"].cast(pl.Int64), "cubeta": t["altitude_category_h"],
-        "y_D": np.log(dm["rho_cd"][k]), "y_L": np.log(dm["rho_cl"][k]), "S": s_giro[k],
+        "y_D": np.log(dm["rho_cd"][k]), "y_L": np.log(dm["rho_cl"][k]), "S": s_giro[k], "v_norma": dm["v_norma"][k],
     }).with_columns(
         (pl.col("familia") + "|" + pl.col("mano") + "|" + pl.col("year").cast(pl.Utf8)).alias("estrato"),
         (pl.col("lanzador") + "|" + pl.col("familia")).alias("lanzador_forma"))
@@ -224,6 +224,36 @@ def _inversa_gram(X: sparse.csr_matrix) -> np.ndarray:
         return np.linalg.pinv(xtx, hermitian=True)
 
 
+def _var_cr2_componentes(X: sparse.csr_matrix, minv: np.ndarray, resid: np.ndarray, conglomerado: np.ndarray,
+                         M: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Como `_var_cr2`, pero devuelve también Σ_c s_c⁴ para calcular df Satterthwaite / Pustejovsky–Tipton (2018).
+
+    Para cada contraste q × m, V_q = Σ_c s_{c,q}² (la varianza CR2), y df_PT_q ≈ V_q² / Σ_c s_{c,q}⁴ (aproximación
+    Satterthwaite usando las contribuciones por cluster; conservadora respecto a la versión exacta de PT).
+    """
+    orden = np.argsort(conglomerado, kind="stable")
+    Xs, es = X[orden], resid[orden]
+    cs = np.asarray(conglomerado)[orden]
+    cortes = np.flatnonzero(np.r_[True, cs[1:] != cs[:-1], True])
+    v = np.zeros((M.shape[0], resid.shape[1]))
+    v4 = np.zeros((M.shape[0], resid.shape[1]))
+    for a, b in itertools.pairwise(cortes):
+        Xc = Xs[a:b]
+        cols = np.unique(Xc.indices)
+        Xd = np.zeros((b - a, len(cols)))
+        filas = np.repeat(np.arange(b - a), np.diff(Xc.indptr))
+        Xd[filas, np.searchsorted(cols, Xc.indices)] = Xc.data
+        h = Xd @ minv[np.ix_(cols, cols)] @ Xd.T
+        w, u = np.linalg.eigh(np.eye(b - a) - h)
+        inv_raiz = np.where(w > 1e-8, 1.0 / np.sqrt(np.clip(w, 1e-8, None)), 0.0)
+        ajustado = (u * inv_raiz) @ (u.T @ es[a:b])
+        s = M[:, cols] @ (Xd.T @ ajustado)
+        s2 = s * s
+        v += s2
+        v4 += s2 * s2
+    return v, v4
+
+
 def _var_cr2(X: sparse.csr_matrix, minv: np.ndarray, resid: np.ndarray, conglomerado: np.ndarray,
              M: np.ndarray) -> np.ndarray:
     """Var CR2 (Bell–McCaffrey) de los contrastes C·β̂: Σ_c (M X_c' A_c e_c)², A_c = (I − H_cc)^{-1/2}.
@@ -348,6 +378,165 @@ def deming(delta_d: np.ndarray, delta_l: np.ndarray, se_d: np.ndarray, se_l: np.
             "z_pendiente_vs_1": (b - 1.0) / se_b if se_b > 0 else None,
             "z_intercepto_vs_0": a0 / se_a if se_a > 0 else None, "razon_varianzas": razon, "n_juegos": n}
 
+
+
+# ==========================================================================
+# Prop. 2″ (ADR-018): corrección de Reynolds para la atenuación en δ̂
+# ==========================================================================
+def _r2_lineal_dentro(x: np.ndarray, X: sparse.csr_matrix, max_p: int = 14000) -> float:
+    """R² de x sobre X por MCO (ridge mínimo si X es rango deficiente). Diagnóstico de colinealidad.
+
+    Si p > `max_p`, usa LSMR y reporta 1 − SSE/SST. Si SST = 0, devuelve nan.
+    """
+    x = np.asarray(x, dtype=float)
+    sst = float(np.sum((x - x.mean()) ** 2))
+    if sst <= 0 or X.shape[1] == 0:
+        return float("nan")
+    if X.shape[1] <= max_p:
+        xtx = (X.T @ X).toarray()
+        xty = X.T @ x
+        try:
+            c = linalg.cho_factor(xtx + 1e-12 * np.trace(xtx) / X.shape[1] * np.eye(X.shape[1]), lower=True, check_finite=False)
+            b = linalg.cho_solve(c, xty, check_finite=False)
+        except linalg.LinAlgError:
+            b = np.linalg.pinv(xtx, hermitian=True) @ xty
+    else:
+        from scipy.sparse.linalg import lsmr
+        norma = np.sqrt(np.asarray(X.multiply(X).sum(axis=0)).ravel())
+        norma[norma == 0] = 1.0
+        Xs = X @ sparse.diags(1.0 / norma)
+        sol = lsmr(Xs, x, atol=1e-10, btol=1e-10, maxiter=20000)
+        b = sol[0] / norma
+    sse = float(np.sum((x - X @ b) ** 2))
+    return 1.0 - sse / sst
+
+
+def _normalizar_por_grupo(delta: np.ndarray, en_ref: np.ndarray, grupos_norm: np.ndarray) -> np.ndarray:
+    """Resta de cada δ_g la media de los δ de referencia que comparten su grupo de normalización (ADR-018)."""
+    gn = np.asarray(grupos_norm, dtype=int)
+    etiquetas = np.unique(gn[gn >= 0])
+    medias = {int(lab): float(delta[en_ref & (gn == lab)].mean()) for lab in etiquetas
+              if (en_ref & (gn == lab)).any()}
+    fallback = float(np.mean(list(medias.values()))) if medias else float(delta[en_ref].mean()) if en_ref.any() else 0.0
+    aj = np.array([medias.get(int(a), fallback) for a in gn])
+    return delta - aj
+
+
+def estimar_reynolds(d: pl.DataFrame, cfg_f02: dict, referencia: str = "No Altitude", por_anio: bool = True) -> dict:
+    """Prop. 2″ (ADR-018): ajusta `y_c = δ_g + α_{j,k} + f_c(S) + β_c · log‖v̄‖ + ε` y devuelve β̂_c, δ̂_c y δ̃_c.
+
+    Las columnas de `d`: `juego`, `lanzador_forma`, `S`, `estrato`, `cubeta`, `y_D`, `y_L`, `year`, y además
+    `v_norma` (‖v̄‖ en m/s, provista por `preparar_datos`). Los efectos fijos de juego absorben log ρ_g · (1+β_c);
+    la variación de log‖v̄‖ dentro de lanzador×forma, controlada por el spline de S, identifica β_c (con la salvedad
+    de la colinealidad diagnosticada abajo). SE CR2 con conglomerado lanzador×juego.
+
+    Devuelve:
+      - `beta` (2,), `se_beta` (2,): β̂_D, β̂_L con CR2.
+      - `delta` (G, 2), `se_delta` (G, 2): δ̂_c normalizado (por año si `por_anio=True`).
+      - `delta_corregido` (G, 2) = δ̂_c / (1 + β̂_c), `se_delta_corregido` (G, 2) con delta method CR2.
+      - `r2_colinealidad`: R² de log‖v̄‖ sobre {dummies juego, dummies lanzador×forma, splines f_c} (sin log v).
+         Un R² ≈ 1 indica que β_c no está identificado.
+      - `conectado`, `juegos`, `en_referencia`, `grupos_norm`, `anio_juego`, `iteraciones`, `convergio`.
+    """
+    jk = d["lanzador_forma"].to_numpy()
+    cub = np.array([None if c is None else str(c) for c in d["cubeta"].to_list()], dtype=object)
+    args = (cfg_f02.get("n_nudos", 3), cfg_f02.get("grado", 3), cfg_f02.get("n_min_por_col", 20))
+    dis = fisica.construir_diseno(d["juego"].to_numpy(), jk, d["S"].to_numpy(), d["estrato"].to_numpy(), cub, *args)
+    u = dis.usadas
+    v_norma = d["v_norma"].to_numpy()
+    valido = u & np.isfinite(v_norma) & (v_norma > 0)
+    if valido.sum() < u.sum():
+        # algún lanzamiento con ‖v̄‖ nulo no debería existir tras preparar_datos; si pasa, Prop. 2″ no evaluable
+        raise ValueError("v_norma debe ser positivo y finito tras preparar_datos (filtra antes)")
+    log_v = np.log(v_norma[u])
+    y_D = d["y_D"].to_numpy()[u]
+    y_L = d["y_L"].to_numpy()[u]
+    jg = d["juego"].to_numpy()[u]
+    ll = d["lanzador"].to_numpy()[u]
+    conglom = np.char.add(np.char.add(ll.astype(str), "|"), jg.astype(str))
+    en_ref = np.array([c == referencia for c in dis.cubeta_juego])
+    anio_juego = None
+    if por_anio:
+        jd = d.group_by("juego").agg(pl.col("year").first().alias("year"))
+        anio_de = dict(zip(jd["juego"].to_list(), jd["year"].to_list(), strict=True))
+        anio_juego = np.array([anio_de.get(g) for g in dis.juegos])
+        anios_ref = np.unique(anio_juego[en_ref])
+        pos_y = {y: i for i, y in enumerate(anios_ref)}
+        grupos_norm = np.array([pos_y.get(a, -1) for a in anio_juego], dtype=int)
+    else:
+        grupos_norm = np.zeros(len(dis.juegos), dtype=int)
+    salidas = {"D": fisica.ajustar_lsmr_extendido(dis, y_D, log_v[:, None]),
+               "L": fisica.ajustar_lsmr_extendido(dis, y_L, log_v[:, None])}
+    beta = np.array([salidas["D"]["beta_extra"][0], salidas["L"]["beta_extra"][0]])
+    # Normalización por grupo
+    delta_norm = np.column_stack([_normalizar_por_grupo(salidas[c]["delta"], en_ref, grupos_norm) for c in ("D", "L")])
+    # X, info, minv compartidos (D y L comparten diseño)
+    X = salidas["D"]["X"]
+    info = salidas["D"]["info"]
+    pos_extra = salidas["D"]["pos_extra"]
+    minv = _inversa_gram(X)
+    p = X.shape[1]
+    sigma = np.sqrt(np.array([(salidas[c]["resid"] ** 2).sum() for c in ("D", "L")]) / max(len(log_v) - p, 1))
+    n_g = len(dis.juegos)
+    pos_juego = info["cols_juego"]
+    R = np.zeros((n_g, p))
+    ok = pos_juego >= 0
+    R[ok] = minv[pos_juego[ok]]
+    # Contrastes de δ (ya normalizado) y SE CR2
+    etiquetas = np.unique(grupos_norm[grupos_norm >= 0])
+    promedios = {int(lab): R[en_ref & (grupos_norm == lab)].mean(axis=0) for lab in etiquetas
+                 if (en_ref & (grupos_norm == lab)).any()}
+    fallback = (np.mean(list(promedios.values()), axis=0) if promedios else R[en_ref].mean(axis=0))
+    M_delta = R.copy()
+    for g in range(n_g):
+        M_delta[g] -= promedios.get(int(grupos_norm[g]), fallback)
+    resid = np.column_stack([salidas["D"]["resid"], salidas["L"]["resid"]])
+    var_delta = _var_cr2(X, minv, resid, conglom, M_delta)                  # (G, 2)
+    e_beta = np.zeros((1, p))
+    e_beta[0, pos_extra[0]] = 1.0
+    var_beta = _var_cr2(X, minv, resid, conglom, e_beta @ minv)[0]           # (2,)
+    # Delta method: δ̃_g = δ_g / (1 + β), SE con contraste combinado por respuesta.
+    var_delta_corr = np.empty((n_g, 2))
+    for jr, c in enumerate(("D", "L")):
+        f = 1.0 / (1.0 + beta[jr])
+        M_corr = f * M_delta - (delta_norm[:, jr:jr + 1] * f ** 2) * (e_beta @ minv)
+        var_delta_corr[:, jr] = _var_cr2(X, minv, resid[:, jr:jr + 1], conglom, M_corr)[:, 0]
+    delta_corregido = delta_norm / (1.0 + beta)[None, :]
+    # Colinealidad: R² de log v sobre dummies de juego + lanzador×forma + splines (sin la columna de log v)
+    X_sin_lv = X[:, :pos_extra[0]]
+    r2_col = _r2_lineal_dentro(log_v, X_sin_lv, cfg_f02.get("max_p_cr2", 14000))
+    return {"beta": beta, "se_beta": np.sqrt(var_beta), "delta": delta_norm, "se_delta": np.sqrt(var_delta),
+            "delta_corregido": delta_corregido, "se_delta_corregido": np.sqrt(var_delta_corr),
+            "r2_colinealidad_log_v": float(r2_col), "en_referencia": en_ref, "grupos_norm": grupos_norm,
+            "anio_juego": anio_juego, "juegos": dis.juegos, "cubeta_juego": dis.cubeta_juego,
+            "sigma_eta": sigma, "conectado": dis.conectado,
+            "iteraciones": [salidas[c]["iteraciones"] for c in ("D", "L")],
+            "convergio": [salidas[c]["convergio"] for c in ("D", "L")],
+            "n_lanzamientos": len(log_v), "p_cr2": int(p),
+            "pendiente_predicha": float((1.0 + beta[1]) / (1.0 + beta[0])),
+            "diseno": dis, "mascara": u}
+
+
+def sobreidentificacion_reynolds(resultado: dict, pendiente_observada: float, se_observada: float,
+                                 tolerancia: float = 0.10, z: float = 1.96) -> dict:
+    """Equivalencia pre-fijada: |p − b| + z·√(Var(p) + Var(b)) < `tolerancia` con `p = (1+β_L)/(1+β_D)`.
+
+    `Var(p)` por delta method sobre β̂_D y β̂_L (asumiendo independencia entre respuestas; es conservador y se declara).
+    """
+    beta = resultado["beta"]
+    se_beta = resultado["se_beta"]
+    p_hat = float((1.0 + beta[1]) / (1.0 + beta[0]))
+    dp_dL = 1.0 / (1.0 + beta[0])
+    dp_dD = -(1.0 + beta[1]) / (1.0 + beta[0]) ** 2
+    var_p = dp_dL ** 2 * se_beta[1] ** 2 + dp_dD ** 2 * se_beta[0] ** 2
+    se_dif = math.sqrt(var_p + se_observada ** 2)
+    diferencia = p_hat - pendiente_observada
+    frontera = abs(diferencia) + z * se_dif
+    return {"pendiente_predicha": p_hat, "pendiente_observada": float(pendiente_observada),
+            "diferencia": float(diferencia), "se_predicha": math.sqrt(var_p), "se_observada": float(se_observada),
+            "se_diferencia": se_dif, "frontera": float(frontera), "tolerancia": float(tolerancia),
+            "equivalencia": bool(frontera < tolerancia), "z": float(z),
+            "nota": "SE conservador: asume Cov(β̂_D, β̂_L)=0 entre respuestas (misma X, η correlacionados)"}
 
 # ==========================================================================
 # Prop. 3′: ĉ_g desde δ^L − δ^D, y detector ê con SpinAxis medido
@@ -536,18 +725,29 @@ def benjamini_hochberg(p: np.ndarray, q: float = 0.05) -> np.ndarray:
 
 def detector_e_parques(spin_axis_deg: np.ndarray, a_tilde: np.ndarray, v_barra: np.ndarray, grupos_jk: np.ndarray,
                        parque: np.ndarray, cubeta: np.ndarray, conglomerado: np.ndarray, signo_lateral: int,
-                       q: float = 0.05, min_parques: int = 3, max_p: int = 14000) -> dict:
-    """ĉ_ê por parque, centrado en la mediana de su cubeta, con Wald (SE CR2) y BH (G2.3b, ADR-017).
+                       q: float = 0.05, min_parques: int = 2, max_p: int = 14000,
+                       contraste: str = "loo", df_tipo: str = "pustejovsky_tipton") -> dict:
+    """ĉ_ê por parque con t cluster-robust, control FDR Benjamini–Hochberg al nivel `q` (ADR-018).
 
-    Modelo: ã·ê = c_parque·(g·ê) + β_{j,k} + ε sobre todos los lanzamientos con parque (id de F0 o parque latente);
-    β_{j,k} entra como dummies de lanzador×forma, de modo que las hat values de CR2 son las del modelo completo. Dentro
-    de cada cubeta con ≥ `min_parques` parques se resta la mediana de los ĉ (con la mediana de dos centrales si hay un
-    número par): el contraste es lineal en β, así que el SE CR2 incluye la covarianza con los parques que fijan la
-    mediana. El parque mediano (conteo impar) tiene contraste 0 y no se evalúa. Wald z = contraste/SE, valor p
-    normal de dos colas y BH al nivel `q` sobre todos los parques evaluados.
+    Modelo: ã·ê = c_parque·(g·ê) + β_{j,k} + ε sobre todos los lanzamientos con parque (id de F0 o parque latente),
+    con dummies de parque interactuadas con x = g·ê y dummies de lanzador×forma como nuisance. El SE **conglomera por
+    `conglomerado`** — ADR-018 recomienda LANZADOR (todos sus juegos y parques), nivel más agregado con correlación
+    (Cameron y Miller 2015).
 
-    `parque` y `cubeta` por fila (None = fuera). Devuelve una fila por parque en `parques` y el método de SE.
+    `contraste`:
+      - `"loo"` (ADR-018, default): h_p = c_p − mean(c_q : q ≠ p ∧ cubeta=cubeta(p)). Lineal en {c}: la covarianza
+        CR2 entre los contrastes es exacta. Requiere ≥ 2 parques por cubeta.
+      - `"mediana"` (ADR-017): h_p = c_p − mediana(c_q : cubeta=cubeta(p)); el parque mediano (impar) no se evalúa.
+
+    `df_tipo`:
+      - `"pustejovsky_tipton"` (ADR-018, default): df Satterthwaite con Σ_c s_c⁴ por contraste (aproximación conservadora
+        de Pustejovsky y Tipton 2018, J. Bus. Econ. Stat.); p-value t de dos colas.
+      - `"normal"` (compat): z-test con la normal.
+
+    Devuelve una fila por parque y el método. Fila evaluable: `c_hat`, `c_centrado`, `se`, `z`, `df`, `p`, `rechaza_bh`.
     """
+    from scipy import stats
+
     from .sintetico import direccion_magnus
     en = np.array([p is not None for p in parque])
     v_hat = v_barra / np.linalg.norm(v_barra, axis=1)[:, None]
@@ -566,7 +766,7 @@ def detector_e_parques(spin_axis_deg: np.ndarray, a_tilde: np.ndarray, v_barra: 
     cub_p = np.empty(n_p, dtype=object)
     cub_p[p_i] = cub
     metodo = "CR2"
-    if p_tot > max_p:                                         # respaldo: FWL + sandwich por conglomerado, sin apalancamiento
+    if p_tot > max_p:
         metodo = "CR0 (no cupo la inversa densa)"
         xs, zs = _demedia(x, k_i), _demedia(z, k_i)
         sxx = np.bincount(p_i, xs * xs, minlength=n_p)
@@ -588,34 +788,59 @@ def detector_e_parques(spin_axis_deg: np.ndarray, a_tilde: np.ndarray, v_barra: 
             for i in idx:
                 filas_out.append({"parque": str(p_u[i]), "cubeta": str(c), "c_hat": float(beta[i]), "evaluable": False})
             continue
-        orden = idx[np.argsort(beta[idx])]
-        w = np.zeros(n_p)
-        if len(orden) % 2:
-            w[orden[len(orden) // 2]] = 1.0
+        if contraste == "loo":
+            m = len(idx)
+            for i in idx:
+                r = np.zeros(n_p)
+                for j in idx:
+                    r[j] = -1.0 / (m - 1)
+                r[i] = 1.0
+                evaluables.append((i, c, r))
+        elif contraste == "mediana":
+            orden = idx[np.argsort(beta[idx])]
+            w = np.zeros(n_p)
+            if len(orden) % 2:
+                w[orden[len(orden) // 2]] = 1.0
+            else:
+                w[orden[len(orden) // 2 - 1]] = w[orden[len(orden) // 2]] = 0.5
+            for i in idx:
+                r = -w.copy()
+                r[i] += 1.0
+                evaluables.append((i, c, r))
         else:
-            w[orden[len(orden) // 2 - 1]] = w[orden[len(orden) // 2]] = 0.5
-        for i in idx:
-            r = -w.copy()
-            r[i] += 1.0
-            evaluables.append((i, c, r))
+            raise ValueError(f"contraste desconocido: {contraste!r}")
     if evaluables:
         C = np.zeros((len(evaluables), p_tot))
         for k, (_, _, r) in enumerate(evaluables):
             C[k, :n_p] = r
         if minv is not None:
-            var = _var_cr2(X, minv, e[:, None], cong, C @ minv)[:, 0]
+            var, var4 = _var_cr2_componentes(X, minv, e[:, None], cong, C @ minv)
+            var, var4 = var[:, 0], var4[:, 0]
         else:
+            # CR0 fallback: no hay componentes por A_c; df = (grupos − 1) por simplicidad.
             var = np.einsum("ki,ij,kj->k", C[:, :n_p], cov_b, C[:, :n_p])
+            var4 = None
         se = np.sqrt(var)
         cen = np.array([r @ beta for _, _, r in evaluables])
         with np.errstate(invalid="ignore", divide="ignore"):
-            zw = np.where(se > 0, cen / se, 0.0)
-        pv = np.where(se > 0, special.erfc(np.abs(zw) / math.sqrt(2.0)), 1.0)
+            tst = np.where(se > 0, cen / se, 0.0)
+        if df_tipo == "pustejovsky_tipton" and var4 is not None:
+            with np.errstate(invalid="ignore", divide="ignore"):
+                df = np.where(var4 > 0, var * var / var4, np.inf)
+            pv = np.where(se > 0, 2.0 * stats.t.sf(np.abs(tst), df), 1.0)
+        elif df_tipo == "normal" or var4 is None:
+            n_cong = len(np.unique(cong))
+            df = np.full(len(cen), max(n_cong - 1, 1), dtype=float)
+            pv = np.where(se > 0, special.erfc(np.abs(tst) / math.sqrt(2.0)), 1.0)
+        else:
+            raise ValueError(f"df_tipo desconocido: {df_tipo!r}")
         rech = benjamini_hochberg(pv, q)
-        for (i, c, _), ce, s_, zz, pp, rr in zip(evaluables, cen, se, zw, pv, rech, strict=True):
+        for (i, c, _), ce, s_, zz, dfi, pp, rr in zip(evaluables, cen, se, tst, df, pv, rech, strict=True):
             filas_out.append({"parque": str(p_u[i]), "cubeta": str(c), "c_hat": float(beta[i]), "c_centrado": float(ce),
-                              "se": float(s_), "z": float(zz), "p": float(pp), "rechaza_bh": bool(rr), "evaluable": True})
-    return {"parques": filas_out, "metodo_se": metodo, "q": q, "n_parques": int(n_p)}
+                              "se": float(s_), "z": float(zz), "df": float(dfi), "p": float(pp),
+                              "rechaza_bh": bool(rr), "evaluable": True})
+    return {"parques": filas_out, "metodo_se": metodo, "q": q, "n_parques": int(n_p),
+            "contraste": contraste, "df_tipo": df_tipo}
 
 
 def _demedia(v: np.ndarray, grupo: np.ndarray) -> np.ndarray:

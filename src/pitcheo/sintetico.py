@@ -835,21 +835,39 @@ def direccion_magnus(spin_axis_deg, v_hat, signo_x: int = SIGNO_MAGNUS_X) -> np.
     return n / np.linalg.norm(n, axis=1)[:, None]
 
 
-def _integrar_bloque(r0, v0, omega_hat, omega_t, cd, rho, t_max: float, dt: float):
-    """DOP853 (rtol 1e-10) para un bloque de lanzamientos a la vez. Devuelve (t, y) con y: (6, N, nt)."""
+# Referencia de Reynolds (ADR-018): ρ_ref · v_ref · d_bola / μ_aire. Con ρ=1.2 kg/m³, v=40 m/s, d=0.0742 m,
+# μ=1.81e-5 Pa·s → Re_ref ≈ 1.97·10⁵, dentro de la zona del drag crisis para pelotas de béisbol (Nathan 2008).
+RHO_V_REF = 1.2 * 40.0            # kg·m⁻²·s⁻¹ (producto que define el pivote de log Re para la ley potencial)
+
+
+def _integrar_bloque(r0, v0, omega_hat, omega_t, cd, rho, t_max: float, dt: float,
+                     beta_D: float = 0.0, beta_L: float = 0.0):
+    """DOP853 (rtol 1e-10) para un bloque de lanzamientos a la vez. Devuelve (t, y) con y: (6, N, nt).
+
+    Si `beta_D` ≠ 0 (`beta_L` ≠ 0), aplica una **ley potencial de Reynolds** a C_D (C_L): se multiplican por
+    `(ρ·v / RHO_V_REF)^β` (d_bola y μ_aire absorbidos en la constante). β < 0 reproduce el drag crisis
+    (Nathan 2008): C_D cae con Re.
+    """
     from scipy.integrate import solve_ivp
 
     n = r0.shape[0]
     kappa = (rho * A_BOLA / (2.0 * M_BOLA))                       # (N,)
     g_vec = np.array([0.0, 0.0, -G_SI])[:, None]
+    log_rho = np.log(rho)                                         # para el factor de Reynolds
 
     def rhs(_t, s):
         u = s.reshape(6, n)
         v = u[3:]
         sp = np.sqrt(np.sum(v * v, axis=0))
-        cd_t = cd * (1.0 + 0.2 * (sp / 40.0 - 1.0))                # dependencia mínima de Reynolds
+        cd_t = cd * (1.0 + 0.2 * (sp / 40.0 - 1.0))                # curvatura mínima (baseline histórico)
         s_giro = R_BOLA * omega_t / sp
-        cl = s_giro / (2.32 * s_giro + 0.4)                        # C_L = 1/(2.32 + 0.4/S) (Nathan)
+        cl = s_giro / (2.32 * s_giro + 0.4)                        # C_L = 1/(2.32 + 0.4/S) (Nathan 2008)
+        if beta_D != 0.0 or beta_L != 0.0:
+            log_re_rel = log_rho + np.log(sp) - np.log(RHO_V_REF)
+            if beta_D != 0.0:
+                cd_t = cd_t * np.exp(beta_D * log_re_rel)
+            if beta_L != 0.0:
+                cl = cl * np.exp(beta_L * log_re_rel)
         cruz = np.cross(omega_hat, v.T).T                        # ω̂ × v: perpendicular a v
         n_hat = cruz / np.sqrt(np.sum(cruz * cruz, axis=0))
         acel = g_vec - kappa * cd_t * sp * v + kappa * cl * sp**2 * n_hat
@@ -872,14 +890,15 @@ def _raiz_pequena(c0, c1, c2) -> np.ndarray:
     return np.where(np.isfinite(t), t, np.nan)
 
 
-def _ajustar_bloque(r0, v0, omega_hat, omega_t, cd, rho, lam, tau, rng, dt: float, paso: int, sigma_pos_m: float):
+def _ajustar_bloque(r0, v0, omega_hat, omega_t, cd, rho, lam, tau, rng, dt: float, paso: int, sigma_pos_m: float,
+                    beta_D: float = 0.0, beta_L: float = 0.0):
     """Integra un bloque, muestrea, añade ruido de posición y ajusta el 9P (polinomio de grado 2 por eje).
 
     Devuelve (coef (m, 3, 3), t_vuelo (m,)): coeficientes c0..c2 por eje en ft y s sobre el reloj MEDIDO (escala τ)
     y posiciones medidas (escala λ), y el tiempo de vuelo verdadero.
     """
     yp_m = Y_FRENTE_PLATO_FT * FT_M
-    _t, ys = _integrar_bloque(r0, v0, omega_hat, omega_t, cd, rho, 0.65, dt)
+    _t, ys = _integrar_bloque(r0, v0, omega_hat, omega_t, cd, rho, 0.65, dt, beta_D, beta_L)
     pos = np.moveaxis(ys[:3], 0, -1)                # (N, nt, 3) en m
     coef = np.empty((pos.shape[0], 3, 3))
     t_vuelo = np.empty(pos.shape[0])
@@ -924,7 +943,7 @@ def generar_fisica(n_juegos: int = 45, lanzamientos_por_juego: int = 111, semill
                    lambda_escala: float = 1.0, tau_reloj: float = 1.0, cubetas_sesgo=("Extreme Altitude",),
                    spinaxis_inferido: bool = False, anios=(2024, 2025, 2026), tasa_muestreo_hz: float = 100.0,
                    bloque: int = 400, calibracion_parques: dict | None = None,
-                   n_jobs: int = 1) -> tuple[pl.DataFrame, dict]:
+                   n_jobs: int = 1, beta_D: float = 0.0, beta_L: float = 0.0) -> tuple[pl.DataFrame, dict]:
     """Sintética de F2 con física exacta: ρ conocida por juego, C_D y C_L realistas, ruido de posición y calibración sesgada.
 
     Cada lanzamiento se integra con `solve_ivp` (DOP853, rtol 1e-10):  r̈ = g − κ C_D ‖v‖ v + κ C_L ‖v‖² n̂, con
@@ -945,6 +964,8 @@ def generar_fisica(n_juegos: int = 45, lanzamientos_por_juego: int = 111, semill
     `calibracion_parques` {índice de parque: (λ, τ)} aplica la calibración por PARQUE (ver
     `esquema_calibracion_parques`) y sustituye a `cubetas_sesgo`. `n_jobs` > 1 integra los bloques en paralelo con
     joblib (un flujo aleatorio hijo por bloque: determinista, pero otra realización que `n_jobs=1`).
+    `beta_D`, `beta_L` (ADR-018): si ≠ 0, aplican la ley potencial de Reynolds a C_D/C_L (ver `_integrar_bloque`).
+    Nathan (2008): en el régimen del drag crisis β_D ∈ [−0.4, −0.2] es un rango plausible para pelotas de béisbol.
 
     Devuelve (DataFrame con las columnas de F2, verdad). El DataFrame trae las columnas de `pitches.parquet` que
     usa F2: ids, `year`, `altitude_category_h`, `familia`, `pitcher_throws_r`, `excluir_modelo`, 9P, `PitchTrajectoryXc1`,
@@ -1037,13 +1058,13 @@ def generar_fisica(n_juegos: int = 45, lanzamientos_por_juego: int = 111, semill
     if n_jobs == 1:                                 # serie: un solo flujo del generador (reproduce la sintética histórica)
         rngs = [rng] * len(sls)
         salidas = [_ajustar_bloque(r0[sl], v0[sl], omega_hat[sl], omega_t[sl], cd[sl], rho_i[sl], lam_i[sl], tau_i[sl],
-                                   rg, dt, paso, sigma_pos_m) for sl, rg in zip(sls, rngs, strict=True)]
+                                   rg, dt, paso, sigma_pos_m, beta_D, beta_L) for sl, rg in zip(sls, rngs, strict=True)]
     else:                                           # paralelo: un flujo hijo por bloque (determinista, otra realización)
         from joblib import Parallel, delayed
         rngs = rng.spawn(len(sls))
         salidas = Parallel(n_jobs=n_jobs)(
             delayed(_ajustar_bloque)(r0[sl], v0[sl], omega_hat[sl], omega_t[sl], cd[sl], rho_i[sl], lam_i[sl], tau_i[sl],
-                                     rg, dt, paso, sigma_pos_m) for sl, rg in zip(sls, rngs, strict=True))
+                                     rg, dt, paso, sigma_pos_m, beta_D, beta_L) for sl, rg in zip(sls, rngs, strict=True))
     coef = np.concatenate([o[0] for o in salidas])  # [lanzamiento, orden c0..c2, eje x,y,z] en ft y s (reloj medido)
     t_vuelo = np.concatenate([o[1] for o in salidas])
     c0, c1, c2 = coef[:, 0, :], coef[:, 1, :], coef[:, 2, :]
@@ -1082,6 +1103,7 @@ def generar_fisica(n_juegos: int = 45, lanzamientos_por_juego: int = 111, semill
         "cubeta_juego": [ji["cubeta"] for ji in juego_info], "parque_juego": [ji["parque"] for ji in juego_info],
         "rho_juego": rho_g, "delta_verdad": np.log(rho_g) - log_ref,
         "alpha_j": alpha_j, "c_g": c_juego, "lambda": lambda_escala, "tau": tau_reloj,
+        "beta_D": float(beta_D), "beta_L": float(beta_L),
         "cubetas_sesgo": tuple(cubetas_sesgo) if calibracion_parques is None else (),
         "parques": [{"cubeta": c, "altitud_m": a} for c, a in parques],
         "calibracion_parques": {int(k): tuple(v) for k, v in (calibracion_parques or {}).items()},
